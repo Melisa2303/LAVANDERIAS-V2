@@ -2,9 +2,19 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import googlemaps
+import os
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 # Configurar Firebase
-cred = credentials.Certificate("serviceAccountKey.json")
+cred = credentials.Certificate({
+  "type": "service_account",
+  "project_id": os.getenv("FIREBASE_PROJECT_ID"),
+  "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
+  "client_email": os.getenv("FIREBASE_CLIENT_EMAIL")
+})
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
