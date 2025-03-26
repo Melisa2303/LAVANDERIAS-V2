@@ -1,7 +1,6 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
-import googlemaps
 import os
 from dotenv import load_dotenv
 
@@ -24,9 +23,6 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
-
-# Configurar Google Maps API
-gmaps = googlemaps.Client(key='YOUR_GOOGLE_MAPS_API_KEY')
 
 # Páginas de la aplicación
 def login():
@@ -93,7 +89,4 @@ else:
         datos_recojo()
     elif choice == "Datos de Boletas":
         datos_boletas()
-    elif choice == "Ver Ruta Optimizada":
-        ver_ruta_optimizada()
-    elif choice == "Seguimiento al Vehículo":
-        seguimiento_vehiculo()
+ 
