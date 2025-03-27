@@ -27,7 +27,7 @@ db = firestore.client()
 # Función de cierre de sesión
 def logout():
     st.session_state.pop('usuario', None)
-    st.set_query_params()  # Forzar recarga de la página
+    st.experimental_rerun()  # Forzar recarga de la página
 
 # Páginas de la aplicación
 def login():
@@ -45,7 +45,7 @@ def login():
            (usuario == "conductor" and password == "conductor12") or \
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
-            st.set_query_params()  # Forzar recarga de la página
+            st.experimental_rerun()  # Forzar recarga de la página
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -77,8 +77,12 @@ def seguimiento_vehiculo():
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
-# Navegación de la aplicación
+# Inicializar 'usuario' en session_state
 if 'usuario' not in st.session_state:
+    st.session_state['usuario'] = None
+
+# Navegación de la aplicación
+if st.session_state['usuario'] is None:
     login()
 else:
     st.sidebar.title("Menú")
