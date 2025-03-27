@@ -170,7 +170,7 @@ def ingresar_sucursal():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("🏢 Ingresar Sucursal")
+    st.title("Ingresar Sucursal")
     # Implementar funcionalidad
 
 def solicitar_recogida():
@@ -179,7 +179,7 @@ def solicitar_recogida():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("🚚 Solicitar Recogida")
+    st.title("Solicitar Recogida")
     # Implementar funcionalidad
 
 def datos_recojo():
@@ -188,7 +188,7 @@ def datos_recojo():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("📝 Datos de Recojo")
+    st.title("Datos de Recojo")
     # Implementar funcionalidad
 
 def datos_boletas():
@@ -197,7 +197,7 @@ def datos_boletas():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("📄 Datos de Boletas")
+    st.title("Datos de Boletas")
     # Implementar funcionalidad
 
 def ver_ruta_optimizada():
@@ -206,7 +206,7 @@ def ver_ruta_optimizada():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("🛣️ Ver Ruta Optimizada")
+    st.title("Ver Ruta Optimizada")
     # Implementar funcionalidad
 
 def seguimiento_vehiculo():
@@ -215,7 +215,7 @@ def seguimiento_vehiculo():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("🚗 Seguimiento al Vehículo")
+    st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
 # Inicializar 'logged_in', 'usuario_actual' y 'menu' en session_state
@@ -233,11 +233,11 @@ else:
     usuario = st.session_state['usuario_actual']
     if not st.session_state['menu']:
         if usuario == "administrador":
-            st.session_state['menu'] = ["📝 Ingresar Boleta", "🏢 Ingresar Sucursal", "🚚 Solicitar Recogida", "📝 Datos de Recojo", "📄 Datos de Boletas", "🛣️ Ver Ruta Optimizada", "🚗 Seguimiento al Vehículo"]
+            st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
         elif usuario == "conductor":
-            st.session_state['menu'] = ["🛣️ Ver Ruta Optimizada", "📝 Datos de Recojo"]
+            st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
         elif usuario == "sucursal":
-            st.session_state['menu'] = ["🚚 Solicitar Recogida", "🚗 Seguimiento al Vehículo"]
+            st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
 
     st.sidebar.title("Menú")
     if st.sidebar.button("🔓 Cerrar sesión"):
@@ -246,17 +246,17 @@ else:
     menu = st.session_state['menu']
     choice = st.sidebar.selectbox("Selecciona una opción", menu)
 
-    if choice == "📝 Ingresar Boleta":
+    if choice == "Ingresar Boleta":
         ingresar_boleta()
-    elif choice == "🏢 Ingresar Sucursal":
+    elif choice == "Ingresar Sucursal":
         ingresar_sucursal()
-    elif choice == "🚚 Solicitar Recogida":
+    elif choice == "Solicitar Recogida":
         solicitar_recogida()
-    elif choice == "📝 Datos de Recojo":
+    elif choice == "Datos de Recojo":
         datos_recojo()
-    elif choice == "📄 Datos de Boletas":
+    elif choice == "Datos de Boletas":
         datos_boletas()
-    elif choice == "🛣️ Ver Ruta Optimizada":
+    elif choice == "Ver Ruta Optimizada":
         ver_ruta_optimizada()
-    elif choice == "🚗 Seguimiento al Vehículo":
+    elif choice == "Seguimiento al Vehículo":
         seguimiento_vehiculo()
