@@ -27,11 +27,10 @@ db = firestore.client()
 # Función de cierre de sesión
 def logout():
     st.session_state.pop('usuario', None)
-    st.experimental_set_query_params()  # Forzar recarga de la página
+    st.set_query_params()  # Forzar recarga de la página
 
 # Páginas de la aplicación
 def login():
-    st.title("Lavanderías Americanas")
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
@@ -46,7 +45,7 @@ def login():
            (usuario == "conductor" and password == "conductor12") or \
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
-            st.experimental_set_query_params()  # Forzar recarga de la página
+            st.set_query_params()  # Forzar recarga de la página
         else:
             st.error("Usuario o contraseña incorrectos")
 
