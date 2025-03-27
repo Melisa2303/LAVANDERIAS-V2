@@ -63,22 +63,22 @@ def login():
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
-    st.subheader("🔒 Inicia Tu Sesión")
-    usuario = st.text_input("👤 Usuario", key="login_usuario")
-    password = st.text_input("🔑 Contraseña", type="password", key="login_password")
+    st.subheader("Inicia Tu Sesión")
+    usuario = st.text_input("Usuario", key="login_usuario")
+    password = st.text_input("Contraseña", type="password", key="login_password")
     
-    if st.button("🔓 Ingresar"):
+    if st.button("🔒 Ingresar"):
         if (usuario == "administrador" and password == "admin12") or \
            (usuario == "conductor" and password == "conductor12") or \
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario_actual'] = usuario
             st.session_state['logged_in'] = True
             if usuario == "administrador":
-                st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+                st.session_state['menu'] = ["📝 Ingresar Boleta", "🏢 Ingresar Sucursal", "🚚 Solicitar Recogida", "📝 Datos de Recojo", "📄 Datos de Boletas", "🛣️ Ver Ruta Optimizada", "🚗 Seguimiento al Vehículo"]
             elif usuario == "conductor":
-                st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+                st.session_state['menu'] = ["🛣️ Ver Ruta Optimizada", "📝 Datos de Recojo"]
             elif usuario == "sucursal":
-                st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+                st.session_state['menu'] = ["🚚 Solicitar Recogida", "🚗 Seguimiento al Vehículo"]
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -98,30 +98,29 @@ def ingresar_boleta():
     with st.form(key='form_boleta'):
         col1, col2 = st.columns(2)
         with col1:
-            numero_boleta = st.text_input("🔢 Número de Boleta", max_chars=5)
+            numero_boleta = st.text_input("Número de Boleta", max_chars=5)
         with col2:
-            nombre_cliente = st.text_input("👤 Nombre del Cliente")
+            nombre_cliente = st.text_input("Nombre del Cliente")
         
         col1, col2 = st.columns(2)
         with col1:
-            dni = st.text_input("🆔 Número de DNI (Opcional)", max_chars=8)
+            dni = st.text_input("Número de DNI (Opcional)", max_chars=8)
         with col2:
-            telefono = st.text_input("📞 Teléfono (Opcional)", max_chars=9)
+            telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
         
-        monto = st.number_input("💵 Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
-        tipo_servicio = st.selectbox("🛠️ Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"])
+        monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
+        tipo_servicio = st.selectbox("Tipo de Servicio", ["Sucursal", "Delivery"])
         
         if "Sucursal" in tipo_servicio:
-            sucursal = st.selectbox("🏢 Sucursal", sucursales)
+            sucursal = st.selectbox("Sucursal", sucursales)
         else:
             sucursal = None
         
         # Seleccionar artículos
-        articulo_seleccionado = st.multiselect("🧺 Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
+        articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
         cantidades = {articulo: st.number_input(f"Cantidad de {articulo}", min_value=1, value=1) for articulo in articulo_seleccionado}
         
-        fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.text(f"🕒 Fecha de Registro: {fecha_registro}")
+        fecha_registro = st.date_input("Fecha de Registro", datetime.now())
         
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
         
@@ -158,7 +157,7 @@ def ingresar_boleta():
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
                 "articulos": cantidades,
-                "fecha_registro": fecha_registro
+                "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
             }
             
             db.collection('boletas').add(boleta)
@@ -233,11 +232,11 @@ else:
     usuario = st.session_state['usuario_actual']
     if not st.session_state['menu']:
         if usuario == "administrador":
-            st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+            st.session_state['menu'] = ["📝 Ingresar Boleta", "🏢 Ingresar Sucursal", "🚚 Solicitar Recogida", "📝 Datos de Recojo", "📄 Datos de Boletas", "🛣️ Ver Ruta Optimizada", "🚗 Seguimiento al Vehículo"]
         elif usuario == "conductor":
-            st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+            st.session_state['menu'] = ["🛣️ Ver Ruta Optimizada", "📝 Datos de Recojo"]
         elif usuario == "sucursal":
-            st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+            st.session_state['menu'] = ["🚚 Solicitar Recogida", "🚗 Seguimiento al Vehículo"]
 
     st.sidebar.title("Menú")
     if st.sidebar.button("🔓 Cerrar sesión"):
@@ -246,17 +245,17 @@ else:
     menu = st.session_state['menu']
     choice = st.sidebar.selectbox("Selecciona una opción", menu)
 
-    if choice == "Ingresar Boleta":
+    if choice == "📝 Ingresar Boleta":
         ingresar_boleta()
-    elif choice == "Ingresar Sucursal":
+    elif choice == "🏢 Ingresar Sucursal":
         ingresar_sucursal()
-    elif choice == "Solicitar Recogida":
+    elif choice == "🚚 Solicitar Recogida":
         solicitar_recogida()
-    elif choice == "Datos de Recojo":
+    elif choice == "📝 Datos de Recojo":
         datos_recojo()
-    elif choice == "Datos de Boletas":
+    elif choice == "📄 Datos de Boletas":
         datos_boletas()
-    elif choice == "Ver Ruta Optimizada":
+    elif choice == "🛣️ Ver Ruta Optimizada":
         ver_ruta_optimizada()
-    elif choice == "Seguimiento al Vehículo":
+    elif choice == "🚗 Seguimiento al Vehículo":
         seguimiento_vehiculo()
