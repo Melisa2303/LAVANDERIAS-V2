@@ -31,4 +31,4 @@ def subir_datos_articulos(csv_file_path):
             db.collection('articulos').add(row)
 
 # Llamar a la función con la ruta a tu archivo CSV
-subir_datos_articulos('articulos.csv')
+subir_datos_articulos('articulos.csv') # Ajusta la ruta según sea necesario
