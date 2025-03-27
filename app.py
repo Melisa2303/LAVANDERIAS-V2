@@ -36,7 +36,7 @@ def logout():
 def obtener_articulos():
     articulos_ref = db.collection('articulos')
     docs = articulos_ref.stream()
-    articulos = [doc.to_dict()['nombre'] for doc in docs]
+    articulos = [doc.to_dict()['Nombre'] for doc in docs]  # Corregido 'nombre' a 'Nombre'
     return articulos
 
 # Leer datos de sucursales desde Firestore
