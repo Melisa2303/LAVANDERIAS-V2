@@ -83,8 +83,11 @@ def login():
             st.error("Usuario o contraseña incorrectos")
 
 def ingresar_boleta():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Ingresar Boleta")
     
     # Obtener datos necesarios
@@ -97,9 +100,9 @@ def ingresar_boleta():
         nombre_cliente = st.text_input("Nombre del Cliente")
         dni = st.text_input("Número de DNI (Opcional)")
         telefono = st.text_input("Teléfono (Opcional)")
-        monto = st.text_input("Monto", help="Ingrese el monto en formato de dinero, por ejemplo, 100.00")
-        tipo_servicio = st.selectbox("Tipo de Servicio", ["Sucursal", "Delivery"])
-        sucursal = st.selectbox("Sucursal", sucursales) if tipo_servicio == "Sucursal" else None
+        monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
+        tipo_servicio = st.selectbox("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"])
+        sucursal = st.selectbox("Sucursal", sucursales) if "Sucursal" in tipo_servicio else None
         
         # Seleccionar artículos
         articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
@@ -127,12 +130,6 @@ def ingresar_boleta():
                 st.error("El número de teléfono debe tener 9 dígitos.")
                 return
             
-            try:
-                monto = float(monto)
-            except ValueError:
-                st.error("El monto debe ser un número.")
-                return
-            
             # Verificar unicidad del número de boleta
             if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
                 st.error("Ya existe una boleta con este número en la misma sucursal o tipo de servicio.")
@@ -155,38 +152,56 @@ def ingresar_boleta():
             st.success("Boleta ingresada correctamente.")
 
 def ingresar_sucursal():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Ingresar Sucursal")
     # Implementar funcionalidad
 
 def solicitar_recogida():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Solicitar Recogida")
     # Implementar funcionalidad
 
 def datos_recojo():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Datos de Recojo")
     # Implementar funcionalidad
 
 def datos_boletas():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Datos de Boletas")
     # Implementar funcionalidad
 
 def ver_ruta_optimizada():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Ver Ruta Optimizada")
     # Implementar funcionalidad
 
 def seguimiento_vehiculo():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
@@ -232,4 +247,3 @@ else:
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         seguimiento_vehiculo()
-        
