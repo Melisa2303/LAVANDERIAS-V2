@@ -26,8 +26,8 @@ db = firestore.client()
 
 # Función de cierre de sesión
 def logout():
-    st.session_state['usuario'] = None
     st.session_state['logged_in'] = False
+    st.session_state['usuario_actual'] = None
     st.session_state['menu'] = []
 
 # Páginas de la aplicación
@@ -39,14 +39,14 @@ def login():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
     st.subheader("Inicia tu sesión")
-    usuario = st.text_input("Usuario", key="usuario")
-    password = st.text_input("Contraseña", type="password", key="password")
+    usuario = st.text_input("Usuario", key="login_usuario")
+    password = st.text_input("Contraseña", type="password", key="login_password")
     
     if st.button("🔒 Ingresar"):
         if (usuario == "administrador" and password == "admin12") or \
            (usuario == "conductor" and password == "conductor12") or \
            (usuario == "sucursal" and password == "sucursal12"):
-            st.session_state['usuario'] = usuario
+            st.session_state['usuario_actual'] = usuario
             st.session_state['logged_in'] = True
             if usuario == "administrador":
                 st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
@@ -85,11 +85,11 @@ def seguimiento_vehiculo():
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
-# Inicializar 'usuario', 'logged_in', y 'menu' en session_state
+# Inicializar 'logged_in', 'usuario_actual' y 'menu' en session_state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-if 'usuario' not in st.session_state:
-    st.session_state['usuario'] = None
+if 'usuario_actual' not in st.session_state:
+    st.session_state['usuario_actual'] = None
 if 'menu' not in st.session_state:
     st.session_state['menu'] = []
 
@@ -97,7 +97,7 @@ if 'menu' not in st.session_state:
 if not st.session_state['logged_in']:
     login()
 else:
-    usuario = st.session_state['usuario']
+    usuario = st.session_state['usuario_actual']
     if not st.session_state['menu']:
         if usuario == "administrador":
             st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
