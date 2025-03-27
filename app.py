@@ -86,7 +86,7 @@ def seguimiento_vehiculo():
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
-# Inicializar 'usuario' en session_state
+# Inicializar 'usuario', 'logged_in', y 'menu' en session_state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'usuario' not in st.session_state:
@@ -98,6 +98,14 @@ if 'menu' not in st.session_state:
 if not st.session_state['logged_in']:
     login()
 else:
+    usuario = st.session_state['usuario']
+    if usuario == "administrador":
+        st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+    elif usuario == "conductor":
+        st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+    elif usuario == "sucursal":
+        st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+
     st.sidebar.title("Menú")
     if st.sidebar.button("🔓 Cerrar sesión"):
         logout()
@@ -119,3 +127,4 @@ else:
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         seguimiento_vehiculo()
+````
