@@ -28,6 +28,7 @@ db = firestore.client()
 def logout():
     st.session_state['usuario'] = None
     st.session_state['logged_in'] = False
+    st.session_state['menu'] = []
 
 # Páginas de la aplicación
 def login():
@@ -47,7 +48,13 @@ def login():
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
             st.session_state['logged_in'] = True
-            st.session_state['menu'] = True  # Añadido para manejar el estado del menú
+            if usuario == "administrador":
+                st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+            elif usuario == "conductor":
+                st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+            elif usuario == "sucursal":
+                st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+            st.experimental_set_query_params(logged_in=True)
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -79,13 +86,13 @@ def seguimiento_vehiculo():
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
-# Inicializar 'usuario' y 'menu' en session_state
+# Inicializar 'usuario' en session_state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'usuario' not in st.session_state:
     st.session_state['usuario'] = None
 if 'menu' not in st.session_state:
-    st.session_state['menu'] = False
+    st.session_state['menu'] = []
 
 # Navegación de la aplicación
 if not st.session_state['logged_in']:
@@ -95,14 +102,7 @@ else:
     if st.sidebar.button("🔓 Cerrar sesión"):
         logout()
 
-    usuario = st.session_state['usuario']
-    if usuario == "administrador":
-        menu = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
-    elif usuario == "conductor":
-        menu = ["Ver Ruta Optimizada", "Datos de Recojo"]
-    elif usuario == "sucursal":
-        menu = ["Solicitar Recogida", "Seguimiento al Vehículo"]
-
+    menu = st.session_state['menu']
     choice = st.sidebar.selectbox("Selecciona una opción", menu)
 
     if choice == "Ingresar Boleta":
