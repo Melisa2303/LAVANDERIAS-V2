@@ -33,7 +33,7 @@ def logout():
 def login():
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+        st.image("LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
@@ -47,8 +47,6 @@ def login():
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
             st.session_state['logged_in'] = True
-            # Forzar recarga de la página
-            st.experimental_set_query_params(logged_in=True)
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -83,6 +81,8 @@ def seguimiento_vehiculo():
 # Inicializar 'usuario' en session_state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'usuario' not in st.session_state:
+    st.session_state['usuario'] = None
 
 # Navegación de la aplicación
 if not st.session_state['logged_in']:
@@ -91,7 +91,7 @@ else:
     st.sidebar.title("Menú")
     if st.sidebar.button("🔓 Cerrar sesión"):
         logout()
-        st.experimental_set_query_params(logged_in=False)
+        st.experimental_rerun()
 
     usuario = st.session_state['usuario']
     if usuario == "administrador":
