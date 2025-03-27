@@ -36,7 +36,7 @@ def logout():
 def obtener_articulos():
     articulos_ref = db.collection('articulos')
     docs = articulos_ref.stream()
-    articulos = [doc.to_dict().get('Nombre', '') for doc in docs]
+    articulos = [doc.to_dict()['nombre'] for doc in docs]
     return articulos
 
 # Leer datos de sucursales desde Firestore
@@ -110,7 +110,7 @@ def ingresar_boleta():
         
         monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
         
-        tipo_servicio = st.radio("Tipo de Servicio", ["Sucursal", "Delivery"], horizontal=True)
+        tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
         
         if "Sucursal" in tipo_servicio:
             sucursal = st.selectbox("Sucursal", sucursales)
@@ -260,4 +260,3 @@ else:
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         seguimiento_vehiculo()
-
