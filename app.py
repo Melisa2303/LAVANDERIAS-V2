@@ -63,7 +63,7 @@ def login():
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
-    st.subheader("Inicia tu sesión")
+    st.subheader("Inicia Tu Sesión")
     usuario = st.text_input("Usuario", key="login_usuario")
     password = st.text_input("Contraseña", type="password", key="login_password")
     
@@ -83,6 +83,8 @@ def login():
             st.error("Usuario o contraseña incorrectos")
 
 def ingresar_boleta():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Ingresar Boleta")
     
     # Obtener datos necesarios
@@ -93,19 +95,19 @@ def ingresar_boleta():
     with st.form(key='form_boleta'):
         numero_boleta = st.text_input("Número de Boleta")
         nombre_cliente = st.text_input("Nombre del Cliente")
-        dni = st.text_input("Número de DNI (opcional)")
-        telefono = st.text_input("Teléfono (opcional)")
-        monto = st.text_input("Monto")
-        tipo_servicio = st.selectbox("Tipo de Servicio", ["sucursal", "delivery"])
-        sucursal = st.selectbox("Sucursal", sucursales) if tipo_servicio == "sucursal" else None
+        dni = st.text_input("Número de DNI (Opcional)")
+        telefono = st.text_input("Teléfono (Opcional)")
+        monto = st.text_input("Monto", help="Ingrese el monto en formato de dinero, por ejemplo, 100.00")
+        tipo_servicio = st.selectbox("Tipo de Servicio", ["Sucursal", "Delivery"])
+        sucursal = st.selectbox("Sucursal", sucursales) if tipo_servicio == "Sucursal" else None
         
         # Seleccionar artículos
-        articulo_seleccionado = st.multiselect("Artículos Lavados", articulos)
+        articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
         cantidades = {articulo: st.number_input(f"Cantidad de {articulo}", min_value=1, value=1) for articulo in articulo_seleccionado}
         
         fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        submit_button = st.form_submit_button(label="Ingresar Boleta")
+        submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
         
         if submit_button:
             # Validaciones
@@ -153,26 +155,38 @@ def ingresar_boleta():
             st.success("Boleta ingresada correctamente.")
 
 def ingresar_sucursal():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Ingresar Sucursal")
     # Implementar funcionalidad
 
 def solicitar_recogida():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Solicitar Recogida")
     # Implementar funcionalidad
 
 def datos_recojo():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Datos de Recojo")
     # Implementar funcionalidad
 
 def datos_boletas():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Datos de Boletas")
     # Implementar funcionalidad
 
 def ver_ruta_optimizada():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Ver Ruta Optimizada")
     # Implementar funcionalidad
 
 def seguimiento_vehiculo():
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
@@ -218,3 +232,4 @@ else:
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         seguimiento_vehiculo()
+        
