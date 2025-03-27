@@ -3,6 +3,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import os
 from dotenv import load_dotenv
+import re
+from datetime import datetime
 
 # Cargar variables de entorno
 load_dotenv()
@@ -29,6 +31,29 @@ def logout():
     st.session_state['logged_in'] = False
     st.session_state['usuario_actual'] = None
     st.session_state['menu'] = []
+
+# Leer datos de artículos desde Firestore
+def obtener_articulos():
+    articulos_ref = db.collection('articulos')
+    docs = articulos_ref.stream()
+    articulos = [doc.to_dict()['nombre'] for doc in docs]
+    return articulos
+
+# Leer datos de sucursales desde Firestore
+def obtener_sucursales():
+    sucursales_ref = db.collection('sucursales')
+    docs = sucursales_ref.stream()
+    sucursales = [doc.to_dict()['nombre'] for doc in docs]
+    return sucursales
+
+# Verificar unicidad del número de boleta
+def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
+    boletas_ref = db.collection('boletas')
+    query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio)
+    if tipo_servicio == 'sucursal':
+        query = query.where('sucursal', '==', sucursal)
+    docs = query.stream()
+    return not any(docs)  # Retorna True si no hay documentos duplicados
 
 # Páginas de la aplicación
 def login():
@@ -59,7 +84,73 @@ def login():
 
 def ingresar_boleta():
     st.title("Ingresar Boleta")
-    # Implementar funcionalidad
+    
+    # Obtener datos necesarios
+    articulos = obtener_articulos()
+    sucursales = obtener_sucursales()
+    
+    # Formulario de ingreso de boleta
+    with st.form(key='form_boleta'):
+        numero_boleta = st.text_input("Número de Boleta")
+        nombre_cliente = st.text_input("Nombre del Cliente")
+        dni = st.text_input("Número de DNI (opcional)")
+        telefono = st.text_input("Teléfono (opcional)")
+        monto = st.text_input("Monto")
+        tipo_servicio = st.selectbox("Tipo de Servicio", ["sucursal", "delivery"])
+        sucursal = st.selectbox("Sucursal", sucursales) if tipo_servicio == "sucursal" else None
+        
+        # Seleccionar artículos
+        articulo_seleccionado = st.multiselect("Artículos Lavados", articulos)
+        cantidades = {articulo: st.number_input(f"Cantidad de {articulo}", min_value=1, value=1) for articulo in articulo_seleccionado}
+        
+        fecha_registro = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        submit_button = st.form_submit_button(label="Ingresar Boleta")
+        
+        if submit_button:
+            # Validaciones
+            if not re.match(r'^\d{4,5}$', numero_boleta):
+                st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
+                return
+            
+            if not re.match(r'^[a-zA-Z\s]+$', nombre_cliente):
+                st.error("El nombre del cliente solo debe contener letras.")
+                return
+            
+            if dni and not re.match(r'^\d{8}$', dni):
+                st.error("El número de DNI debe tener 8 dígitos.")
+                return
+            
+            if telefono and not re.match(r'^\d{9}$', telefono):
+                st.error("El número de teléfono debe tener 9 dígitos.")
+                return
+            
+            try:
+                monto = float(monto)
+            except ValueError:
+                st.error("El monto debe ser un número.")
+                return
+            
+            # Verificar unicidad del número de boleta
+            if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
+                st.error("Ya existe una boleta con este número en la misma sucursal o tipo de servicio.")
+                return
+            
+            # Guardar los datos en Firestore
+            boleta = {
+                "numero_boleta": numero_boleta,
+                "nombre_cliente": nombre_cliente,
+                "dni": dni,
+                "telefono": telefono,
+                "monto": monto,
+                "tipo_servicio": tipo_servicio,
+                "sucursal": sucursal,
+                "articulos": cantidades,
+                "fecha_registro": fecha_registro
+            }
+            
+            db.collection('boletas').add(boleta)
+            st.success("Boleta ingresada correctamente.")
 
 def ingresar_sucursal():
     st.title("Ingresar Sucursal")
