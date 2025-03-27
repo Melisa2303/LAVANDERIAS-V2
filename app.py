@@ -127,4 +127,3 @@ else:
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         seguimiento_vehiculo()
-````
