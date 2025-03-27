@@ -27,21 +27,26 @@ db = firestore.client()
 # Función de cierre de sesión
 def logout():
     st.session_state.pop('usuario', None)
-    st.experimental_rerun()
+    st.experimental_set_query_params()  # Forzar recarga de la página
 
 # Páginas de la aplicación
 def login():
-    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/blob/main/LOGO.PNG?raw=true", width=100)
     st.title("Lavanderías Americanas")
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    
     st.subheader("Inicia tu sesión")
     usuario = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
-    if st.button("Login"):
+    if st.button("🔒 Ingresar"):
         if (usuario == "administrador" and password == "admin12") or \
            (usuario == "conductor" and password == "conductor12") or \
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
-            st.experimental_rerun()
+            st.experimental_set_query_params()  # Forzar recarga de la página
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -78,7 +83,7 @@ if 'usuario' not in st.session_state:
     login()
 else:
     st.sidebar.title("Menú")
-    if st.sidebar.button("Cerrar sesión"):
+    if st.sidebar.button("🔓 Cerrar sesión"):
         logout()
 
     usuario = st.session_state['usuario']
