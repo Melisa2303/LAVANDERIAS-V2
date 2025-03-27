@@ -47,7 +47,8 @@ def login():
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
             st.session_state['logged_in'] = True
-            st.experimental_rerun()  # Forzar recarga de la página
+            # Forzar recarga de la página
+            st.experimental_set_query_params(logged_in=True)
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -90,7 +91,7 @@ else:
     st.sidebar.title("Menú")
     if st.sidebar.button("🔓 Cerrar sesión"):
         logout()
-        st.experimental_rerun()  # Forzar recarga de la página
+        st.experimental_set_query_params(logged_in=False)
 
     usuario = st.session_state['usuario']
     if usuario == "administrador":
