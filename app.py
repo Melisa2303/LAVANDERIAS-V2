@@ -74,11 +74,11 @@ def login():
             st.session_state['usuario_actual'] = usuario
             st.session_state['logged_in'] = True
             if usuario == "administrador":
-                st.session_state['menu'] = ["📝 Ingresar Boleta", "🏢 Ingresar Sucursal", "🚚 Solicitar Recogida", "📝 Datos de Recojo", "📄 Datos de Boletas", "🛣️ Ver Ruta Optimizada", "🚗 Seguimiento al Vehículo"]
+                st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
             elif usuario == "conductor":
-                st.session_state['menu'] = ["🛣️ Ver Ruta Optimizada", "📝 Datos de Recojo"]
+                st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
             elif usuario == "sucursal":
-                st.session_state['menu'] = ["🚚 Solicitar Recogida", "🚗 Seguimiento al Vehículo"]
+                st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -109,7 +109,8 @@ def ingresar_boleta():
             telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
         
         monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
-        tipo_servicio = st.selectbox("Tipo de Servicio", ["Sucursal", "Delivery"])
+        
+        tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
         
         if "Sucursal" in tipo_servicio:
             sucursal = st.selectbox("Sucursal", sucursales)
@@ -120,7 +121,7 @@ def ingresar_boleta():
         articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
         cantidades = {articulo: st.number_input(f"Cantidad de {articulo}", min_value=1, value=1) for articulo in articulo_seleccionado}
         
-        fecha_registro = st.date_input("Fecha de Registro", datetime.now())
+        fecha_registro = st.date_input("Fecha de Registro", datetime.now(), key="fecha_registro", help="Seleccione la fecha de registro")
         
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
         
