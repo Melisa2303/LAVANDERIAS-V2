@@ -39,8 +39,8 @@ def login():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
     st.subheader("Inicia tu sesión")
-    usuario = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
+    usuario = st.text_input("Usuario", key="usuario")
+    password = st.text_input("Contraseña", type="password", key="password")
     
     if st.button("🔒 Ingresar"):
         if (usuario == "administrador" and password == "admin12") or \
@@ -54,7 +54,6 @@ def login():
                 st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
             elif usuario == "sucursal":
                 st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
-            st.experimental_set_query_params(logged_in=True)
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -99,12 +98,13 @@ if not st.session_state['logged_in']:
     login()
 else:
     usuario = st.session_state['usuario']
-    if usuario == "administrador":
-        st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
-    elif usuario == "conductor":
-        st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
-    elif usuario == "sucursal":
-        st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+    if not st.session_state['menu']:
+        if usuario == "administrador":
+            st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+        elif usuario == "conductor":
+            st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+        elif usuario == "sucursal":
+            st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
 
     st.sidebar.title("Menú")
     if st.sidebar.button("🔓 Cerrar sesión"):
