@@ -24,9 +24,16 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
+# Función de cierre de sesión
+def logout():
+    st.session_state.pop('usuario', None)
+    st.experimental_rerun()
+
 # Páginas de la aplicación
 def login():
-    st.title("Login")
+    st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/blob/main/LOGO.PNG?raw=true", width=100)
+    st.title("Lavanderías Americanas")
+    st.subheader("Inicia tu sesión")
     usuario = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
     if st.button("Login"):
@@ -34,13 +41,9 @@ def login():
            (usuario == "conductor" and password == "conductor12") or \
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
-            st.success("¡Inicio de sesión exitoso!")
+            st.experimental_rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
-
-def home():
-    st.title("Inicio")
-    st.write("Bienvenido, ", st.session_state['usuario'])
 
 def ingresar_boleta():
     st.title("Ingresar Boleta")
@@ -74,12 +77,21 @@ def seguimiento_vehiculo():
 if 'usuario' not in st.session_state:
     login()
 else:
-    menu = ["Inicio", "Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
-    choice = st.sidebar.selectbox("Menú", menu)
+    st.sidebar.title("Menú")
+    if st.sidebar.button("Cerrar sesión"):
+        logout()
 
-    if choice == "Inicio":
-        home()
-    elif choice == "Ingresar Boleta":
+    usuario = st.session_state['usuario']
+    if usuario == "administrador":
+        menu = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+    elif usuario == "conductor":
+        menu = ["Ver Ruta Optimizada", "Datos de Recojo"]
+    elif usuario == "sucursal":
+        menu = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+
+    choice = st.sidebar.selectbox("Selecciona una opción", menu)
+
+    if choice == "Ingresar Boleta":
         ingresar_boleta()
     elif choice == "Ingresar Sucursal":
         ingresar_sucursal()
