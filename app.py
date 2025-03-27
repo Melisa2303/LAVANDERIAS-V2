@@ -27,20 +27,20 @@ db = firestore.client()
 # Páginas de la aplicación
 def login():
     st.title("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    usuario = st.text_input("Usuario")
+    password = st.text_input("Contraseña", type="password")
     if st.button("Login"):
-        user = auth.get_user_by_email(email)
-        # Autenticación simplificada para el ejemplo
-        if password == "admin12" or password == "conductor12" or password == "sucursal12":
-            st.session_state['user'] = user.email
-            st.success("Logged in successfully!")
+        if (usuario == "administrador" and password == "admin12") or \
+           (usuario == "conductor" and password == "conductor12") or \
+           (usuario == "sucursal" and password == "sucursal12"):
+            st.session_state['usuario'] = usuario
+            st.success("¡Inicio de sesión exitoso!")
         else:
-            st.error("Incorrect password")
+            st.error("Usuario o contraseña incorrectos")
 
 def home():
-    st.title("Home")
-    st.write("Welcome, ", st.session_state['user'])
+    st.title("Inicio")
+    st.write("Bienvenido, ", st.session_state['usuario'])
 
 def ingresar_boleta():
     st.title("Ingresar Boleta")
@@ -71,13 +71,13 @@ def seguimiento_vehiculo():
     # Implementar funcionalidad (opcional)
 
 # Navegación de la aplicación
-if 'user' not in st.session_state:
+if 'usuario' not in st.session_state:
     login()
 else:
-    menu = ["Home", "Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
-    choice = st.sidebar.selectbox("Menu", menu)
+    menu = ["Inicio", "Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+    choice = st.sidebar.selectbox("Menú", menu)
 
-    if choice == "Home":
+    if choice == "Inicio":
         home()
     elif choice == "Ingresar Boleta":
         ingresar_boleta()
@@ -89,4 +89,7 @@ else:
         datos_recojo()
     elif choice == "Datos de Boletas":
         datos_boletas()
- 
+    elif choice == "Ver Ruta Optimizada":
+        ver_ruta_optimizada()
+    elif choice == "Seguimiento al Vehículo":
+        seguimiento_vehiculo()
