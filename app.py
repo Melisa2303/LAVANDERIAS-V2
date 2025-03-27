@@ -47,7 +47,7 @@ def login():
            (usuario == "sucursal" and password == "sucursal12"):
             st.session_state['usuario'] = usuario
             st.session_state['logged_in'] = True
-            st.experimental_set_query_params(logged_in=True)
+            st.session_state['menu'] = True  # Añadido para manejar el estado del menú
         else:
             st.error("Usuario o contraseña incorrectos")
 
@@ -79,11 +79,13 @@ def seguimiento_vehiculo():
     st.title("Seguimiento al Vehículo")
     # Implementar funcionalidad (opcional)
 
-# Inicializar 'usuario' en session_state
+# Inicializar 'usuario' y 'menu' en session_state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'usuario' not in st.session_state:
     st.session_state['usuario'] = None
+if 'menu' not in st.session_state:
+    st.session_state['menu'] = False
 
 # Navegación de la aplicación
 if not st.session_state['logged_in']:
