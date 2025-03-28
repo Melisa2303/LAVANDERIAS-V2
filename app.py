@@ -233,9 +233,6 @@ def ingresar_sucursal():
             
             db.collection('sucursales').add(sucursal)
             st.success("Sucursal ingresada correctamente.")
-
-# Llamar a la función para mostrar el formulario
-ingresar_sucursal()
     
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
