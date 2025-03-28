@@ -208,7 +208,7 @@ def ingresar_sucursal():
         nombre_sucursal = st.text_input("Nombre de la Sucursal")
         direccion = st.text_input("Dirección")
         encargado = st.text_input("Encargado")
-        telefono = st.text_input("Teléfono", , min_chars=9, max_chars=9)
+        telefono = st.text_input("Teléfono", max_chars=9)
         
         submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
 
