@@ -204,15 +204,19 @@ def ingresar_sucursal():
     with st.form(key='form_sucursal'):
         nombre_sucursal = st.text_input("Nombre de la Sucursal")
         direccion = st.text_input("Dirección")
-        encargado = st.text_input("Encargado")
-        telefono = st.text_input("Teléfono", max_chars=9)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            encargado = st.text_input("Encargado")
+        with col2:
+            telefono = st.text_input("Teléfono")
         
         submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
 
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{9}$', telefono):
-                st.error("El número de teléfono debe tener 9 dígitos.")
+                st.error("El número de teléfono debe tener exactamente 9 dígitos.")
                 return
             
             if not verificar_direccion(direccion):
@@ -224,11 +228,14 @@ def ingresar_sucursal():
                 "nombre": nombre_sucursal,
                 "direccion": direccion,
                 "encargado": encargado,
-                "telefono": telefono,
+                "telefono": telefono
             }
             
             db.collection('sucursales').add(sucursal)
             st.success("Sucursal ingresada correctamente.")
+
+# Llamar a la función para mostrar el formulario
+ingresar_sucursal()
     
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
