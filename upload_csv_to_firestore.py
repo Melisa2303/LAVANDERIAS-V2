@@ -3,12 +3,12 @@ from firebase_admin import credentials, firestore
 import os
 import csv
 
-# Inicializar Firebase
+# Initialize Firebase
 try:
     cred = credentials.Certificate({
-        "type": os.getenv("FIREBASE_TYPE"),
+        "type": os.getenv("FIREBASE_TYPE", "service_account"),
         "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-        "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
+        "private_key": os.getenv("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n"),
         "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
         "client_id": os.getenv("FIREBASE_CLIENT_ID"),
         "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
@@ -23,7 +23,7 @@ except Exception as e:
 
 db = firestore.client()
 
-# Leer el archivo CSV
+# Read the CSV file
 def leer_articulos_csv():
     articulos = []
     try:
@@ -31,21 +31,21 @@ def leer_articulos_csv():
             reader = csv.DictReader(csvfile, delimiter=',')
             for row in reader:
                 articulos.append(row)
-        print(f"Artículos leídos del CSV: {articulos}")  # Imprimir los artículos leídos
+        print(f"Artículos leídos del CSV: {articulos}")
     except Exception as e:
         print(f"Error al leer el archivo CSV: {e}")
     return articulos
 
-# Subir los datos a Firestore
+# Upload data to Firestore
 def subir_articulos_a_firestore(articulos):
     try:
         for articulo in articulos:
             db.collection('articulos').add(articulo)
-            print(f"Artículo subido a Firestore: {articulo}")  # Imprimir el artículo subido
+            print(f"Artículo subido a Firestore: {articulo}")
     except Exception as e:
         print(f"Error al subir artículos a Firestore: {e}")
 
-# Verificar los datos en Firestore
+# Verify data in Firestore
 def verificar_articulos_en_firestore():
     try:
         articulos_ref = db.collection('articulos')
@@ -55,7 +55,7 @@ def verificar_articulos_en_firestore():
     except Exception as e:
         print(f"Error al verificar artículos en Firestore: {e}")
 
-# Ejecutar el proceso
+# Execute the process
 if __name__ == "__main__":
     articulos = leer_articulos_csv()
     subir_articulos_a_firestore(articulos)
