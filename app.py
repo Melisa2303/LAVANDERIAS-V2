@@ -134,13 +134,11 @@ def ingresar_boleta():
 
         # Mostrar tabla de artículos seleccionados con campos de cantidad
         if st.session_state['cantidades']:
-            st.write("### Artículos Seleccionados")
-            st.markdown("<style>div[data-testid='stTable'] tbody tr th {text-align: left;}</style>", unsafe_allow_html=True)
             table_data = []
             for articulo, cantidad in st.session_state['cantidades'].items():
                 cantidad_input = st.number_input(f"Cantidad de {articulo}", min_value=1, value=cantidad, key=f"cantidad_{articulo}")
                 st.session_state['cantidades'][articulo] = cantidad_input
-                table_data.append((cantidad_input, articulo))
+                table_data.append({"Cantidad": cantidad_input, "Artículo": articulo})
             st.table(table_data)
 
         fecha_registro = st.date_input("Fecha de Registro", datetime.now(), key="fecha_registro", help="Seleccione la fecha de registro")
