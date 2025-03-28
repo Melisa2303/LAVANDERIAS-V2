@@ -3,6 +3,7 @@ from firebase_admin import credentials, firestore
 import os
 import csv
 import hashlib
+import streamlit as st
 
 # Inicializar Firebase
 if not firebase_admin._apps:
