@@ -118,24 +118,27 @@ def ingresar_boleta():
             sucursal = None
         
         # Seleccionar artículos
-        articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
+        articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, default=[])
 
         # Inicializar o actualizar cantidades en st.session_state
         if 'cantidades' not in st.session_state:
             st.session_state['cantidades'] = {}
-        
         for articulo in articulo_seleccionado:
             if articulo not in st.session_state['cantidades']:
                 st.session_state['cantidades'][articulo] = 1
+                
+        # Remover artículos no seleccionados
+        for articulo in list(st.session_state['cantidades'].keys()):
+            if articulo not in articulo_seleccionado:
+                del st.session_state['cantidades'][articulo]
 
         # Mostrar lista de artículos seleccionados con campos de cantidad
-        for articulo in articulo_seleccionado:
+        for articulo, cantidad in st.session_state['cantidades'].items():
             col1, col2 = st.columns([2, 1])
             with col1:
                 st.write(f"{articulo}")
             with col2:
-                cantidad = st.number_input(f"Cantidad de {articulo}", min_value=1, value=st.session_state['cantidades'][articulo], key=f"cantidad_{articulo}")
-                st.session_state['cantidades'][articulo] = cantidad
+                st.session_state['cantidades'][articulo] = st.number_input(f"Cantidad de {articulo}", min_value=1, value=cantidad, key=f"cantidad_{articulo}")
 
         fecha_registro = st.date_input("Fecha de Registro", datetime.now(), key="fecha_registro", help="Seleccione la fecha de registro")
         
