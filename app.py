@@ -119,15 +119,15 @@ def ingresar_boleta():
         
         # Seleccionar artículos
         articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
-        
+
         # Inicializar o actualizar cantidades en st.session_state
         if 'cantidades' not in st.session_state:
             st.session_state['cantidades'] = {}
         for articulo in articulo_seleccionado:
             if articulo not in st.session_state['cantidades']:
                 st.session_state['cantidades'][articulo] = 1
-        
-        # Mostrar tabla de artículos y cantidades
+
+        # Mostrar lista de artículos seleccionados con campos de cantidad
         st.write("### Artículos Seleccionados")
         for articulo in articulo_seleccionado:
             cantidad = st.number_input(f"Cantidad de {articulo}", min_value=1, value=st.session_state['cantidades'][articulo], key=f"cantidad_{articulo}")
