@@ -191,15 +191,51 @@ def ingresar_boleta():
 if __name__ == "__main__":
     ingresar_boleta()
     
+def verificar_direccion(direccion):
+    # Utilizamos la API de OpenStreetMap para verificar la dirección
+    response = requests.get(f"https://nominatim.openstreetmap.org/search?q={direccion}&format=json")
+    return len(response.json()) > 0
+
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("Ingresar Sucursal")
-    # Implementar funcionalidad
+    st.title("📝 Ingresar Sucursal")
+    
+    with st.form(key='form_sucursal'):
+        nombre_sucursal = st.text_input("Nombre de la Sucursal")
+        direccion = st.text_input("Dirección")
+        encargado = st.text_input("Encargado")
+        telefono = st.text_input("Teléfono", , min_chars=9, max_chars=9)
+        
+        submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
 
+        if submit_button:
+            # Validaciones
+            if not re.match(r'^\d{9}$', telefono):
+                st.error("El número de teléfono debe tener 9 dígitos.")
+                return
+            
+            if not verificar_direccion(direccion):
+                st.error("La dirección no es válida. Por favor, ingrese una dirección existente.")
+                return
+            
+            # Guardar los datos en Firestore
+            sucursal = {
+                "nombre": nombre_sucursal,
+                "direccion": direccion,
+                "encargado": encargado,
+                "telefono": telefono,
+            }
+            
+            db.collection('sucursales').add(sucursal)
+            st.success("Sucursal ingresada correctamente.")
+
+if __name__ == "__main__":
+    ingresar_sucursal()
+    
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
