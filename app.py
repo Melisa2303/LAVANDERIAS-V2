@@ -82,49 +82,6 @@ def login():
         else:
             st.error("Usuario o contraseña incorrectos")
 
-import streamlit as st
-import re
-from datetime import datetime
-import firebase_admin
-from firebase_admin import credentials, firestore
-
-# Inicializar Firebase
-if not firebase_admin._apps:
-    cred = credentials.Certificate({
-        "type": st.secrets["FIREBASE_TYPE"],
-        "project_id": st.secrets["FIREBASE_PROJECT_ID"],
-        "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace("\\n", "\n"),
-        "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
-        "client_id": st.secrets["FIREBASE_CLIENT_ID"],
-        "auth_uri": st.secrets["FIREBASE_AUTH_URI"],
-        "token_uri": st.secrets["FIREBASE_TOKEN_URI"],
-        "auth_provider_x509_cert_url": st.secrets["FIREBASE_AUTH_PROVIDER_X509_CERT_URL"],
-        "client_x509_cert_url": st.secrets["FIREBASE_CLIENT_X509_CERT_URL"]
-    })
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
-
-def obtener_articulos():
-    articulos_ref = db.collection('articulos')
-    docs = articulos_ref.stream()
-    articulos = [doc.to_dict().get('Nombre', 'Nombre no disponible') for doc in docs]
-    return list(set(articulos))
-
-def obtener_sucursales():
-    sucursales_ref = db.collection('sucursales')
-    docs = sucursales_ref.stream()
-    sucursales = [doc.to_dict().get('Nombre', 'Nombre no disponible') for doc in docs]
-    return list(set(sucursales))
-
-def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
-    boletas_ref = db.collection('boletas')
-    query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio)
-    if sucursal:
-        query = query.where('sucursal', '==', sucursal)
-    docs = query.stream()
-    return not any(docs)
-
 def ingresar_boleta():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -176,7 +133,7 @@ def ingresar_boleta():
         
         # Mostrar tabla de artículos seleccionados con campos de cantidad
         if st.session_state['cantidades']:
-            st.write("### Artículos Seleccionados")
+            st.markdown("<style>div[data-testid='stTable'] tbody tr th {text-align: left;}</style>", unsafe_allow_html=True)
             table_data = []
             for articulo, cantidad in st.session_state['cantidades'].items():
                 cantidad_input = st.number_input(f"Cantidad de {articulo}", min_value=1, value=cantidad, key=f"cantidad_{articulo}")
