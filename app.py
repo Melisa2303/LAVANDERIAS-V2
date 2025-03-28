@@ -119,9 +119,11 @@ def ingresar_boleta():
         
         # Seleccionar artículos
         articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
+        
         cantidades = {}
         for articulo in articulo_seleccionado:
-            cantidades[articulo] = st.number_input(f"Cantidad de {articulo}", min_value=1, value=1)
+            cantidad = st.number_input(f"Cantidad de {articulo}", min_value=1, value=1, key=f"cantidad_{articulo}")
+            cantidades[articulo] = cantidad
         
         fecha_registro = st.date_input("Fecha de Registro", datetime.now(), key="fecha_registro", help="Seleccione la fecha de registro")
         
@@ -165,7 +167,7 @@ def ingresar_boleta():
             
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
-            
+
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
     with col1:
