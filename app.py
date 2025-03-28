@@ -187,9 +187,6 @@ def ingresar_boleta():
             
             # Limpiar el estado de cantidades después de guardar
             st.session_state['cantidades'] = {}
-
-if __name__ == "__main__":
-    ingresar_boleta()
     
 def verificar_direccion(direccion):
     # Utilizamos la API de OpenStreetMap para verificar la dirección
@@ -232,9 +229,6 @@ def ingresar_sucursal():
             
             db.collection('sucursales').add(sucursal)
             st.success("Sucursal ingresada correctamente.")
-
-if __name__ == "__main__":
-    ingresar_sucursal()
     
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
