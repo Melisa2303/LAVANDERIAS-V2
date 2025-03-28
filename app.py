@@ -43,9 +43,9 @@ def obtener_articulos():
 def obtener_sucursales():
     sucursales_ref = db.collection('sucursales')
     docs = sucursales_ref.stream()
-    sucursales = [doc.to_dict()['nombre'] for doc in docs]
+    sucursales = [{"nombre": doc.to_dict().get('nombre', 'Nombre no disponible'), "direccion": doc.to_dict().get('direccion', 'Dirección no disponible')} for doc in docs]
     return sucursales
-
+    
 # Verificar unicidad del número de boleta
 def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
     boletas_ref = db.collection('boletas')
@@ -240,8 +240,61 @@ def solicitar_recogida():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("Solicitar Recogida")
-    # Implementar funcionalidad
+    st.title("🛒 Solicitar Recogida")
+    
+    tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
+    
+    if tipo_solicitud == "Sucursal":
+        sucursales = obtener_sucursales()
+        nombres_sucursales = [sucursal["nombre"] for sucursal in sucursales]
+        nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
+        
+        sucursal_seleccionada = next((sucursal for sucursal in sucursales if sucursal["nombre"] == nombre_sucursal), None)
+        if sucursal_seleccionada:
+            direccion = sucursal_seleccionada["direccion"]
+            st.write(f"Dirección: {direccion}")
+        
+        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
+        
+        if st.button("💾 Solicitar Recogida"):
+            fecha_entrega = fecha_recojo + timedelta(days=3)
+            solicitud = {
+                "tipo_solicitud": tipo_solicitud,
+                "sucursal": nombre_sucursal,
+                "direccion": direccion,
+                "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
+                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
+            }
+            db.collection('recogidas').add(solicitud)
+            st.success("Recogida solicitada correctamente.")
+
+    elif tipo_solicitud == "Cliente Delivery":
+        nombre_cliente = st.text_input("Nombre del Cliente")
+        telefono = st.text_input("Teléfono")
+        direccion = st.text_input("Dirección")
+        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
+        
+        if st.button("💾 Solicitar Recogida"):
+            # Validaciones
+            if not re.match(r'^\d{9}$', telefono):
+                st.error("El número de teléfono debe tener exactamente 9 dígitos.")
+                return
+            
+            if not verificar_direccion(direccion):
+                st.error("La dirección no es válida. Por favor, ingrese una dirección existente.")
+                return
+            
+            fecha_entrega = fecha_recojo + timedelta(days=3)
+            solicitud = {
+                "tipo_solicitud": tipo_solicitud,
+                "nombre_cliente": nombre_cliente,
+                "telefono": telefono,
+                "direccion": direccion,
+                "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
+                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
+            }
+            db.collection('recogidas').add(solicitud)
+            st.success("Recogida solicitada correctamente.")
 
 def datos_recojo():
     col1, col2 = st.columns([1, 3])
