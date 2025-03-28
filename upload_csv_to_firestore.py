@@ -23,7 +23,7 @@ db = firestore.client()
 def leer_articulos_csv():
     articulos = []
     with open('articulos.csv', newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile, delimiter=';')
+        reader = csv.DictReader(csvfile, delimiter=',')
         for row in reader:
             articulos.append(row)
     return articulos
