@@ -32,8 +32,13 @@ def leer_articulos_csv():
 # Subir los datos a Firestore
 def subir_articulos_a_firestore(articulos):
     for articulo in articulos:
-        db.collection('articulos').add(articulo)
-        print(f"Artículo subido a Firestore: {articulo}")  # Imprimir el artículo subido
+        # Verificar si el artículo ya existe en Firestore
+        docs = db.collection('articulos').where('Codigo', '==', articulo['Codigo']).stream()
+        if not any(docs):
+            db.collection('articulos').add(articulo)
+            print(f"Artículo subido a Firestore: {articulo}")  # Imprimir el artículo subido
+        else:
+            print(f"Artículo duplicado no subido: {articulo}")
 
 # Verificar los datos en Firestore
 def verificar_articulos_en_firestore():
