@@ -117,34 +117,8 @@ def ingresar_boleta():
         else:
             sucursal = None
         
-        # Seleccionar artículos
-        articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0)
-        
-        # Inicializar o actualizar cantidades en st.session_state
-        if 'cantidades' not in st.session_state:
-            st.session_state['cantidades'] = {}
-        
-        if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
-            st.session_state['cantidades'][articulo_seleccionado] = 1
-        
-        # Remover artículos no seleccionados
-        if articulo_seleccionado == "":
-            del st.session_state['cantidades'][articulo_seleccionado]
-        
-        # Mostrar tabla de artículos seleccionados con campos de cantidad
-        if st.session_state['cantidades']:
-            st.markdown("<style>div[data-testid='stTable'] tbody tr th {text-align: left;}</style>", unsafe_allow_html=True)
-            table_data = []
-            for articulo, cantidad in st.session_state['cantidades'].items():
-                cantidad_input = st.number_input(f"Cantidad de {articulo}", min_value=1, value=cantidad, key=f"cantidad_{articulo}")
-                st.session_state['cantidades'][articulo] = cantidad_input
-                table_data.append({"Cantidad": cantidad_input, "Artículo": articulo})
-            st.table(table_data)
-
-        fecha_registro = st.date_input("Fecha de Registro", datetime.now(), key="fecha_registro", help="Seleccione la fecha de registro")
-        
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
-        
+
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{4,5}$', numero_boleta):
@@ -177,14 +151,40 @@ def ingresar_boleta():
                 "monto": monto,
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
-                "articulos": st.session_state['cantidades'],
-                "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
+                "articulos": st.session_state.get('cantidades', {}),
+                "fecha_registro": datetime.now().strftime("%Y-%m-%d")
             }
             
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
             # Limpiar el estado de cantidades después de guardar
             st.session_state['cantidades'] = {}
+
+    # Seleccionar artículos
+    st.subheader("Agregar Artículos")
+    articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0)
+    
+    # Inicializar o actualizar cantidades en st.session_state
+    if 'cantidades' not in st.session_state:
+        st.session_state['cantidades'] = {}
+    
+    if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
+        st.session_state['cantidades'][articulo_seleccionado] = 1
+    
+    # Remover artículos no seleccionados
+    if articulo_seleccionado == "":
+        if articulo_seleccionado in st.session_state['cantidades']:
+            del st.session_state['cantidades'][articulo_seleccionado]
+    
+    # Mostrar tabla de artículos seleccionados con campos de cantidad
+    if st.session_state['cantidades']:
+        st.markdown("<style>div[data-testid='stTable'] tbody tr th {text-align: left;}</style>", unsafe_allow_html=True)
+        table_data = []
+        for articulo, cantidad in st.session_state['cantidades'].items():
+            cantidad_input = st.number_input(f"Cantidad de {articulo}", min_value=1, value=cantidad, key=f"cantidad_{articulo}")
+            st.session_state['cantidades'][articulo] = cantidad_input
+            table_data.append({"Cantidad": cantidad_input, "Artículo": articulo})
+        st.table(table_data)
 
 if __name__ == "__main__":
     ingresar_boleta()
