@@ -19,6 +19,9 @@ firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
+# Verificar la conexión a Firebase
+print("Conectado a Firebase")
+
 # Leer el archivo CSV
 def leer_articulos_csv():
     articulos = []
@@ -26,12 +29,14 @@ def leer_articulos_csv():
         reader = csv.DictReader(csvfile, delimiter=',')
         for row in reader:
             articulos.append(row)
+    print(f"Artículos leídos del CSV: {articulos}")  # Imprimir los artículos leídos
     return articulos
 
 # Subir los datos a Firestore
 def subir_articulos_a_firestore(articulos):
     for articulo in articulos:
         db.collection('articulos').add(articulo)
+        print(f"Artículo subido a Firestore: {articulo}")  # Imprimir el artículo subido
 
 # Verificar los datos en Firestore
 def verificar_articulos_en_firestore():
