@@ -120,11 +120,19 @@ def ingresar_boleta():
         # Seleccionar artículos
         articulo_seleccionado = st.multiselect("Artículos Lavados", articulos, help="Escriba las iniciales para filtrar")
         
-        cantidades = {}
+        # Inicializar o actualizar cantidades en st.session_state
+        if 'cantidades' not in st.session_state:
+            st.session_state['cantidades'] = {}
         for articulo in articulo_seleccionado:
-            cantidad = st.number_input(f"Cantidad de {articulo}", min_value=1, value=1, key=f"cantidad_{articulo}")
-            cantidades[articulo] = cantidad
+            if articulo not in st.session_state['cantidades']:
+                st.session_state['cantidades'][articulo] = 1
         
+        # Mostrar tabla de artículos y cantidades
+        st.write("### Artículos Seleccionados")
+        for articulo in articulo_seleccionado:
+            cantidad = st.number_input(f"Cantidad de {articulo}", min_value=1, value=st.session_state['cantidades'][articulo], key=f"cantidad_{articulo}")
+            st.session_state['cantidades'][articulo] = cantidad
+
         fecha_registro = st.date_input("Fecha de Registro", datetime.now(), key="fecha_registro", help="Seleccione la fecha de registro")
         
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
@@ -161,12 +169,14 @@ def ingresar_boleta():
                 "monto": monto,
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
-                "articulos": cantidades,
+                "articulos": st.session_state['cantidades'],
                 "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
             }
             
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
+            # Limpiar el estado de cantidades después de guardar
+            st.session_state['cantidades'] = {}
 
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
