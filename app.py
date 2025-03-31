@@ -8,6 +8,7 @@ from datetime import datetime
 import requests  # Importar requests
 import pydeck as pdk
 from streamlit_folium import st_folium
+import folium
 
 # Cargar variables de entorno
 load_dotenv()
@@ -192,26 +193,40 @@ def ingresar_boleta():
             st.session_state['cantidades'] = {}
 
 def obtener_sugerencias_direccion(direccion):
+    #Obtiene sugerencias de direcciones utilizando la API de Nominatim.
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()
-    return []
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json()  # Devuelve los resultados en formato JSON.
+        else:
+            st.warning(f"Error al consultar API de direcciones: {response.status_code}")
+    except Exception as e:
+        st.error(f"Error al conectarse a la API: {e}")
+    return []  # Si hay fallos, se devuelve una lista vacía.
 
 def obtener_coordenadas(direccion):
+    #Obtiene las coordenadas (latitud y longitud) de una dirección utilizando la API de Nominatim.
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
-    response = requests.get(url)
-    if response.status_code == 200 and response.json():
-        data = response.json()[0]
-        return float(data['lat']), float(data['lon'])
-    return None, None
+    try:
+        response = requests.get(url)
+        if response.status_code == 200 and response.json():
+            data = response.json()[0]
+            return float(data['lat']), float(data['lon'])
+        else:
+            st.warning("No se encontraron coordenadas para la dirección ingresada.")
+    except Exception as e:
+        st.error(f"Error al conectarse a la API: {e}")
+    return None, None  # Si hay errores, devuelve coordenadas vacías.
 
 def mostrar_mapa(lat, lon):
+    #Muestra un mapa con un marcador en la ubicación seleccionada.
     m = folium.Map(location=[lat, lon], zoom_start=15)
     folium.Marker([lat, lon], tooltip="Ubicación seleccionada").add_to(m)
     st_folium(m, width=700, height=500)
 
 def ingresar_sucursal():
+    #Crea la interfaz para ingresar una nueva sucursal.
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
@@ -220,6 +235,7 @@ def ingresar_sucursal():
     st.title("📝 Ingresar Sucursal")
     
     with st.form(key='form_sucursal'):
+        # Campos del formulario
         nombre_sucursal = st.text_input("Nombre de la Sucursal")
         direccion = st.text_input("Dirección", key="direccion")
         
@@ -229,27 +245,40 @@ def ingresar_sucursal():
         with col2:
             telefono = st.text_input("Teléfono")
         
+        # Botón de enviar
         submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
 
+        # Si se ingresa una dirección, mostrar sugerencias y mapa
         if direccion:
             sugerencias = obtener_sugerencias_direccion(direccion)
             if sugerencias:
-                st.write("Sugerencias de direcciones:")
+                st.write("**Sugerencias de direcciones:**")
                 for sug in sugerencias:
-                    st.write(f"- {sug['display_name']}")
+                    st.write(f"- {sug['display_name']}")  # Mostrar las sugerencias.
+            else:
+                st.warning("No se encontraron sugerencias para la dirección ingresada.")
 
             lat, lon = obtener_coordenadas(direccion)
             if lat and lon:
                 mostrar_mapa(lat, lon)
-                st.write(f"Ubicación: {lat}, {lon}")
+                st.write(f"**Ubicación detectada:** Latitud {lat}, Longitud {lon}")
+            else:
+                st.error("No se pudieron obtener coordenadas válidas para la dirección ingresada.")
 
+        # Procesar al guardar
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{9}$', telefono):
                 st.error("El número de teléfono debe tener exactamente 9 dígitos.")
                 return
             
-            if not direccion or not lat or not lon:
+            if not direccion:
+                st.error("Debe ingresar una dirección válida.")
+                return
+
+            # Coordenadas necesarias para guardar
+            lat, lon = obtener_coordenadas(direccion)
+            if not lat or not lon:
                 st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
                 return
             
@@ -265,6 +294,7 @@ def ingresar_sucursal():
                 },
             }
             
+            # Aquí guardarías los datos en la base de datos:
             db.collection('sucursales').add(sucursal)
             st.success("Sucursal ingresada correctamente.")
             
