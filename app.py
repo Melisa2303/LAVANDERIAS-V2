@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import re
 from datetime import datetime
 import requests  # Importar requests
+import pydeck as pdk
 
 # Cargar variables de entorno
 load_dotenv()
@@ -209,6 +210,25 @@ def obtener_coordenadas(direccion):
         return float(data['lat']), float(data['lon'])
     return None, None
 
+def mostrar_mapa(lat, lon):
+    st.pydeck_chart(pdk.Deck(
+        map_style='mapbox://styles/mapbox/streets-v11',
+        initial_view_state=pdk.ViewState(
+            latitude=lat,
+            longitude=lon,
+            zoom=15,
+        ),
+        layers=[
+            pdk.Layer(
+                'ScatterplotLayer',
+                data=[{"lat": lat, "lon": lon}],
+                get_position='[lon, lat]',
+                get_color='[200, 30, 0, 160]',
+                get_radius=200,
+            ),
+        ],
+    ))
+
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -238,7 +258,7 @@ def ingresar_sucursal():
 
             lat, lon = obtener_coordenadas(direccion)
             if lat and lon:
-                st.map([{"lat": lat, "lon": lon}])
+                mostrar_mapa(lat, lon)
                 st.write(f"Ubicación: {lat}, {lon}")
 
         if submit_button:
@@ -265,7 +285,7 @@ def ingresar_sucursal():
             
             db.collection('sucursales').add(sucursal)
             st.success("Sucursal ingresada correctamente.")
-            
+
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
