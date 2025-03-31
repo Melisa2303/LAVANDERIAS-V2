@@ -193,6 +193,21 @@ def verificar_direccion(direccion):
     response = requests.get(f"https://nominatim.openstreetmap.org/search?q={direccion}&format=json")
     return len(response.json()) > 0
 
+def obtener_sugerencias_direccion(direccion):
+    url = f"https://nominatim.openstreetmap.org/search?q={direccion}&format=json&addressdetails=1"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    return []
+
+def obtener_coordenadas(direccion):
+    url = f"https://nominatim.openstreetmap.org/search?q={direccion}&format=json&addressdetails=1"
+    response = requests.get(url)
+    if response.status_code == 200 and response.json():
+        data = response.json()[0]
+        return float(data['lat']), float(data['lon'])
+    return None, None
+
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -204,14 +219,22 @@ def ingresar_sucursal():
     with st.form(key='form_sucursal'):
         nombre_sucursal = st.text_input("Nombre de la Sucursal")
         direccion = st.text_input("Dirección")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            encargado = st.text_input("Encargado")
-        with col2:
-            telefono = st.text_input("Teléfono")
-        
+        encargado = st.text_input("Encargado")
+        telefono = st.text_input("Teléfono")
+
         submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
+
+        if direccion:
+            sugerencias = obtener_sugerencias_direccion(direccion)
+            if sugerencias:
+                st.write("Sugerencias de direcciones:")
+                for sug in sugerencias:
+                    st.write(f"- {sug['display_name']}")
+
+            lat, lon = obtener_coordenadas(direccion)
+            if lat and lon:
+                st.map([{"lat": lat, "lon": lon}])
+                st.write(f"Ubicación: {lat}, {lon}")
 
         if submit_button:
             # Validaciones
@@ -219,8 +242,8 @@ def ingresar_sucursal():
                 st.error("El número de teléfono debe tener exactamente 9 dígitos.")
                 return
             
-            if not verificar_direccion(direccion):
-                st.error("La dirección no es válida. Por favor, ingrese una dirección existente.")
+            if not direccion or not lat or not lon:
+                st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
                 return
             
             # Guardar los datos en Firestore
@@ -228,12 +251,16 @@ def ingresar_sucursal():
                 "nombre": nombre_sucursal,
                 "direccion": direccion,
                 "encargado": encargado,
-                "telefono": telefono
+                "telefono": telefono,
+                "coordenadas": {
+                    "lat": lat,
+                    "lon": lon
+                },
             }
             
             db.collection('sucursales').add(sucursal)
             st.success("Sucursal ingresada correctamente.")
-    
+            
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
