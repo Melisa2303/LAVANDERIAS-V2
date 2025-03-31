@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 import requests  # Importar requests
 import pydeck as pdk
+from streamlit_folium import st_folium
 
 # Cargar variables de entorno
 load_dotenv()
@@ -206,22 +207,9 @@ def obtener_coordenadas(direccion):
     return None, None
 
 def mostrar_mapa(lat, lon):
-    st.pydeck_chart(pdk.Deck(
-        initial_view_state=pdk.ViewState(
-            latitude=lat,
-            longitude=lon,
-            zoom=15,
-        ),
-        layers=[
-            pdk.Layer(
-                'ScatterplotLayer',
-                data=[{"lat": lat, "lon": lon}],
-                get_position='[lon, lat]',
-                get_color='[200, 30, 0, 160]',
-                get_radius=200,
-            ),
-        ],
-    ))
+    m = folium.Map(location=[lat, lon], zoom_start=15)
+    folium.Marker([lat, lon], tooltip="Ubicación seleccionada").add_to(m)
+    st_folium(m, width=700, height=500)
 
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
@@ -243,43 +231,43 @@ def ingresar_sucursal():
         
         submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
 
-    if direccion:
-        sugerencias = obtener_sugerencias_direccion(direccion)
-        if sugerencias:
-            st.write("Sugerencias de direcciones:")
-            for sug in sugerencias:
-                st.write(f"- {sug['display_name']}")
+        if direccion:
+            sugerencias = obtener_sugerencias_direccion(direccion)
+            if sugerencias:
+                st.write("Sugerencias de direcciones:")
+                for sug in sugerencias:
+                    st.write(f"- {sug['display_name']}")
 
-        lat, lon = obtener_coordenadas(direccion)
-        if lat and lon:
-            mostrar_mapa(lat, lon)
-            st.write(f"Ubicación: {lat}, {lon}")
+            lat, lon = obtener_coordenadas(direccion)
+            if lat and lon:
+                mostrar_mapa(lat, lon)
+                st.write(f"Ubicación: {lat}, {lon}")
 
-    if submit_button:
-        # Validaciones
-        if not re.match(r'^\d{9}$', telefono):
-            st.error("El número de teléfono debe tener exactamente 9 dígitos.")
-            return
-        
-        if not direccion or not lat or not lon:
-            st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
-            return
-        
-        # Guardar los datos en Firestore
-        sucursal = {
-            "nombre": nombre_sucursal,
-            "direccion": direccion,
-            "encargado": encargado,
-            "telefono": telefono,
-            "coordenadas": {
-                "lat": lat,
-                "lon": lon
-            },
-        }
-        
-        db.collection('sucursales').add(sucursal)
-        st.success("Sucursal ingresada correctamente.")
-
+        if submit_button:
+            # Validaciones
+            if not re.match(r'^\d{9}$', telefono):
+                st.error("El número de teléfono debe tener exactamente 9 dígitos.")
+                return
+            
+            if not direccion or not lat or not lon:
+                st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
+                return
+            
+            # Guardar los datos en Firestore
+            sucursal = {
+                "nombre": nombre_sucursal,
+                "direccion": direccion,
+                "encargado": encargado,
+                "telefono": telefono,
+                "coordenadas": {
+                    "lat": lat,
+                    "lon": lon
+                },
+            }
+            
+            db.collection('sucursales').add(sucursal)
+            st.success("Sucursal ingresada correctamente.")
+            
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
