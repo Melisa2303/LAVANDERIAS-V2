@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import re
 from datetime import datetime
+import requests  # Importar requests
 
 # Cargar variables de entorno
 load_dotenv()
@@ -219,9 +220,13 @@ def ingresar_sucursal():
     with st.form(key='form_sucursal'):
         nombre_sucursal = st.text_input("Nombre de la Sucursal")
         direccion = st.text_input("Dirección")
-        encargado = st.text_input("Encargado")
-        telefono = st.text_input("Teléfono")
-
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            encargado = st.text_input("Encargado")
+        with col2:
+            telefono = st.text_input("Teléfono")
+        
         submit_button = st.form_submit_button(label="💾 Ingresar Sucursal")
 
         if direccion:
