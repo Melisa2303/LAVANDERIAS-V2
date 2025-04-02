@@ -228,7 +228,7 @@ def mostrar_mapa(lat, lon):
     st_folium(m, width=700, height=500)
 
 def ingresar_sucursal():
-    """Crea la interfaz para ingresar una nueva sucursal con búsqueda automática."""
+    # Crea la interfaz para ingresar una nueva sucursal con soporte para campos opcionales.
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
@@ -240,17 +240,17 @@ def ingresar_sucursal():
     nombre_sucursal = st.text_input("Nombre de la Sucursal")
     direccion = st.text_input("Dirección", key="direccion")
 
-    # Mostrar sugerencias en tiempo real
     if direccion:
+        # Buscar sugerencias automáticas mientras se escribe
         sugerencias = obtener_sugerencias_direccion(direccion)
         if sugerencias:
             st.write("**Sugerencias de direcciones:**")
             for sug in sugerencias:
-                st.write(f"- {sug['display_name']}")  # Mostrar las sugerencias.
+                st.write(f"- {sug['display_name']}")
         else:
             st.warning("No se encontraron sugerencias para la dirección ingresada.")
 
-        # Mostrar mapa automáticamente si se encuentran coordenadas
+        # Obtener y mostrar mapa si hay coordenadas
         lat, lon = obtener_coordenadas(direccion)
         if lat and lon:
             mostrar_mapa(lat, lon)
@@ -258,41 +258,38 @@ def ingresar_sucursal():
         else:
             st.error("No se pudieron obtener coordenadas válidas para la dirección ingresada.")
 
-    # Formulario para otros campos
+    # Otros campos
     col1, col2 = st.columns(2)
     with col1:
-        encargado = st.text_input("Encargado")
+        encargado = st.text_input("Encargado (Opcional)")
     with col2:
-        telefono = st.text_input("Teléfono")
+        telefono = st.text_input("Teléfono (Opcional)")
 
-    # Botón para guardar
+    # Botón para guardar datos
     if st.button("💾 Ingresar Sucursal"):
         # Validaciones
-        if not re.match(r'^\d{9}$', telefono):
+        if telefono and not re.match(r'^\d{9}$', telefono):
             st.error("El número de teléfono debe tener exactamente 9 dígitos.")
             return
 
-        if not direccion:
-            st.error("Debe ingresar una dirección válida.")
-            return
-
-        if not lat or not lon:
+        if not direccion or not lat or not lon:
             st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
             return
 
-        # Guardar los datos en Firestore
+        # Crear el diccionario de datos para la sucursal (asegurando estructura uniforme)
         sucursal = {
             "nombre": nombre_sucursal,
             "direccion": direccion,
-            "encargado": encargado,
-            "telefono": telefono,
             "coordenadas": {
                 "lat": lat,
                 "lon": lon
             },
+            "encargado": encargado if encargado else "",  # Si no se llena, guarda como cadena vacía.
+            "telefono": telefono if telefono else "",    # Si no se llena, guarda como cadena vacía.
         }
-        
-        db.collection('sucursales').add(sucursal)  # Comenta o descomenta según pruebas
+
+        # Guardar en Firestore
+        db.collection('sucursales').add(sucursal)
         st.success("Sucursal ingresada correctamente.")
         
 def solicitar_recogida():
