@@ -212,7 +212,7 @@ def obtener_sugerencias_direccion(direccion):
 
 # Función para obtener coordenadas específicas (opcional)
 def obtener_coordenadas(direccion):
-    # Extrae las coordenadas de una dirección usando la API de Nominatim.
+    """Extrae las coordenadas de una dirección usando la API de Nominatim."""
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
     headers = {"User-Agent": "StreamlitApp/1.0"}
     try:
@@ -228,7 +228,7 @@ def obtener_coordenadas(direccion):
 
 # Función para obtener la dirección desde coordenadas
 def obtener_direccion_desde_coordenadas(lat, lon):
-    # Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud).
+    """Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud)."""
     try:
         location = geolocator.reverse((lat, lon), language="es")
         return location.address if location else "Dirección no encontrada"
@@ -236,17 +236,13 @@ def obtener_direccion_desde_coordenadas(lat, lon):
         st.error(f"Error al obtener dirección desde coordenadas: {e}")
         return "Dirección no encontrada"
 
-# Función para mostrar el mapa y permitir selección
-def mostrar_mapa(lat, lon, puntos=[]):
-    # Genera un mapa interactivo con un marcador dinámico.
+# Función para mostrar el mapa con marcador dinámico
+def mostrar_mapa(lat, lon):
+    """Genera un mapa interactivo con un único marcador que se actualiza dinámicamente."""
     m = folium.Map(location=[lat, lon], zoom_start=15)
-    
-    # Agregar marcador inicial o marcadores dinámicos
-    if puntos:
-        for punto in puntos:
-            folium.Marker([punto["lat"], punto["lon"]], tooltip="Punto seleccionado").add_to(m)
-    else:
-        folium.Marker([lat, lon], tooltip="Ubicación inicial").add_to(m)
+
+    # Agregar marcador dinámico
+    folium.Marker([lat, lon], tooltip="Punto seleccionado").add_to(m)
 
     mapa_interactivo = st_folium(m, width=700, height=500)
     return mapa_interactivo
@@ -277,7 +273,6 @@ def ingresar_sucursal():
 
     # Coordenadas dinámicas basadas en la dirección seleccionada
     lat, lon = -12.046374, -77.042793  # Coordenadas por defecto (Lima, Perú)
-    puntos_seleccionados = []  # Lista de marcadores dinámicos en el mapa
 
     if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
         for sug in sugerencias:
@@ -287,16 +282,15 @@ def ingresar_sucursal():
                 direccion = direccion_seleccionada  # Actualizar campo de dirección con la sugerencia elegida
                 break
 
-    # Mostrar mapa dinámico basado en la selección o por defecto
-    mapa = mostrar_mapa(lat, lon, puntos=puntos_seleccionados)
+    # Mostrar mapa dinámico
+    mapa = mostrar_mapa(lat, lon)
     seleccion_usuario = mapa.get("last_clicked")  # Coordenadas del último clic en el mapa
     if seleccion_usuario:
         lat = seleccion_usuario["lat"]
         lon = seleccion_usuario["lng"]
         direccion = obtener_direccion_desde_coordenadas(lat, lon)  # Actualizar dirección final
-        puntos_seleccionados.append({"lat": lat, "lon": lon})  # Agregar marcador dinámico
-        # Recargar el mapa con el nuevo punto seleccionado
-        mapa = mostrar_mapa(lat, lon, puntos=puntos_seleccionados)
+        # Actualizar el mapa con el marcador dinámico actualizado
+        mapa = mostrar_mapa(lat, lon)
 
     # Mostrar la dirección final estilizada
     st.markdown(f"""
