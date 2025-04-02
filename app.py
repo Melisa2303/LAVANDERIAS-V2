@@ -192,43 +192,45 @@ def ingresar_boleta():
             # Limpiar el estado de cantidades después de guardar
             st.session_state['cantidades'] = {}
 
+# Función para obtener sugerencias de dirección
 def obtener_sugerencias_direccion(direccion):
-    #Obtiene sugerencias de direcciones utilizando la API de Nominatim.
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
-    headers = {"User-Agent": "StreamlitApp/1.0"}  # Agrega un identificador personalizado.
+    headers = {"User-Agent": "StreamlitApp/1.0"}
     try:
-        response = requests.get(url, headers=headers)  # Incluye el encabezado en la solicitud.
+        response = requests.get(url, headers=headers)
         if response.status_code == 200:
-            return response.json()  # Devuelve los resultados en formato JSON.
+            return response.json()  # Devuelve las sugerencias en formato JSON
         else:
             st.warning(f"Error al consultar API de direcciones: {response.status_code}")
     except Exception as e:
         st.error(f"Error al conectarse a la API: {e}")
-    return []  # Si hay fallos, se devuelve una lista vacía.
+    return []
 
+# Función para obtener coordenadas específicas (por si se usa fuera del flujo actual)
 def obtener_coordenadas(direccion):
-    #Obtiene las coordenadas (latitud y longitud) de una dirección utilizando la API de Nominatim.
+    # Extrae las coordenadas de una dirección usando la API de Nominatim.
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
-    headers = {"User-Agent": "StreamlitApp/1.0"}  # Agrega un encabezado personalizado.
+    headers = {"User-Agent": "StreamlitApp/1.0"}
     try:
-        response = requests.get(url, headers=headers)  # Incluye el encabezado en la solicitud.
+        response = requests.get(url, headers=headers)
         if response.status_code == 200 and response.json():
             data = response.json()[0]
-            return float(data['lat']), float(data['lon'])
+            return float(data["lat"]), float(data["lon"])
         else:
             st.warning("No se encontraron coordenadas para la dirección ingresada.")
     except Exception as e:
         st.error(f"Error al conectarse a la API: {e}")
-    return None, None  # Si hay errores, devuelve coordenadas vacías.
-    
+    return None, None
+
+# Función para mostrar el mapa y permitir selección
 def mostrar_mapa(lat, lon):
-    # Muestra un mapa con un marcador en la ubicación seleccionada.
+    # Genera un mapa interactivo que permite seleccionar un punto.
     m = folium.Map(location=[lat, lon], zoom_start=15)
     folium.Marker([lat, lon], tooltip="Ubicación seleccionada").add_to(m)
-    st_folium(m, width=700, height=500)
+    return st_folium(m, width=700, height=500)
 
+# Función principal para ingresar sucursal
 def ingresar_sucursal():
-    # Crea la interfaz para ingresar una nueva sucursal con soporte para campos opcionales.
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
@@ -240,25 +242,34 @@ def ingresar_sucursal():
     nombre_sucursal = st.text_input("Nombre de la Sucursal")
     direccion = st.text_input("Dirección", key="direccion")
 
+    # Buscar sugerencias de direcciones mientras se escribe
+    sugerencias = []
     if direccion:
-        # Buscar sugerencias automáticas mientras se escribe
         sugerencias = obtener_sugerencias_direccion(direccion)
-        if sugerencias:
-            st.write("**Sugerencias de direcciones:**")
-            for sug in sugerencias:
-                st.write(f"- {sug['display_name']}")
-        else:
-            st.warning("No se encontraron sugerencias para la dirección ingresada.")
+        opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias]
 
-        # Obtener y mostrar mapa si hay coordenadas
-        lat, lon = obtener_coordenadas(direccion)
-        if lat and lon:
-            mostrar_mapa(lat, lon)
-            st.write(f"**Ubicación detectada:** Latitud {lat}, Longitud {lon}")
-        else:
-            st.error("No se pudieron obtener coordenadas válidas para la dirección ingresada.")
+    # Desplegable para seleccionar dirección
+    direccion_seleccionada = st.selectbox("Sugerencias de Direcciones:", opciones_desplegable if sugerencias else ["No hay sugerencias"])
 
-    # Otros campos
+    # Coordenadas dinámicas basadas en la dirección seleccionada
+    lat, lon = None, None
+    if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
+        for sug in sugerencias:
+            if direccion_seleccionada == sug["display_name"]:
+                lat = float(sug["lat"])
+                lon = float(sug["lon"])
+                break
+
+    # Mostrar mapa dinámico basado en la selección o por defecto
+    if lat and lon:
+        mapa = mostrar_mapa(lat, lon)
+        seleccion_usuario = mapa["last_clicked"]  # Coordenadas del último punto clickeado en el mapa
+        if seleccion_usuario:
+            lat = seleccion_usuario["lat"]
+            lon = seleccion_usuario["lng"]
+        st.write(f"**Ubicación detectada:** Latitud {lat}, Longitud {lon}")
+
+    # Otros campos opcionales
     col1, col2 = st.columns(2)
     with col1:
         encargado = st.text_input("Encargado (Opcional)")
@@ -276,16 +287,16 @@ def ingresar_sucursal():
             st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
             return
 
-        # Crear el diccionario de datos para la sucursal (asegurando estructura uniforme)
+        # Crear el diccionario de datos para la sucursal
         sucursal = {
             "nombre": nombre_sucursal,
-            "direccion": direccion,
+            "direccion": direccion_seleccionada,
             "coordenadas": {
                 "lat": lat,
                 "lon": lon
             },
-            "encargado": encargado if encargado else "",  # Si no se llena, guarda como cadena vacía.
-            "telefono": telefono if telefono else "",    # Si no se llena, guarda como cadena vacía.
+            "encargado": encargado if encargado else "",
+            "telefono": telefono if telefono else "",
         }
 
         # Guardar en Firestore
