@@ -1,6 +1,6 @@
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore, initialize_app, auth
 import os
 from dotenv import load_dotenv
 import re
@@ -9,6 +9,7 @@ import requests  # Importar requests
 import pydeck as pdk
 from streamlit_folium import st_folium
 import folium
+from geopy.geocoders import Nominatim  # Usaremos esto para obtener la dirección desde coordenadas
 
 # Cargar variables de entorno
 load_dotenv()
@@ -192,6 +193,9 @@ def ingresar_boleta():
             # Limpiar el estado de cantidades después de guardar
             st.session_state['cantidades'] = {}
 
+# Inicializar Geolocalizador
+geolocator = Nominatim(user_agent="StreamlitApp/1.0")
+
 # Función para obtener sugerencias de dirección
 def obtener_sugerencias_direccion(direccion):
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
@@ -206,7 +210,7 @@ def obtener_sugerencias_direccion(direccion):
         st.error(f"Error al conectarse a la API: {e}")
     return []
 
-# Función para obtener coordenadas específicas (por si se usa fuera del flujo actual)
+# Función para obtener coordenadas específicas (opcional)
 def obtener_coordenadas(direccion):
     # Extrae las coordenadas de una dirección usando la API de Nominatim.
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
@@ -222,11 +226,22 @@ def obtener_coordenadas(direccion):
         st.error(f"Error al conectarse a la API: {e}")
     return None, None
 
+# Función para obtener la dirección desde coordenadas
+def obtener_direccion_desde_coordenadas(lat, lon):
+    # Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud).
+    try:
+        location = geolocator.reverse((lat, lon), language='es')
+        return location.address if location else "Dirección no encontrada"
+    except Exception as e:
+        st.error(f"Error al obtener dirección desde coordenadas: {e}")
+        return "Dirección no encontrada"
+
 # Función para mostrar el mapa y permitir selección
 def mostrar_mapa(lat, lon):
     # Genera un mapa interactivo que permite seleccionar un punto.
     m = folium.Map(location=[lat, lon], zoom_start=15)
     folium.Marker([lat, lon], tooltip="Ubicación seleccionada").add_to(m)
+    # Habilitar interacción con el mapa y retornar interacción
     return st_folium(m, width=700, height=500)
 
 # Función principal para ingresar sucursal
@@ -258,6 +273,7 @@ def ingresar_sucursal():
             if direccion_seleccionada == sug["display_name"]:
                 lat = float(sug["lat"])
                 lon = float(sug["lon"])
+                direccion = direccion_seleccionada  # Actualizar campo de dirección con la sugerencia elegida
                 break
 
     # Mostrar mapa dinámico basado en la selección o por defecto
@@ -267,7 +283,10 @@ def ingresar_sucursal():
         if seleccion_usuario:
             lat = seleccion_usuario["lat"]
             lon = seleccion_usuario["lng"]
+            # Actualizar la dirección con base en las nuevas coordenadas
+            direccion = obtener_direccion_desde_coordenadas(lat, lon)
         st.write(f"**Ubicación detectada:** Latitud {lat}, Longitud {lon}")
+        st.write(f"**Dirección detectada:** {direccion}")
 
     # Otros campos opcionales
     col1, col2 = st.columns(2)
@@ -290,7 +309,7 @@ def ingresar_sucursal():
         # Crear el diccionario de datos para la sucursal
         sucursal = {
             "nombre": nombre_sucursal,
-            "direccion": direccion_seleccionada,
+            "direccion": direccion,  # Usará la dirección actualizada
             "coordenadas": {
                 "lat": lat,
                 "lon": lon
@@ -302,7 +321,7 @@ def ingresar_sucursal():
         # Guardar en Firestore
         db.collection('sucursales').add(sucursal)
         st.success("Sucursal ingresada correctamente.")
-        
+
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
