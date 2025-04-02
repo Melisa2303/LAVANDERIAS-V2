@@ -212,7 +212,7 @@ def obtener_sugerencias_direccion(direccion):
 
 # Función para obtener coordenadas específicas (opcional)
 def obtener_coordenadas(direccion):
-    """Extrae las coordenadas de una dirección usando la API de Nominatim."""
+    # Extrae las coordenadas de una dirección usando la API de Nominatim.
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
     headers = {"User-Agent": "StreamlitApp/1.0"}
     try:
@@ -228,7 +228,7 @@ def obtener_coordenadas(direccion):
 
 # Función para obtener la dirección desde coordenadas
 def obtener_direccion_desde_coordenadas(lat, lon):
-    """Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud)."""
+    # Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud).
     try:
         location = geolocator.reverse((lat, lon), language="es")
         return location.address if location else "Dirección no encontrada"
@@ -237,10 +237,17 @@ def obtener_direccion_desde_coordenadas(lat, lon):
         return "Dirección no encontrada"
 
 # Función para mostrar el mapa y permitir selección
-def mostrar_mapa(lat, lon):
-    """Genera un mapa interactivo con un marcador dinámico."""
+def mostrar_mapa(lat, lon, puntos=[]):
+    # Genera un mapa interactivo con un marcador dinámico.
     m = folium.Map(location=[lat, lon], zoom_start=15)
-    folium.Marker([lat, lon], tooltip="Ubicación seleccionada").add_to(m)
+    
+    # Agregar marcador inicial o marcadores dinámicos
+    if puntos:
+        for punto in puntos:
+            folium.Marker([punto["lat"], punto["lon"]], tooltip="Punto seleccionado").add_to(m)
+    else:
+        folium.Marker([lat, lon], tooltip="Ubicación inicial").add_to(m)
+
     mapa_interactivo = st_folium(m, width=700, height=500)
     return mapa_interactivo
 
@@ -269,7 +276,9 @@ def ingresar_sucursal():
     )
 
     # Coordenadas dinámicas basadas en la dirección seleccionada
-    lat, lon = None, None
+    lat, lon = -12.046374, -77.042793  # Coordenadas por defecto (Lima, Perú)
+    puntos_seleccionados = []  # Lista de marcadores dinámicos en el mapa
+
     if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
         for sug in sugerencias:
             if direccion_seleccionada == sug["display_name"]:
@@ -279,14 +288,15 @@ def ingresar_sucursal():
                 break
 
     # Mostrar mapa dinámico basado en la selección o por defecto
-    if lat and lon:
-        mapa = mostrar_mapa(lat, lon)
-        seleccion_usuario = mapa.get("last_clicked")  # Coordenadas del último clic en el mapa
-        if seleccion_usuario:
-            lat = seleccion_usuario["lat"]
-            lon = seleccion_usuario["lng"]
-            direccion = obtener_direccion_desde_coordenadas(lat, lon)  # Actualizar dirección final
-        st.write(f"**Ubicación detectada:** Latitud {lat}, Longitud {lon}")
+    mapa = mostrar_mapa(lat, lon, puntos=puntos_seleccionados)
+    seleccion_usuario = mapa.get("last_clicked")  # Coordenadas del último clic en el mapa
+    if seleccion_usuario:
+        lat = seleccion_usuario["lat"]
+        lon = seleccion_usuario["lng"]
+        direccion = obtener_direccion_desde_coordenadas(lat, lon)  # Actualizar dirección final
+        puntos_seleccionados.append({"lat": lat, "lon": lon})  # Agregar marcador dinámico
+        # Recargar el mapa con el nuevo punto seleccionado
+        mapa = mostrar_mapa(lat, lon, puntos=puntos_seleccionados)
 
     # Mostrar la dirección final estilizada
     st.markdown(f"""
@@ -329,68 +339,6 @@ def ingresar_sucursal():
         # Guardar en Firestore
         db.collection("sucursales").add(sucursal)
         st.success("Sucursal ingresada correctamente.")
-
-def solicitar_recogida():
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
-    with col2:
-        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("🛒 Solicitar Recogida")
-    
-    tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
-    
-    if tipo_solicitud == "Sucursal":
-        sucursales = obtener_sucursales()
-        nombres_sucursales = [sucursal["nombre"] for sucursal in sucursales]
-        nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
-        
-        sucursal_seleccionada = next((sucursal for sucursal in sucursales if sucursal["nombre"] == nombre_sucursal), None)
-        if sucursal_seleccionada:
-            direccion = sucursal_seleccionada["direccion"]
-            st.write(f"Dirección: {direccion}")
-        
-        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
-        
-        if st.button("💾 Solicitar Recogida"):
-            fecha_entrega = fecha_recojo + timedelta(days=3)
-            solicitud = {
-                "tipo_solicitud": tipo_solicitud,
-                "sucursal": nombre_sucursal,
-                "direccion": direccion,
-                "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
-                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
-            }
-            db.collection('recogidas').add(solicitud)
-            st.success("Recogida solicitada correctamente.")
-
-    elif tipo_solicitud == "Cliente Delivery":
-        nombre_cliente = st.text_input("Nombre del Cliente")
-        telefono = st.text_input("Teléfono")
-        direccion = st.text_input("Dirección")
-        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
-        
-        if st.button("💾 Solicitar Recogida"):
-            # Validaciones
-            if not re.match(r'^\d{9}$', telefono):
-                st.error("El número de teléfono debe tener exactamente 9 dígitos.")
-                return
-            
-            if not verificar_direccion(direccion):
-                st.error("La dirección no es válida. Por favor, ingrese una dirección existente.")
-                return
-            
-            fecha_entrega = fecha_recojo + timedelta(days=3)
-            solicitud = {
-                "tipo_solicitud": tipo_solicitud,
-                "nombre_cliente": nombre_cliente,
-                "telefono": telefono,
-                "direccion": direccion,
-                "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
-                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
-            }
-            db.collection('recogidas').add(solicitud)
-            st.success("Recogida solicitada correctamente.")
 
 def datos_recojo():
     col1, col2 = st.columns([1, 3])
