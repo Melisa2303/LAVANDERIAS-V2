@@ -4,3 +4,5 @@ googlemaps
 python-dotenv
 streamlit-folium
 geopy
+folium
+requests
