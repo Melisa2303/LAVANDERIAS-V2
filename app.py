@@ -212,7 +212,7 @@ def obtener_sugerencias_direccion(direccion):
 
 # Función para obtener coordenadas específicas (opcional)
 def obtener_coordenadas(direccion):
-    # Extrae las coordenadas de una dirección usando la API de Nominatim.
+    """Extrae las coordenadas de una dirección usando la API de Nominatim."""
     url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
     headers = {"User-Agent": "StreamlitApp/1.0"}
     try:
@@ -228,9 +228,9 @@ def obtener_coordenadas(direccion):
 
 # Función para obtener la dirección desde coordenadas
 def obtener_direccion_desde_coordenadas(lat, lon):
-    # Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud).
+    """Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud)."""
     try:
-        location = geolocator.reverse((lat, lon), language='es')
+        location = geolocator.reverse((lat, lon), language="es")
         return location.address if location else "Dirección no encontrada"
     except Exception as e:
         st.error(f"Error al obtener dirección desde coordenadas: {e}")
@@ -238,11 +238,11 @@ def obtener_direccion_desde_coordenadas(lat, lon):
 
 # Función para mostrar el mapa y permitir selección
 def mostrar_mapa(lat, lon):
-    # Genera un mapa interactivo que permite seleccionar un punto.
+    """Genera un mapa interactivo con un marcador dinámico."""
     m = folium.Map(location=[lat, lon], zoom_start=15)
     folium.Marker([lat, lon], tooltip="Ubicación seleccionada").add_to(m)
-    # Habilitar interacción con el mapa y retornar interacción
-    return st_folium(m, width=700, height=500)
+    mapa_interactivo = st_folium(m, width=700, height=500)
+    return mapa_interactivo
 
 # Función principal para ingresar sucursal
 def ingresar_sucursal():
@@ -264,7 +264,9 @@ def ingresar_sucursal():
         opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias]
 
     # Desplegable para seleccionar dirección
-    direccion_seleccionada = st.selectbox("Sugerencias de Direcciones:", opciones_desplegable if sugerencias else ["No hay sugerencias"])
+    direccion_seleccionada = st.selectbox(
+        "Sugerencias de Direcciones:", opciones_desplegable if sugerencias else ["No hay sugerencias"]
+    )
 
     # Coordenadas dinámicas basadas en la dirección seleccionada
     lat, lon = None, None
@@ -279,14 +281,20 @@ def ingresar_sucursal():
     # Mostrar mapa dinámico basado en la selección o por defecto
     if lat and lon:
         mapa = mostrar_mapa(lat, lon)
-        seleccion_usuario = mapa["last_clicked"]  # Coordenadas del último punto clickeado en el mapa
+        seleccion_usuario = mapa.get("last_clicked")  # Coordenadas del último clic en el mapa
         if seleccion_usuario:
             lat = seleccion_usuario["lat"]
             lon = seleccion_usuario["lng"]
-            # Actualizar la dirección con base en las nuevas coordenadas
-            direccion = obtener_direccion_desde_coordenadas(lat, lon)
+            direccion = obtener_direccion_desde_coordenadas(lat, lon)  # Actualizar dirección final
         st.write(f"**Ubicación detectada:** Latitud {lat}, Longitud {lon}")
-        st.write(f"**Dirección detectada:** {direccion}")
+
+    # Mostrar la dirección final estilizada
+    st.markdown(f"""
+        <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
+            <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
+            <p style='color: #555; font-size: 16px;'>{direccion}</p>
+        </div>
+    """, unsafe_allow_html=True)
 
     # Otros campos opcionales
     col1, col2 = st.columns(2)
@@ -298,7 +306,7 @@ def ingresar_sucursal():
     # Botón para guardar datos
     if st.button("💾 Ingresar Sucursal"):
         # Validaciones
-        if telefono and not re.match(r'^\d{9}$', telefono):
+        if telefono and not re.match(r"^\d{9}$", telefono):
             st.error("El número de teléfono debe tener exactamente 9 dígitos.")
             return
 
@@ -319,7 +327,7 @@ def ingresar_sucursal():
         }
 
         # Guardar en Firestore
-        db.collection('sucursales').add(sucursal)
+        db.collection("sucursales").add(sucursal)
         st.success("Sucursal ingresada correctamente.")
 
 def solicitar_recogida():
