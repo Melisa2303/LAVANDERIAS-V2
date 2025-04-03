@@ -129,10 +129,12 @@ def ingresar_boleta():
     if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
         st.session_state['cantidades'][articulo_seleccionado] = 1
 
+    # Mostrar los artículos seleccionados dinámicamente con opción de eliminar
     if st.session_state['cantidades']:
         st.markdown("<h4>Artículos Seleccionados</h4>", unsafe_allow_html=True)
+        articulos_a_eliminar = []
         for articulo, cantidad in st.session_state['cantidades'].items():
-            col1, col2 = st.columns([2, 1])
+            col1, col2, col3 = st.columns([2, 1, 0.3])
             with col1:
                 st.markdown(f"<b>{articulo}</b>", unsafe_allow_html=True)
             with col2:
@@ -143,6 +145,13 @@ def ingresar_boleta():
                     key=f"cantidad_{articulo}"
                 )
                 st.session_state['cantidades'][articulo] = nueva_cantidad
+            with col3:
+                if st.button("🗑️", key=f"eliminar_{articulo}"):
+                    articulos_a_eliminar.append(articulo)
+
+        # Eliminar los artículos seleccionados para borrar
+        for articulo in articulos_a_eliminar:
+            del st.session_state['cantidades'][articulo]
 
     # Selector de fecha
     fecha_registro = st.date_input("Fecha de Registro", value=datetime.now())
@@ -190,7 +199,7 @@ def ingresar_boleta():
                 "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
             }
 
-            db.collection('boletas').add(boleta)  # Comenta o descomenta según pruebas
+            db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
 
             # Limpiar el estado de cantidades después de guardar
