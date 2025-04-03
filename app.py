@@ -115,9 +115,11 @@ def ingresar_boleta():
 
     monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
 
+    nombres_sucursales = [sucursal['nombre'] for sucursal in sucursales]  # Extraer solo los nombres
+
     tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
     if "Sucursal" in tipo_servicio:
-        sucursal = st.selectbox("Sucursal", sucursales)
+        sucursal_seleccionada = st.selectbox("Sucursal", nombres_sucursales)
     else:
         sucursal = None
 
