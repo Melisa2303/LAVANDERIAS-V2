@@ -86,9 +86,9 @@ def login():
             st.session_state['usuario_actual'] = usuario
             st.session_state['logged_in'] = True
             if usuario == "administrador":
-                st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+                st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Ruta", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
             elif usuario == "conductor":
-                st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+                st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Ruta"]
             elif usuario == "sucursal":
                 st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
         else:
@@ -482,14 +482,48 @@ def solicitar_recogida():
             db.collection('recogidas').add(solicitud)
             st.success(f"Recogida solicitada correctamente. La entrega se ha agendado para {fecha_entrega.strftime('%Y-%m-%d')}.")
 
-def datos_recojo():
+def datos_ruta():
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("Datos de Recojo")
-    # Implementar funcionalidad
+    st.title("📋 Datos de Ruta")
+
+    # Selección de fecha para el filtro
+    fecha_filtrada = st.date_input("Seleccionar Fecha", min_value=datetime.now().date())
+
+    # Leer datos de la base de datos 'recogidas'
+    recojos_ref = db.collection('recogidas')  # Asume que esta es la colección donde se guardan las solicitudes
+    docs = recojos_ref.stream()
+
+    # Procesar datos para construir la tabla
+    datos = []
+    for doc in docs:
+        solicitud = doc.to_dict()
+
+        # Verificar si es un recojo o una entrega y si corresponde a la fecha filtrada
+        if solicitud.get("fecha_recojo") == fecha_filtrada.strftime("%Y-%m-%d"):
+            datos.append({
+                "Nombre": solicitud.get("nombre_cliente", solicitud.get("sucursal", "N/A")),
+                "Teléfono": solicitud.get("telefono", "N/A"),
+                "Dirección": solicitud.get("direccion", "N/A"),
+                "Tipo": "Recojo"
+            })
+        elif solicitud.get("fecha_entrega") == fecha_filtrada.strftime("%Y-%m-%d"):
+            datos.append({
+                "Nombre": solicitud.get("nombre_cliente", solicitud.get("sucursal", "N/A")),
+                "Teléfono": solicitud.get("telefono", "N/A"),
+                "Dirección": solicitud.get("direccion", "N/A"),
+                "Tipo": "Entrega"
+            })
+
+    # Mostrar la tabla si hay datos filtrados
+    if datos:
+        st.write(f"📅 Datos para el día: {fecha_filtrada.strftime('%Y-%m-%d')}")
+        st.table(datos)  # Muestra la tabla con los datos organizados
+    else:
+        st.info("No hay datos de recojo o entrega para la fecha seleccionada.")
 
 def datos_boletas():
     col1, col2 = st.columns([1, 3])
@@ -533,9 +567,9 @@ else:
     usuario = st.session_state['usuario_actual']
     if not st.session_state['menu']:
         if usuario == "administrador":
-            st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Recojo", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
+            st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Ruta", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
         elif usuario == "conductor":
-            st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Recojo"]
+            st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Ruta"]
         elif usuario == "sucursal":
             st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
 
@@ -552,8 +586,8 @@ else:
         ingresar_sucursal()
     elif choice == "Solicitar Recogida":
         solicitar_recogida()
-    elif choice == "Datos de Recojo":
-        datos_recojo()
+    elif choice == "Datos de Ruta":
+        datos_ruta()
     elif choice == "Datos de Boletas":
         datos_boletas()
     elif choice == "Ver Ruta Optimizada":
