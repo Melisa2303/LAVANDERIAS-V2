@@ -381,9 +381,9 @@ def solicitar_recogida():
         nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
 
         sucursal_seleccionada = next((sucursal for sucursal in sucursales if sucursal["nombre"] == nombre_sucursal), None)
-        if sucursal_seleccionada and 'coordenadas' in sucursal_seleccionada:
-            lat = sucursal_seleccionada["coordenadas"].get("lat")  # Accede correctamente a latitud
-            lon = sucursal_seleccionada["coordenadas"].get("lon")  # Accede correctamente a longitud
+        if sucursal_seleccionada and "coordenadas" in sucursal_seleccionada:
+            lat = sucursal_seleccionada["coordenadas"].get("lat")
+            lon = sucursal_seleccionada["coordenadas"].get("lon")
             direccion = sucursal_seleccionada["direccion"]
             if lat is None or lon is None:
                 st.error("Las coordenadas de esta sucursal están incompletas.")
