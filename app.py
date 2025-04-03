@@ -531,8 +531,71 @@ def datos_boletas():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("Datos de Boletas")
-    # Implementar funcionalidad
+    st.title("📋 Datos de Boletas")
+
+    # Filtro por tipo de servicio
+    tipo_servicio = st.radio("Filtrar por Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
+
+    # Filtro por sucursal (solo si se selecciona "Sucursal" en el filtro de tipo de servicio)
+    nombre_sucursal = None
+    if tipo_servicio == "Sucursal":
+        sucursales = obtener_sucursales()  # Asume que esta función obtiene todas las sucursales con nombres
+        nombres_sucursales = [sucursal["nombre"] for sucursal in sucursales]
+        nombre_sucursal = st.selectbox("Seleccionar Sucursal", ["Todas"] + nombres_sucursales)
+
+    # Filtro por rango de fechas
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_inicio = st.date_input("Fecha de Inicio")
+    with col2:
+        fecha_fin = st.date_input("Fecha de Fin")
+
+    # Leer datos de boletas desde Firestore
+    boletas_ref = db.collection('boletas')  # Asume que esta es la colección donde se guardan las boletas
+    docs = boletas_ref.stream()
+
+    # Procesar datos para aplicar los filtros
+    datos = []
+    for doc in docs:
+        boleta = doc.to_dict()
+        fecha_boleta = datetime.strptime(boleta.get("fecha_registro", "1970-01-01"), "%Y-%m-%d").date()
+        agregar = True
+
+        # Aplicar filtro de rango de fechas
+        if fecha_inicio and fecha_fin:
+            if not (fecha_inicio <= fecha_boleta <= fecha_fin):
+                agregar = False
+
+        # Aplicar filtro de tipo de servicio
+        if tipo_servicio == "Sucursal" and agregar:
+            if nombre_sucursal and nombre_sucursal != "Todas" and boleta.get("sucursal") != nombre_sucursal:
+                agregar = False
+        elif tipo_servicio == "Delivery" and agregar:
+            if boleta.get("tipo_servicio") != "🚚 Delivery":
+                agregar = False
+
+        # Agregar datos si cumplen con los filtros
+        if agregar:
+            # Preparar artículos lavados como una cadena de texto (artículo - cantidad)
+            articulos = boleta.get("articulos", {})  # Espera un diccionario con artículos y cantidades
+            articulos_lavados = ", ".join([f"{articulo} - {cantidad}" for articulo, cantidad in articulos.items()])
+
+            datos.append({
+                "Número de Boleta": boleta.get("numero_boleta", "N/A"),
+                "Cliente/Sucursal": boleta.get("nombre_cliente", boleta.get("sucursal", "N/A")),
+                "Teléfono": boleta.get("telefono", "N/A"),
+                "Tipo de Servicio": boleta.get("tipo_servicio", "N/A"),
+                "Fecha de Registro": boleta.get("fecha_registro", "N/A"),
+                "Monto": f"S/. {boleta.get('monto', 0):.2f}",
+                "Artículos Lavados": articulos_lavados  # Nueva columna con los artículos lavados y sus cantidades
+            })
+
+    # Mostrar tabla con los datos filtrados
+    if datos:
+        st.write("📋 Resultados Filtrados:")
+        st.table(datos)  # Mostrar tabla con datos filtrados
+    else:
+        st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
 def ver_ruta_optimizada():
     col1, col2 = st.columns([1, 3])
