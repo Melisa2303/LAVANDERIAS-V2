@@ -236,17 +236,6 @@ def obtener_direccion_desde_coordenadas(lat, lon):
         st.error(f"Error al obtener dirección desde coordenadas: {e}")
         return "Dirección no encontrada"
 
-# Función para mostrar el mapa y actualizar dinámicamente el marcador
-def actualizar_mapa(lat, lon):
-    # Genera un mapa interactivo que siempre se actualiza en el mismo lugar.
-    m = folium.Map(location=[lat, lon], zoom_start=15)
-
-    # Agregar marcador dinámico basado en las coordenadas actuales
-    folium.Marker([lat, lon], tooltip="Punto seleccionado").add_to(m)
-
-    # Retorna el mapa interactivo que será actualizado
-    return st_folium(m, width=700, height=500)
-
 # Función principal para ingresar sucursal
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
@@ -256,14 +245,20 @@ def ingresar_sucursal():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📝 Ingresar Sucursal")
 
+    # Variables persistentes para coordenadas y dirección
+    if "lat" not in st.session_state:
+        st.session_state.lat, st.session_state.lon = -12.046374, -77.042793  # Coordenadas por defecto (Lima, Perú)
+    if "direccion" not in st.session_state:
+        st.session_state.direccion = "Av. Principal, Lima, Perú"
+
     # Campos de entrada
     nombre_sucursal = st.text_input("Nombre de la Sucursal")
-    direccion = st.text_input("Dirección", key="direccion")
+    direccion_input = st.text_input("Dirección", value=st.session_state.direccion)
 
     # Buscar sugerencias de direcciones mientras se escribe
     sugerencias = []
-    if direccion:
-        sugerencias = obtener_sugerencias_direccion(direccion)
+    if direccion_input:
+        sugerencias = obtener_sugerencias_direccion(direccion_input)
         opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias]
 
     # Desplegable para seleccionar dirección
@@ -272,31 +267,33 @@ def ingresar_sucursal():
     )
 
     # Coordenadas dinámicas basadas en la dirección seleccionada o clics en el mapa
-    lat, lon = -12.046374, -77.042793  # Coordenadas por defecto (Lima, Perú)
-
     if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
         for sug in sugerencias:
             if direccion_seleccionada == sug["display_name"]:
-                lat = float(sug["lat"])
-                lon = float(sug["lon"])
-                direccion = direccion_seleccionada  # Actualizar campo de dirección con la sugerencia elegida
+                st.session_state.lat = float(sug["lat"])
+                st.session_state.lon = float(sug["lon"])
+                st.session_state.direccion = direccion_seleccionada  # Actualizar campo de dirección con la sugerencia elegida
                 break
 
-    # Mostrar mapa dinámico basado en coordenadas actuales
-    mapa = actualizar_mapa(lat, lon)
+    # Renderizar el mapa con coordenadas actuales
+    m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
+    folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Punto seleccionado").add_to(m)
+    mapa = st_folium(m, width=700, height=500)
+
+    # Actualizar coordenadas y dirección en función de los clics en el mapa
     seleccion_usuario = mapa.get("last_clicked")  # Coordenadas del último clic en el mapa
     if seleccion_usuario:
-        lat = seleccion_usuario["lat"]
-        lon = seleccion_usuario["lng"]
-        direccion = obtener_direccion_desde_coordenadas(lat, lon)  # Actualizar dirección final
-        # Actualizar el mapa nuevamente en el mismo lugar
-        mapa = actualizar_mapa(lat, lon)
+        st.session_state.lat = seleccion_usuario["lat"]
+        st.session_state.lon = seleccion_usuario["lng"]
+        st.session_state.direccion = obtener_direccion_desde_coordenadas(
+            st.session_state.lat, st.session_state.lon
+        )  # Actualizar dirección final
 
     # Mostrar la dirección final estilizada
     st.markdown(f"""
         <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
             <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-            <p style='color: #555; font-size: 16px;'>{direccion}</p>
+            <p style='color: #555; font-size: 16px;'>{st.session_state.direccion}</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -314,17 +311,17 @@ def ingresar_sucursal():
             st.error("El número de teléfono debe tener exactamente 9 dígitos.")
             return
 
-        if not direccion or not lat or not lon:
+        if not st.session_state.direccion or not st.session_state.lat or not st.session_state.lon:
             st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
             return
 
         # Crear el diccionario de datos para la sucursal
         sucursal = {
             "nombre": nombre_sucursal,
-            "direccion": direccion,  # Usará la dirección actualizada
+            "direccion": st.session_state.direccion,  # Usará la dirección actualizada
             "coordenadas": {
-                "lat": lat,
-                "lon": lon
+                "lat": st.session_state.lat,
+                "lon": st.session_state.lon
             },
             "encargado": encargado if encargado else "",
             "telefono": telefono if telefono else "",
