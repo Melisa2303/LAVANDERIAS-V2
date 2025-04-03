@@ -87,7 +87,6 @@ def login():
         else:
             st.error("Usuario o contraseña incorrectos")
 
-# Función para ingresar boleta
 def ingresar_boleta():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -104,56 +103,52 @@ def ingresar_boleta():
     if 'cantidades' not in st.session_state:
         st.session_state['cantidades'] = {}
 
-    # Formulario de ingreso de boleta
+    # Campos de entrada principales
+    numero_boleta = st.text_input("Número de Boleta", max_chars=5)
+    nombre_cliente = st.text_input("Nombre del Cliente")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        dni = st.text_input("Número de DNI (Opcional)", max_chars=8)
+    with col2:
+        telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
+
+    monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
+
+    tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
+    if "Sucursal" in tipo_servicio:
+        sucursal = st.selectbox("Sucursal", sucursales)
+    else:
+        sucursal = None
+
+    # Sección de artículos: dinámico e inmediato
+    st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
+    articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0)
+
+    # Manejar selección de artículos y cantidades dinámicamente
+    if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
+        st.session_state['cantidades'][articulo_seleccionado] = 1
+
+    if st.session_state['cantidades']:
+        st.markdown("<h4>Artículos Seleccionados</h4>", unsafe_allow_html=True)
+        for articulo, cantidad in st.session_state['cantidades'].items():
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.markdown(f"<b>{articulo}</b>", unsafe_allow_html=True)
+            with col2:
+                nueva_cantidad = st.number_input(
+                    f"Cantidad de {articulo}",
+                    min_value=1,
+                    value=cantidad,
+                    key=f"cantidad_{articulo}"
+                )
+                st.session_state['cantidades'][articulo] = nueva_cantidad
+
+    # Selector de fecha
+    fecha_registro = st.date_input("Fecha de Registro", value=datetime.now())
+
+    # Botón para guardar boleta dentro de un formulario
     with st.form(key='form_boleta'):
-        col1, col2 = st.columns(2)
-        with col1:
-            numero_boleta = st.text_input("Número de Boleta", max_chars=5)
-        with col2:
-            nombre_cliente = st.text_input("Nombre del Cliente")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            dni = st.text_input("Número de DNI (Opcional)", max_chars=8)
-        with col2:
-            telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
-
-        monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
-
-        tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
-
-        if "Sucursal" in tipo_servicio:
-            sucursal = st.selectbox("Sucursal", sucursales)
-        else:
-            sucursal = None
-
-        # Agregar artículos de forma dinámica
-        st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
-        articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0)
-
-        # Manejar selección y actualización de cantidades automáticamente
-        if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
-            st.session_state['cantidades'][articulo_seleccionado] = 1
-
-        # Mostrar los artículos seleccionados dinámicamente
-        if st.session_state['cantidades']:
-            for articulo, cantidad in st.session_state['cantidades'].items():
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.markdown(f"<b>{articulo}</b>", unsafe_allow_html=True)
-                with col2:
-                    nueva_cantidad = st.number_input(
-                        f"Cantidad de {articulo}",
-                        min_value=1,
-                        value=cantidad,
-                        key=f"cantidad_{articulo}"
-                    )
-                    st.session_state['cantidades'][articulo] = nueva_cantidad
-
-        # Selector de fecha
-        fecha_registro = st.date_input("Fecha de Registro", value=datetime.now())
-
-        # Botón para guardar
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
 
         if submit_button:
