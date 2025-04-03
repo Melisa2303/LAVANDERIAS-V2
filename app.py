@@ -371,11 +371,17 @@ def solicitar_recogida():
         nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
 
         sucursal_seleccionada = next((sucursal for sucursal in sucursales if sucursal["nombre"] == nombre_sucursal), None)
-        if sucursal_seleccionada:
+        if sucursal_seleccionada and 'coordenadas' in sucursal_seleccionada:
+            lat = sucursal_seleccionada["coordenadas"].get("lat")  # Accede correctamente a latitud
+            lon = sucursal_seleccionada["coordenadas"].get("lon")  # Accede correctamente a longitud
             direccion = sucursal_seleccionada["direccion"]
-            lat = sucursal_seleccionada["coordenadas"]["lat"]
-            lon = sucursal_seleccionada["coordenadas"]["lon"]
+            if lat is None or lon is None:
+                st.error("Las coordenadas de esta sucursal están incompletas.")
+                return
             st.write(f"Dirección: {direccion}")
+        else:
+            st.error("La sucursal seleccionada no tiene coordenadas registradas.")
+            return
 
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
 
