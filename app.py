@@ -129,7 +129,7 @@ def ingresar_boleta():
     if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
         st.session_state['cantidades'][articulo_seleccionado] = 1
 
-    # Mostrar los artículos seleccionados dinámicamente con opción de eliminar
+    # Manejar selección de artículos y cantidades dinámicamente con opción de eliminar
     if st.session_state['cantidades']:
         st.markdown("<h4>Artículos Seleccionados</h4>", unsafe_allow_html=True)
         articulos_a_eliminar = []
@@ -148,11 +148,15 @@ def ingresar_boleta():
             with col3:
                 if st.button("🗑️", key=f"eliminar_{articulo}"):
                     articulos_a_eliminar.append(articulo)
-                    st.experimental_rerun()  # Fuerza la recarga
+                    st.session_state['update'] = True  # Bandera para forzar cambios
 
         # Eliminar los artículos seleccionados para borrar
         for articulo in articulos_a_eliminar:
             del st.session_state['cantidades'][articulo]
+
+    # Si la bandera de actualización está activa, reiniciar después de la acción
+    if 'update' in st.session_state and st.session_state['update']:
+        st.session_state['update'] = False  # Reinicia la bandera después de actualizar
 
     # Selector de fecha
     fecha_registro = st.date_input("Fecha de Registro", value=datetime.now())
@@ -300,7 +304,11 @@ def ingresar_sucursal():
         st.session_state.lon = seleccion_usuario["lng"]
         st.session_state.direccion = obtener_direccion_desde_coordenadas(
             st.session_state.lat, st.session_state.lon
-        )  # Actualizar dirección
+        )
+        # Renderizar mapa inmediatamente después de cambiar las coordenadas
+        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
+        folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Punto seleccionado").add_to(m)
+        st_folium(m, width=700, height=500)
 
     # Mostrar la dirección final estilizada
     st.markdown(f"""
