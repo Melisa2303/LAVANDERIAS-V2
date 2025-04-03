@@ -87,6 +87,7 @@ def login():
         else:
             st.error("Usuario o contraseña incorrectos")
 
+# Función para ingresar boleta
 def ingresar_boleta():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -94,11 +95,11 @@ def ingresar_boleta():
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📝 Ingresar Boleta")
-    
+
     # Obtener datos necesarios
-    articulos = obtener_articulos()
-    sucursales = obtener_sucursales()
-    
+    articulos = obtener_articulos()  # Artículos lavados desde la base de datos
+    sucursales = obtener_sucursales()  # Sucursales disponibles
+
     # Inicializar o actualizar cantidades en st.session_state
     if 'cantidades' not in st.session_state:
         st.session_state['cantidades'] = {}
@@ -110,42 +111,49 @@ def ingresar_boleta():
             numero_boleta = st.text_input("Número de Boleta", max_chars=5)
         with col2:
             nombre_cliente = st.text_input("Nombre del Cliente")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             dni = st.text_input("Número de DNI (Opcional)", max_chars=8)
         with col2:
             telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
-        
+
         monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
-        
+
         tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
-        
+
         if "Sucursal" in tipo_servicio:
             sucursal = st.selectbox("Sucursal", sucursales)
         else:
             sucursal = None
-        
-        # Agregar sección de selección de artículos
-        st.subheader("Agregar Artículos")
+
+        # Agregar artículos de forma dinámica
+        st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
         articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0)
-        
+
+        # Manejar selección y actualización de cantidades automáticamente
         if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
             st.session_state['cantidades'][articulo_seleccionado] = 1
 
+        # Mostrar los artículos seleccionados dinámicamente
         if st.session_state['cantidades']:
-            st.markdown("<style>div[data-testid='stTable'] tbody tr th {text-align: left;}</style>", unsafe_allow_html=True)
-            st.write("### Artículos Seleccionados")
-            table_data = []
             for articulo, cantidad in st.session_state['cantidades'].items():
-                cantidad_input = st.number_input(f"Cantidad de {articulo}", min_value=1, value=cantidad, key=f"cantidad_{articulo}")
-                st.session_state['cantidades'][articulo] = cantidad_input
-                table_data.append({"Cantidad": cantidad_input, "Artículo": articulo})
-            st.table(table_data)
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.markdown(f"<b>{articulo}</b>", unsafe_allow_html=True)
+                with col2:
+                    nueva_cantidad = st.number_input(
+                        f"Cantidad de {articulo}",
+                        min_value=1,
+                        value=cantidad,
+                        key=f"cantidad_{articulo}"
+                    )
+                    st.session_state['cantidades'][articulo] = nueva_cantidad
 
         # Selector de fecha
         fecha_registro = st.date_input("Fecha de Registro", value=datetime.now())
 
+        # Botón para guardar
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
 
         if submit_button:
@@ -153,27 +161,27 @@ def ingresar_boleta():
             if not re.match(r'^\d{4,5}$', numero_boleta):
                 st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
                 return
-            
+
             if not re.match(r'^[a-zA-Z\s]+$', nombre_cliente):
                 st.error("El nombre del cliente solo debe contener letras.")
                 return
-            
+
             if dni and not re.match(r'^\d{8}$', dni):
                 st.error("El número de DNI debe tener 8 dígitos.")
                 return
-            
+
             if telefono and not re.match(r'^\d{9}$', telefono):
                 st.error("El número de teléfono debe tener 9 dígitos.")
                 return
-            
+
             if not st.session_state['cantidades']:
                 st.error("Debe seleccionar al menos un artículo antes de ingresar la boleta.")
                 return
-            
+
             if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
                 st.error("Ya existe una boleta con este número en la misma sucursal o tipo de servicio.")
                 return
-            
+
             # Guardar los datos en Firestore
             boleta = {
                 "numero_boleta": numero_boleta,
@@ -183,13 +191,13 @@ def ingresar_boleta():
                 "monto": monto,
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
-                "articulos": st.session_state.get('cantidades', {}),
+                "articulos": st.session_state['cantidades'],
                 "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
             }
-            
+
             db.collection('boletas').add(boleta)  # Comenta o descomenta según pruebas
             st.success("Boleta ingresada correctamente.")
-            
+
             # Limpiar el estado de cantidades después de guardar
             st.session_state['cantidades'] = {}
 
