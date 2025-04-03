@@ -354,6 +354,7 @@ def ingresar_sucursal():
         db.collection("sucursales").add(sucursal)
         st.success("Sucursal ingresada correctamente.")
 
+# Función principal para solicitar recogida
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -361,60 +362,112 @@ def solicitar_recogida():
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("🛒 Solicitar Recogida")
-    
+
     tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
-    
+
     if tipo_solicitud == "Sucursal":
-        sucursales = obtener_sucursales()
+        sucursales = obtener_sucursales()  # Supongo que esta función retorna una lista de diccionarios
         nombres_sucursales = [sucursal["nombre"] for sucursal in sucursales]
         nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
-        
+
         sucursal_seleccionada = next((sucursal for sucursal in sucursales if sucursal["nombre"] == nombre_sucursal), None)
         if sucursal_seleccionada:
             direccion = sucursal_seleccionada["direccion"]
+            lat = sucursal_seleccionada["coordenadas"]["lat"]
+            lon = sucursal_seleccionada["coordenadas"]["lon"]
             st.write(f"Dirección: {direccion}")
-        
+
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
-        
+
         if st.button("💾 Solicitar Recogida"):
             fecha_entrega = fecha_recojo + timedelta(days=3)
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "sucursal": nombre_sucursal,
                 "direccion": direccion,
+                "coordenadas": {"lat": lat, "lon": lon},
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
             }
             db.collection('recogidas').add(solicitud)
-            st.success("Recogida solicitada correctamente.")
+            st.success(f"Recogida solicitada correctamente. La entrega se ha agendado para {fecha_entrega.strftime('%Y-%m-%d')}.")
 
     elif tipo_solicitud == "Cliente Delivery":
+        # Inicializar sesión para las coordenadas
+        if "lat" not in st.session_state:
+            st.session_state.lat, st.session_state.lon = -16.409047, -71.537451  # Coordenadas de Arequipa, Perú
+        if "direccion" not in st.session_state:
+            st.session_state.direccion = "Arequipa, Perú"
+
         nombre_cliente = st.text_input("Nombre del Cliente")
-        telefono = st.text_input("Teléfono")
-        direccion = st.text_input("Dirección")
+        telefono = st.text_input("Teléfono", max_chars=9)
+
+        # Dirección del cliente con sugerencias
+        direccion_input = st.text_input("Dirección", value=st.session_state.direccion)
+
+        sugerencias = []
+        if direccion_input:
+            sugerencias = obtener_sugerencias_direccion(direccion_input)
+            opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias]
+
+        direccion_seleccionada = st.selectbox(
+            "Sugerencias de Direcciones:", opciones_desplegable if sugerencias else ["No hay sugerencias"]
+        )
+
+        if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
+            for sug in sugerencias:
+                if direccion_seleccionada == sug["display_name"]:
+                    st.session_state.lat = float(sug["lat"])
+                    st.session_state.lon = float(sug["lon"])
+                    st.session_state.direccion = direccion_seleccionada
+                    break
+
+        # Renderizar mapa basado en coordenadas actuales
+        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
+        folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Punto seleccionado").add_to(m)
+        mapa = st_folium(m, width=700, height=500)
+
+        # Actualizar coordenadas según el clic en el mapa
+        seleccion_usuario = mapa.get("last_clicked")
+        if seleccion_usuario:
+            st.session_state.lat = seleccion_usuario["lat"]
+            st.session_state.lon = seleccion_usuario["lng"]
+            st.session_state.direccion = obtener_direccion_desde_coordenadas(
+                st.session_state.lat, st.session_state.lon
+            )
+
+        # Mostrar dirección final estilizada
+        st.markdown(f"""
+            <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
+                <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
+                <p style='color: #555; font-size: 16px;'>{st.session_state.direccion}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
-        
+
+        # Botón para registrar solicitud
         if st.button("💾 Solicitar Recogida"):
             # Validaciones
             if not re.match(r'^\d{9}$', telefono):
                 st.error("El número de teléfono debe tener exactamente 9 dígitos.")
                 return
-            
-            if not verificar_direccion(direccion):
-                st.error("La dirección no es válida. Por favor, ingrese una dirección existente.")
-                return
-            
+
             fecha_entrega = fecha_recojo + timedelta(days=3)
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "nombre_cliente": nombre_cliente,
                 "telefono": telefono,
-                "direccion": direccion,
+                "direccion": st.session_state.direccion,
+                "coordenadas": {
+                    "lat": st.session_state.lat,
+                    "lon": st.session_state.lon
+                },
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
             }
             db.collection('recogidas').add(solicitud)
-            st.success("Recogida solicitada correctamente.")
+            st.success(f"Recogida solicitada correctamente. La entrega se ha agendado para {fecha_entrega.strftime('%Y-%m-%d')}.")
 
 def datos_recojo():
     col1, col2 = st.columns([1, 3])
