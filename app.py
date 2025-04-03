@@ -48,7 +48,17 @@ def obtener_articulos():
 def obtener_sucursales():
     sucursales_ref = db.collection('sucursales')
     docs = sucursales_ref.stream()
-    sucursales = [{"nombre": doc.to_dict().get('nombre', 'Nombre no disponible'), "direccion": doc.to_dict().get('direccion', 'Dirección no disponible')} for doc in docs]
+    sucursales = [
+        {
+            "nombre": doc.to_dict().get('nombre', 'Nombre no disponible'),
+            "direccion": doc.to_dict().get('direccion', 'Dirección no disponible'),
+            "coordenadas": {
+                "lat": doc.to_dict().get('coordenadas.lat', None),
+                "lon": doc.to_dict().get('coordenadas.lon', None)
+            }
+        }
+        for doc in docs
+    ]
     return sucursales
     
 # Verificar unicidad del número de boleta
