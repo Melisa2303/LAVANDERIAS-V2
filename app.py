@@ -52,10 +52,7 @@ def obtener_sucursales():
         {
             "nombre": doc.to_dict().get('nombre', 'Nombre no disponible'),
             "direccion": doc.to_dict().get('direccion', 'Dirección no disponible'),
-            "coordenadas": {
-                "lat": doc.to_dict().get('coordenadas.lat', None),
-                "lon": doc.to_dict().get('coordenadas.lon', None)
-            }
+            "coordenadas": doc.to_dict().get('coordenadas', {})  # Obtener todo el objeto coordenadas
         }
         for doc in docs
     ]
