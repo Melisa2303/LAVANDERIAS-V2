@@ -663,21 +663,29 @@ def ver_ruta_optimizada():
     else:
         st.error("No se pudo calcular la ruta optimizada. Por favor, verifica los datos.")
 
-# Calcular la ruta respetando calles
 def calcular_ruta_respetando_calles(puntos):
     api_key = "5b3ce3597851110001cf6248cf6ff2b70accf2d3eee345774426cde25c3bf8dcf3372529c468e27f"  # Coloca aquí tu API Key de OpenRouteService
     rutas_ordenadas = []
 
-    # Ruta inicial + intermedios
     for i in range(len(puntos) - 1):
+        # Formar la URL de la solicitud
         url = f"https://api.openrouteservice.org/v2/directions/driving-car?api_key={api_key}&start={puntos[i]['lon']},{puntos[i]['lat']}&end={puntos[i + 1]['lon']},{puntos[i + 1]['lat']}"
         response = requests.get(url)
+
         if response.status_code == 200:
+            # Obtener los datos de la respuesta
             data = response.json()
-            for coord in data["routes"][0]["geometry"]["coordinates"]:
-                rutas_ordenadas.append({"lat": coord[1], "lon": coord[0], "direccion": puntos[i]["direccion"]})
+            if "routes" in data:
+                for coord in data["routes"][0]["geometry"]["coordinates"]:
+                    rutas_ordenadas.append({"lat": coord[1], "lon": coord[0], "direccion": puntos[i]["direccion"]})
+            else:
+                st.error(f"No se encontraron rutas en la respuesta para {puntos[i]['direccion']} -> {puntos[i+1]['direccion']}")
+                print(data)  # Depuración adicional
+                return None
         else:
-            st.error(f"Error al obtener ruta entre {puntos[i]['direccion']} y {puntos[i + 1]['direccion']}")
+            # Manejo de errores específicos
+            st.error(f"Error al obtener ruta entre {puntos[i]['direccion']} y {puntos[i+1]['direccion']}. Código: {response.status_code}")
+            print(response.json())  # Mostrar el error completo en la consola para depuración
             return None
 
     return rutas_ordenadas
