@@ -649,7 +649,7 @@ def ver_ruta_optimizada():
             ).add_to(m)
 
         # Dibujar la ruta con flechas para indicar el sentido
-        coords = [(p["lat"], p["lon"]] for p in ruta_optimizada]
+        coords = [(p["lat"], p["lon"])] for p in ruta_optimizada]
         folium.PolyLine(coords, color="blue", weight=5).add_to(m)
         for j in range(len(coords) - 1):
             folium.Marker(
