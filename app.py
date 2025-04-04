@@ -599,7 +599,6 @@ def datos_boletas():
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
-# Pestaña Ver Ruta Optimizada
 def ver_ruta_optimizada():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -650,7 +649,7 @@ def ver_ruta_optimizada():
             ).add_to(m)
 
         # Dibujar la ruta con flechas para indicar el sentido
-        coords = [(p["lat"], p["lon"]) for p in ruta_optimizada]
+        coords = [(p["lat"], p["lon"]] for p in ruta_optimizada]
         folium.PolyLine(coords, color="blue", weight=5).add_to(m)
         for j in range(len(coords) - 1):
             folium.Marker(
@@ -663,12 +662,13 @@ def ver_ruta_optimizada():
     else:
         st.error("No se pudo calcular la ruta optimizada. Por favor, verifica los datos.")
 
+# Calcular la ruta respetando calles
 def calcular_ruta_respetando_calles(puntos):
     api_key = "5b3ce3597851110001cf6248cf6ff2b70accf2d3eee345774426cde25c3bf8dcf3372529c468e27f"  # Coloca aquí tu API Key de OpenRouteService
     rutas_ordenadas = []
 
     for i in range(len(puntos) - 1):
-        # Formar la URL de la solicitud
+        # Formar la URL de la solicitud (respetando lon, lat)
         url = f"https://api.openrouteservice.org/v2/directions/driving-car?api_key={api_key}&start={puntos[i]['lon']},{puntos[i]['lat']}&end={puntos[i + 1]['lon']},{puntos[i + 1]['lat']}"
         response = requests.get(url)
 
@@ -679,8 +679,7 @@ def calcular_ruta_respetando_calles(puntos):
                 for coord in data["routes"][0]["geometry"]["coordinates"]:
                     rutas_ordenadas.append({"lat": coord[1], "lon": coord[0], "direccion": puntos[i]["direccion"]})
             else:
-                st.error(f"No se encontraron rutas en la respuesta para {puntos[i]['direccion']} -> {puntos[i+1]['direccion']}")
-                print(data)  # Depuración adicional
+                st.error(f"No se encontraron rutas en la respuesta para {puntos[i]['direccion']} -> {puntos[i + 1]['direccion']}")
                 return None
         else:
             # Manejo de errores específicos
