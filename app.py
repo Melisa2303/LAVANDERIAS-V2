@@ -599,6 +599,7 @@ def datos_boletas():
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
+# Pestaña Ver Ruta Optimizada
 def ver_ruta_optimizada():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -625,82 +626,62 @@ def ver_ruta_optimizada():
                 "direccion": solicitud["direccion"]
             })
 
-    # Agregar puntos fijos: inicio y fin del día
+    # Agregar puntos fijos (Inicio y Fin)
     puntos_fijos = [
         {"lat": -16.4141434959913, "lon": -71.51839574233342, "direccion": "Cochera"},
         {"lat": -16.398605226701633, "lon": -71.4376266111019, "direccion": "Planta"},
         {"lat": -16.43564123078658, "lon": -71.52216190495753, "direccion": "Sucursal Av Dolores"}
     ]
-    ruta_completa = puntos_fijos[:3] + puntos_dia + puntos_fijos[::-1][:3]  # Orden inicial y reverso
 
-    # Calcular la ruta optimizada con OR-Tools y OpenRouteService API
-    ruta_optimizada = calcular_ruta(ruta_completa)  # Función que implementa OR-Tools
+    # Rutas inicial y final con puntos fijos
+    ruta_completa = puntos_fijos[:3] + puntos_dia + puntos_fijos[::-1][:3]
 
-    # Mostrar mapa con la ruta optimizada
+    # Calcular la ruta optimizada
+    ruta_optimizada = calcular_ruta_respetando_calles(ruta_completa)
+
+    # Mostrar el mapa con la ruta optimizada
     if ruta_optimizada:
-        m = folium.Map(location=[-16.409047, -71.537451], zoom_start=13)  # Mapa centrado en Arequipa
+        m = folium.Map(location=[-16.409047, -71.537451], zoom_start=13)  # Centrar en Arequipa
         for i, punto in enumerate(ruta_optimizada):
             folium.Marker(
                 location=[punto["lat"], punto["lon"]],
                 tooltip=f"{i+1}. {punto['direccion']}",
                 icon=folium.Icon(color="blue", icon="info-sign")
             ).add_to(m)
-        folium.PolyLine(
-            [(p["lat"], p["lon"]) for p in ruta_optimizada], color="blue", weight=5
-        ).add_to(m)
+
+        # Dibujar la ruta con flechas para indicar el sentido
+        coords = [(p["lat"], p["lon"]) for p in ruta_optimizada]
+        folium.PolyLine(coords, color="blue", weight=5).add_to(m)
+        for j in range(len(coords) - 1):
+            folium.Marker(
+                location=[(coords[j][0] + coords[j + 1][0]) / 2,
+                          (coords[j][1] + coords[j + 1][1]) / 2],
+                icon=folium.DivIcon(html=f'<div style="font-size: 12px; color: green;">➡️</div>'),
+            ).add_to(m)
+
         st_folium(m, width=700, height=500)
     else:
         st.error("No se pudo calcular la ruta optimizada. Por favor, verifica los datos.")
 
-def calcular_ruta(puntos):
-    # Generar matriz de distancias usando OpenRouteService
-    matriz_distancia = generar_matriz_distancias(puntos)  # Llama a OpenRouteService API
-
-    # Configurar OR-Tools para resolver VRP
-    manager = pywrapcp.RoutingIndexManager(len(matriz_distancia), 1, 0)
-    routing = pywrapcp.RoutingModel(manager)
-
-    # Define la función de costo (distancias)
-    def distancia_callback(from_index, to_index):
-        from_node = manager.IndexToNode(from_index)
-        to_node = manager.IndexToNode(to_index)
-        return matriz_distancia[from_node][to_node]
-    transit_callback_index = routing.RegisterTransitCallback(distancia_callback)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-
-    # Resolver el problema
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.time_limit.seconds = 30
-    solution = routing.SolveWithParameters(search_parameters)
-
-    # Generar la ruta optimizada
-    if solution:
-        ruta = []
-        index = routing.Start(0)
-        while not routing.IsEnd(index):
-            ruta.append(puntos[manager.IndexToNode(index)])
-            index = solution.Value(routing.NextVar(index))
-        ruta.append(puntos[manager.IndexToNode(index)])  # Agregar último punto
-        return ruta
-    else:
-        return None
-
-def generar_matriz_distancias(puntos):
+# Calcular la ruta respetando calles
+def calcular_ruta_respetando_calles(puntos):
     api_key = "5b3ce3597851110001cf6248cf6ff2b70accf2d3eee345774426cde25c3bf8dcf3372529c468e27f"  # Coloca aquí tu API Key de OpenRouteService
-    coordenadas = [[p["lon"], p["lat"]] for p in puntos]
-    url = "https://api.openrouteservice.org/v2/matrix/driving-car"
-    headers = {"Authorization": api_key, "Content-Type": "application/json"}
-    body = {"locations": coordenadas, "metrics": ["distance"]}
+    rutas_ordenadas = []
 
-    # Hacer la solicitud a OpenRouteService
-    response = requests.post(url, json=body, headers=headers)
-    if response.status_code == 200:
-        matriz = response.json()["distances"]
-        return matriz
-    else:
-        st.error("Error al obtener la matriz de distancias desde OpenRouteService.")
-        return []
+    # Ruta inicial + intermedios
+    for i in range(len(puntos) - 1):
+        url = f"https://api.openrouteservice.org/v2/directions/driving-car?api_key={api_key}&start={puntos[i]['lon']},{puntos[i]['lat']}&end={puntos[i + 1]['lon']},{puntos[i + 1]['lat']}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            for coord in data["routes"][0]["geometry"]["coordinates"]:
+                rutas_ordenadas.append({"lat": coord[1], "lon": coord[0], "direccion": puntos[i]["direccion"]})
+        else:
+            st.error(f"Error al obtener ruta entre {puntos[i]['direccion']} y {puntos[i + 1]['direccion']}")
+            return None
 
+    return rutas_ordenadas
+    
 def seguimiento_vehiculo():
     col1, col2 = st.columns([1, 3])
     with col1:
