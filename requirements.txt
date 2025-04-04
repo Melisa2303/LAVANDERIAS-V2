@@ -6,3 +6,4 @@ streamlit-folium
 geopy
 folium
 requests
+ortools==9.6.2534
