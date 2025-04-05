@@ -185,11 +185,11 @@ def ingresar_boleta():
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{4,5}$', numero_boleta):
-                st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
+                st.error("El número de boleta es obligatorio y debe tener entre 4 y 5 dígitos.")
                 return
 
             if not re.match(r'^[a-zA-Z\s]+$', nombre_cliente):
-                st.error("El nombre del cliente solo debe contener letras.")
+                st.error("El nombre del cliente es obligatorio y solo debe contener letras.")
                 return
 
             if dni and not re.match(r'^\d{8}$', dni):
@@ -198,6 +198,10 @@ def ingresar_boleta():
 
             if telefono and not re.match(r'^\d{9}$', telefono):
                 st.error("El número de teléfono debe tener 9 dígitos.")
+                return
+          
+            if monto <= 0:  # Validación para el monto
+                st.error("El monto a pagar debe ser mayor a 0.")
                 return
 
             if not st.session_state['cantidades']:
