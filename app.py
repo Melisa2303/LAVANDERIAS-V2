@@ -188,11 +188,11 @@ def ingresar_boleta():
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{4,5}$', st.session_state['numero_boleta']):
-                st.error("El número de boleta es obligatorio y debe tener entre 4 y 5 dígitos.")
+                st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
                 return
 
             if not re.match(r'^[a-zA-Z\s]+$', st.session_state['nombre_cliente']):
-                st.error("El nombre del cliente es obligatorio y solo debe contener letras.")
+                st.error("El nombre del cliente solo debe contener letras.")
                 return
 
             if st.session_state['dni'] and not re.match(r'^\d{8}$', st.session_state['dni']):
@@ -241,6 +241,9 @@ def ingresar_boleta():
             st.session_state['sucursal'] = None
             st.session_state['cantidades'] = {}
             st.session_state['fecha_registro'] = datetime.now()
+
+            # Forzar recarga de la página
+            st.experimental_rerun()
             
 # Inicializar Geolocalizador
 geolocator = Nominatim(user_agent="StreamlitApp/1.0")
