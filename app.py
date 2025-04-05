@@ -63,9 +63,14 @@ def obtener_sucursales():
 # Verificar unicidad del número de boleta
 def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
     boletas_ref = db.collection('boletas')
-    query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio)
-    if tipo_servicio == 'sucursal':
-        query = query.where('sucursal', '==', sucursal)
+    
+    # Construimos una consulta dependiendo del tipo de servicio
+    if tipo_servicio == "🏢 Sucursal":  # Tipo sucursal
+        query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio).where('sucursal', '==', sucursal)
+    elif tipo_servicio == "🚚 Delivery":  # Tipo delivery
+        query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio)
+    
+    # Ejecutamos la consulta y verificamos si hay resultados
     docs = query.stream()
     return not any(docs)  # Retorna True si no hay documentos duplicados
 
