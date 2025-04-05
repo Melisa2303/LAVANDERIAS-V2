@@ -228,15 +228,16 @@ def ingresar_boleta():
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
 
-            # Limpiar campos después de guardar correctamente
-            numero_boleta = ""
-            nombre_cliente = ""
-            dni = ""
-            telefono = ""
-            monto = 0.0
-            tipo_servicio = "🏢 Sucursal"
-            sucursal = None
-            st.session_state['cantidades'] = {}  # Limpiar selección de artículos
+            # Limpiar campos interactivos después de guardar correctamente
+            st.session_state['numero_boleta'] = ""
+            st.session_state['nombre_cliente'] = ""
+            st.session_state['dni'] = ""
+            st.session_state['telefono'] = ""
+            st.session_state['monto'] = 0.0
+            st.session_state['tipo_servicio'] = "🏢 Sucursal"  # Valor por defecto
+            st.session_state['sucursal'] = None
+            st.session_state['cantidades'] = {}
+            st.session_state['fecha_registro'] = datetime.now()
 
 # Inicializar Geolocalizador
 geolocator = Nominatim(user_agent="StreamlitApp/1.0")
