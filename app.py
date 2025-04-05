@@ -129,6 +129,7 @@ def ingresar_boleta():
     tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
     if "Sucursal" in tipo_servicio:
         sucursal_seleccionada = st.selectbox("Sucursal", nombres_sucursales)
+        sucursal = sucursal_seleccionada
     else:
         sucursal = None
 
