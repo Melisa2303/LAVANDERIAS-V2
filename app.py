@@ -133,9 +133,9 @@ def ingresar_boleta():
 
     tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
     if "Sucursal" in tipo_servicio:
-        sucursal_seleccionada = st.selectbox("Sucursal", nombres_sucursales)
+        sucursal = st.selectbox("Sucursal", nombres_sucursales)
     else:
-        sucursal = None
+        sucursal = None  # Asegurar que 'sucursal' esté inicializada para el caso "Delivery"
 
     # Sección de artículos: dinámico e inmediato
     st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
@@ -184,11 +184,11 @@ def ingresar_boleta():
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{4,5}$', numero_boleta):
-                st.error("El número de boleta es obligatorio y debe tener entre 4 y 5 dígitos.")
+                st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
                 return
 
             if not re.match(r'^[a-zA-Z\s]+$', nombre_cliente):
-                st.error("El nombre del cliente es obligatorio y solo debe contener letras.")
+                st.error("El nombre del cliente solo debe contener letras.")
                 return
 
             if dni and not re.match(r'^\d{8}$', dni):
@@ -199,12 +199,12 @@ def ingresar_boleta():
                 st.error("El número de teléfono debe tener 9 dígitos.")
                 return
 
-            if not st.session_state['cantidades']:
-                st.error("Debe seleccionar al menos un artículo antes de ingresar la boleta.")
-                return
-
             if monto <= 0:  # Validación para el monto
                 st.error("El monto a pagar debe ser mayor a 0.")
+                return
+
+            if not st.session_state['cantidades']:
+                st.error("Debe seleccionar al menos un artículo antes de ingresar la boleta.")
                 return
 
             if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
