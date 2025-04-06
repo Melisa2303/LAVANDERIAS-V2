@@ -230,7 +230,13 @@ def ingresar_boleta():
             st.success("Boleta ingresada correctamente.")
 
             # Limpiar el estado de cantidades después de guardar
-            st.session_state['cantidades'] = {}
+            # Reset form fields
+            st.session_state['cantidades'] = {}  # Already present
+            st.session_state.numero_boleta = ""  # Add keys for other inputs
+            st.session_state.nombre_cliente = ""
+            st.session_state.dni = ""
+            st.session_state.telefono = ""
+            st.session_state.monto = 0.0
             
 # Inicializar Geolocalizador
 geolocator = Nominatim(user_agent="StreamlitApp/1.0")
