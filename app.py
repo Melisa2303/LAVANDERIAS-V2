@@ -580,10 +580,8 @@ def datos_boletas():
         # Aplicar filtro de tipo de servicio
         if tipo_servicio == "Sucursal" and agregar:
             if nombre_sucursal:
-                # Si se selecciona "Todas", filtra todas las sucursales
                 if nombre_sucursal != "Todas" and boleta.get("sucursal") != nombre_sucursal:
                     agregar = False
-            # Filtrar específicamente tipo sucursal
             elif boleta.get("tipo_servicio") != "🏢 Sucursal":
                 agregar = False
         elif tipo_servicio == "Delivery" and agregar:
@@ -592,29 +590,39 @@ def datos_boletas():
 
         # Agregar datos si cumplen con los filtros
         if agregar:
-            # Formatear artículos lavados como una cadena (artículo - cantidad)
             articulos = boleta.get("articulos", {})
-            articulos_lavados = "\n".join([f"{articulo}: {cantidad}" for articulo, cantidad in articulos.items()])  # Mejor presentación visual
+            articulos_lavados = "\n".join([f"{articulo}: {cantidad}" for articulo, cantidad in articulos.items()])
 
             tipo_servicio_formateado = boleta.get("tipo_servicio", "N/A")
             if tipo_servicio_formateado == "🏢 Sucursal":
                 nombre_sucursal = boleta.get("sucursal", "Sin Nombre")
-                tipo_servicio_formateado = f"Sucursal: {nombre_sucursal}"  # Mostrar el nombre de la sucursal junto con el tipo
+                tipo_servicio_formateado = f"🏢 Sucursal: {nombre_sucursal}"
 
             datos.append({
                 "Número de Boleta": boleta.get("numero_boleta", "N/A"),
-                "Cliente": boleta.get("nombre_cliente", "N/A"),  # Cambiado de "Cliente/Sucursal" a solo "Cliente"
+                "Cliente": boleta.get("nombre_cliente", "N/A"),
                 "Teléfono": boleta.get("telefono", "N/A"),
-                "Tipo de Servicio": tipo_servicio_formateado,  # Mostrar "Sucursal" con su nombre
+                "Tipo de Servicio": tipo_servicio_formateado,
                 "Fecha de Registro": boleta.get("fecha_registro", "N/A"),
                 "Monto": f"S/. {boleta.get('monto', 0):.2f}",
-                "Artículos Lavados": articulos_lavados  # Visualmente más organizado
+                "Artículos Lavados": articulos_lavados
             })
 
     # Mostrar tabla con los datos filtrados
     if datos:
         st.write("📋 Resultados Filtrados:")
-        st.dataframe(datos, width=1000, height=600)  # Usar st.dataframe para mejor presentación
+        st.dataframe(datos, width=1000, height=600)
+
+        # Agregar botón para descargar en Excel
+        df = pd.DataFrame(datos)
+        excel_file = df.to_excel(index=False)
+
+        st.download_button(
+            label="Descargar en Excel",
+            data=excel_file,
+            file_name="datos_boletas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
