@@ -550,11 +550,11 @@ def datos_boletas():
     tipo_servicio = st.radio("Filtrar por Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
 
     # Filtro por sucursal (solo si se selecciona "Sucursal" en el filtro de tipo de servicio)
-    nombre_sucursal = None
+    filtro_sucursal = None
     if tipo_servicio == "Sucursal":
         sucursales = obtener_sucursales()  # Obtener todas las sucursales con nombres
         nombres_sucursales = [sucursal["nombre"] for sucursal in sucursales]
-        nombre_sucursal = st.selectbox("Seleccionar Sucursal", ["Todas"] + nombres_sucursales)
+        filtro_sucursal = st.selectbox("Seleccionar Sucursal", ["Todas"] + nombres_sucursales)
 
     # Filtro por rango de fechas
     col1, col2 = st.columns(2)
@@ -581,13 +581,13 @@ def datos_boletas():
 
         # Aplicar filtro de tipo de servicio
         if tipo_servicio == "Sucursal" and agregar:
-            if nombre_sucursal == "Todas" or not nombre_sucursal:
+            if filtro_sucursal == "Todas" or not filtro_sucursal:
                 # Mostrar todas las boletas de tipo sucursal dentro del rango de fechas
                 if boleta.get("tipo_servicio") != "🏢 Sucursal":
                     agregar = False
-            elif nombre_sucursal != "Todas":
+            elif filtro_sucursal != "Todas":
                 # Filtrar por una sucursal específica
-                if boleta.get("sucursal") != nombre_sucursal:
+                if boleta.get("sucursal") != filtro_sucursal:
                     agregar = False
         elif tipo_servicio == "Delivery" and agregar:
             if boleta.get("tipo_servicio") != "🚚 Delivery":
@@ -600,8 +600,8 @@ def datos_boletas():
 
             tipo_servicio_formateado = boleta.get("tipo_servicio", "N/A")
             if tipo_servicio_formateado == "🏢 Sucursal":
-                nombre_sucursal = boleta.get("sucursal", "Sin Nombre")
-                tipo_servicio_formateado = f"🏢 Sucursal: {nombre_sucursal}"
+                nombre_sucursal_boleta = boleta.get("sucursal", "Sin Nombre")
+                tipo_servicio_formateado = f"🏢 Sucursal: {nombre_sucursal_boleta}"
 
             datos.append({
                 "Número de Boleta": boleta.get("numero_boleta", "N/A"),
