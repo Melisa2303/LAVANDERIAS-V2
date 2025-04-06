@@ -174,7 +174,7 @@ def ingresar_boleta():
         if articulos_a_eliminar:
             for articulo in articulos_a_eliminar:
                 del st.session_state['cantidades'][articulo]
-            st.rerun()
+           # st.rerun()
 
     # Si la bandera de actualización está activa, reiniciar después de la acción
     if 'update' in st.session_state and st.session_state['update']:
