@@ -174,10 +174,8 @@ def ingresar_boleta():
     if 'update' in st.session_state and st.session_state['update']:
         st.session_state['update'] = False  # Reinicia la bandera después de actualizar
 
-    # Selector de fecha (se muestra como día/mes/año en la interfaz)
-    fecha_registro_obj = st.date_input("Fecha de Registro", value=datetime.now())
-    fecha_registro = fecha_registro_obj.strftime("%d/%m/%Y")
-    st.markdown(f"**Fecha seleccionada:** {fecha_registro}")
+    # Selector de fecha
+    fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now())
 
     # Botón para guardar boleta dentro de un formulario
     with st.form(key='form_boleta'):
