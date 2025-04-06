@@ -7,3 +7,4 @@ geopy
 folium
 requests
 ortools==9.12.4544
+openpyxl
