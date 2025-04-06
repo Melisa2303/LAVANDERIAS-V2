@@ -12,6 +12,7 @@ import folium
 from geopy.geocoders import Nominatim  # Usaremos esto para obtener la dirección desde coordenadas
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
+import pandas as pd
 
 # Cargar variables de entorno
 load_dotenv()
