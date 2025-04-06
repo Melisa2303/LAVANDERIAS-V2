@@ -171,9 +171,10 @@ def ingresar_boleta():
                     st.session_state['update'] = True  # Bandera para forzar cambios
 
         # Eliminar los artículos seleccionados para borrar
-        for articulo in articulos_a_eliminar:
-            del st.session_state['cantidades'][articulo]
-        st.rerun()
+        if articulos_a_eliminar:
+            for articulo in articulos_a_eliminar:
+                del st.session_state['cantidades'][articulo]
+            st.rerun()
 
     # Si la bandera de actualización está activa, reiniciar después de la acción
     if 'update' in st.session_state and st.session_state['update']:
