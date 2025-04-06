@@ -221,7 +221,7 @@ def ingresar_boleta():
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
                 "articulos": st.session_state['cantidades'],
-                "fecha_registro": fecha_registro  # Fecha ya en formato día/mes/año
+                "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
             }
 
             db.collection('boletas').add(boleta)
