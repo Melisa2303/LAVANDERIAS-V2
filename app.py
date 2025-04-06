@@ -581,12 +581,13 @@ def datos_boletas():
 
         # Aplicar filtro de tipo de servicio
         if tipo_servicio == "Sucursal" and agregar:
-            if nombre_sucursal and nombre_sucursal != "Todas":
-                if boleta.get("sucursal") != nombre_sucursal:
-                    agregar = False
-            elif nombre_sucursal == "Todas":
-                # Incluir todas las boletas de tipo sucursal
+            if nombre_sucursal == "Todas" or not nombre_sucursal:
+                # Mostrar todas las boletas de tipo sucursal dentro del rango de fechas
                 if boleta.get("tipo_servicio") != "🏢 Sucursal":
+                    agregar = False
+            elif nombre_sucursal != "Todas":
+                # Filtrar por una sucursal específica
+                if boleta.get("sucursal") != nombre_sucursal:
                     agregar = False
         elif tipo_servicio == "Delivery" and agregar:
             if boleta.get("tipo_servicio") != "🚚 Delivery":
@@ -618,9 +619,6 @@ def datos_boletas():
         st.dataframe(datos, width=1000, height=600)
 
         # Agregar botón para descargar en Excel
-        import pandas as pd
-        from io import BytesIO
-
         df = pd.DataFrame(datos)  # Convertir la lista de datos en un DataFrame
 
         # Crear un archivo Excel en memoria
