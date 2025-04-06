@@ -628,7 +628,7 @@ def datos_boletas():
 
         # Descargar el archivo Excel
         st.download_button(
-            label="Descargar en Excel",
+            label="📥 Descargar en Excel",
             data=excel_buffer.getvalue(),
             file_name="datos_boletas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
