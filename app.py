@@ -40,7 +40,7 @@ def logout():
     st.session_state['logged_in'] = False
     st.session_state['usuario_actual'] = None
     st.session_state['menu'] = []
-    st.experimental_rerun()
+    st.rerun()
 
 # Leer datos de artículos desde Firestore
 def obtener_articulos():
@@ -101,7 +101,7 @@ def login():
                 st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Ruta"]
             elif usuario == "sucursal":
                 st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
 
