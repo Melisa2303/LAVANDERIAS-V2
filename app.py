@@ -550,7 +550,7 @@ def datos_boletas():
     # Filtro por sucursal (solo si se selecciona "Sucursal" en el filtro de tipo de servicio)
     nombre_sucursal = None
     if tipo_servicio == "Sucursal":
-        sucursales = obtener_sucursales()  # Asume que esta función obtiene todas las sucursales con nombres
+        sucursales = obtener_sucursales()  # Obtener todas las sucursales con nombres
         nombres_sucursales = [sucursal["nombre"] for sucursal in sucursales]
         nombre_sucursal = st.selectbox("Seleccionar Sucursal", ["Todas"] + nombres_sucursales)
 
@@ -562,7 +562,7 @@ def datos_boletas():
         fecha_fin = st.date_input("Fecha de Fin")
 
     # Leer datos de boletas desde Firestore
-    boletas_ref = db.collection('boletas')  # Asume que esta es la colección donde se guardan las boletas
+    boletas_ref = db.collection('boletas')  # Colección de boletas
     docs = boletas_ref.stream()
 
     # Procesar datos para aplicar los filtros
@@ -579,7 +579,12 @@ def datos_boletas():
 
         # Aplicar filtro de tipo de servicio
         if tipo_servicio == "Sucursal" and agregar:
-            if nombre_sucursal and nombre_sucursal != "Todas" and boleta.get("sucursal") != nombre_sucursal:
+            if nombre_sucursal:
+                # Si se selecciona "Todas", filtra todas las sucursales
+                if nombre_sucursal != "Todas" and boleta.get("sucursal") != nombre_sucursal:
+                    agregar = False
+            # Filtrar específicamente tipo sucursal
+            elif boleta.get("tipo_servicio") != "🏢 Sucursal":
                 agregar = False
         elif tipo_servicio == "Delivery" and agregar:
             if boleta.get("tipo_servicio") != "🚚 Delivery":
@@ -587,24 +592,29 @@ def datos_boletas():
 
         # Agregar datos si cumplen con los filtros
         if agregar:
-            # Preparar artículos lavados como una cadena de texto (artículo - cantidad)
-            articulos = boleta.get("articulos", {})  # Espera un diccionario con artículos y cantidades
-            articulos_lavados = ", ".join([f"{articulo} - {cantidad}" for articulo, cantidad in articulos.items()])
+            # Formatear artículos lavados como una cadena (artículo - cantidad)
+            articulos = boleta.get("articulos", {})
+            articulos_lavados = "\n".join([f"{articulo}: {cantidad}" for articulo, cantidad in articulos.items()])  # Mejor presentación visual
+
+            tipo_servicio_formateado = boleta.get("tipo_servicio", "N/A")
+            if tipo_servicio_formateado == "🏢 Sucursal":
+                nombre_sucursal = boleta.get("sucursal", "Sin Nombre")
+                tipo_servicio_formateado = f"Sucursal: {nombre_sucursal}"  # Mostrar el nombre de la sucursal junto con el tipo
 
             datos.append({
                 "Número de Boleta": boleta.get("numero_boleta", "N/A"),
-                "Cliente/Sucursal": boleta.get("nombre_cliente", boleta.get("sucursal", "N/A")),
+                "Cliente": boleta.get("nombre_cliente", "N/A"),  # Cambiado de "Cliente/Sucursal" a solo "Cliente"
                 "Teléfono": boleta.get("telefono", "N/A"),
-                "Tipo de Servicio": boleta.get("tipo_servicio", "N/A"),
+                "Tipo de Servicio": tipo_servicio_formateado,  # Mostrar "Sucursal" con su nombre
                 "Fecha de Registro": boleta.get("fecha_registro", "N/A"),
                 "Monto": f"S/. {boleta.get('monto', 0):.2f}",
-                "Artículos Lavados": articulos_lavados  # Nueva columna con los artículos lavados y sus cantidades
+                "Artículos Lavados": articulos_lavados  # Visualmente más organizado
             })
 
     # Mostrar tabla con los datos filtrados
     if datos:
         st.write("📋 Resultados Filtrados:")
-        st.table(datos)  # Mostrar tabla con datos filtrados
+        st.dataframe(datos, width=1000, height=600)  # Usar st.dataframe para mejor presentación
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
