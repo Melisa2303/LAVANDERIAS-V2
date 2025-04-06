@@ -584,7 +584,8 @@ def datos_boletas():
             if nombre_sucursal and nombre_sucursal != "Todas":
                 if boleta.get("sucursal") != nombre_sucursal:
                     agregar = False
-            elif nombre_sucursal == "Todas" or not nombre_sucursal:
+            elif nombre_sucursal == "Todas":
+                # Incluir todas las boletas de tipo sucursal
                 if boleta.get("tipo_servicio") != "🏢 Sucursal":
                     agregar = False
         elif tipo_servicio == "Delivery" and agregar:
