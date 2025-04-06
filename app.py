@@ -239,6 +239,8 @@ def ingresar_boleta():
             st.session_state.dni = ""
             st.session_state.telefono = ""
             st.session_state.monto = 0.0
+            st.session_state.fecha_registro = datetime.now()
+            st.rerun()
             
 # Inicializar Geolocalizador
 geolocator = Nominatim(user_agent="StreamlitApp/1.0")
