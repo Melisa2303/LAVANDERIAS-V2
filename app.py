@@ -174,8 +174,10 @@ def ingresar_boleta():
     if 'update' in st.session_state and st.session_state['update']:
         st.session_state['update'] = False  # Reinicia la bandera después de actualizar
 
-    # Selector de fecha con formato día/mes/año
-    fecha_registro = st.date_input("Fecha de Registro", value=datetime.now()).strftime("%d/%m/%Y")
+    # Selector de fecha (se muestra como día/mes/año en la interfaz)
+    fecha_registro_obj = st.date_input("Fecha de Registro", value=datetime.now())
+    fecha_registro = fecha_registro_obj.strftime("%d/%m/%Y")
+    st.markdown(f"**Fecha seleccionada:** {fecha_registro}")
 
     # Botón para guardar boleta dentro de un formulario
     with st.form(key='form_boleta'):
@@ -184,11 +186,11 @@ def ingresar_boleta():
         if submit_button:
             # Validaciones
             if not re.match(r'^\d{4,5}$', numero_boleta):
-                st.error("El número de boleta es obligatorio y debe tener entre 4 y 5 dígitos.")
+                st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
                 return
 
             if not re.match(r'^[a-zA-Z\s]+$', nombre_cliente):
-                st.error("El nombre del cliente es obligatorio y solo debe contener letras.")
+                st.error("El nombre del cliente solo debe contener letras.")
                 return
 
             if dni and not re.match(r'^\d{8}$', dni):
@@ -208,7 +210,7 @@ def ingresar_boleta():
                 return
 
             if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
-                st.error("Ya existe una boleta con este número en la misma sucursal o en el servicio delivery.")
+                st.error("Ya existe una boleta con este número en la misma sucursal o tipo de servicio.")
                 return
 
             # Guardar los datos en Firestore
@@ -221,7 +223,7 @@ def ingresar_boleta():
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
                 "articulos": st.session_state['cantidades'],
-                "fecha_registro": fecha_registro  # Fecha en formato día/mes/año
+                "fecha_registro": fecha_registro  # Fecha ya en formato día/mes/año
             }
 
             db.collection('boletas').add(boleta)
