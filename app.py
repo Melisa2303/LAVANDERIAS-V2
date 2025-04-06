@@ -13,6 +13,7 @@ from geopy.geocoders import Nominatim  # Usaremos esto para obtener la direcció
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
+from io import BytesIO
 
 # Cargar variables de entorno
 load_dotenv()
@@ -580,11 +581,12 @@ def datos_boletas():
 
         # Aplicar filtro de tipo de servicio
         if tipo_servicio == "Sucursal" and agregar:
-            if nombre_sucursal:
-                if nombre_sucursal != "Todas" and boleta.get("sucursal") != nombre_sucursal:
+            if nombre_sucursal and nombre_sucursal != "Todas":
+                if boleta.get("sucursal") != nombre_sucursal:
                     agregar = False
-            elif boleta.get("tipo_servicio") != "🏢 Sucursal":
-                agregar = False
+            elif nombre_sucursal == "Todas" or not nombre_sucursal:
+                if boleta.get("tipo_servicio") != "🏢 Sucursal":
+                    agregar = False
         elif tipo_servicio == "Delivery" and agregar:
             if boleta.get("tipo_servicio") != "🚚 Delivery":
                 agregar = False
@@ -615,18 +617,26 @@ def datos_boletas():
         st.dataframe(datos, width=1000, height=600)
 
         # Agregar botón para descargar en Excel
-        df = pd.DataFrame(datos)
-        excel_file = df.to_excel(index=False)
+        import pandas as pd
+        from io import BytesIO
 
+        df = pd.DataFrame(datos)  # Convertir la lista de datos en un DataFrame
+
+        # Crear un archivo Excel en memoria
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="DatosBoletas")
+
+        # Descargar el archivo Excel
         st.download_button(
             label="Descargar en Excel",
-            data=excel_file,
+            data=excel_buffer.getvalue(),
             file_name="datos_boletas.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
-
+        
 def ver_ruta_optimizada():
     col1, col2 = st.columns([1, 3])
     with col1:
