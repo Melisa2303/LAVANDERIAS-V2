@@ -616,100 +616,92 @@ def datos_boletas():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📋 Datos de Boletas")
 
-    # Filtro por tipo de servicio
-    tipo_servicio = st.radio("Filtrar por Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
+    # --- Filtros (Mismo diseño original) ---
+    tipo_servicio = st.radio(
+        "Filtrar por Tipo de Servicio", 
+        ["Todos", "Sucursal", "Delivery"], 
+        horizontal=True
+    )
 
-    # Construir consulta base optimizada
-    query = db.collection('boletas')
-    
-    # Aplicar filtros directamente en Firestore
+    # Filtro de sucursal (solo si se elige "Sucursal")
+    sucursal_seleccionada = None
     if tipo_servicio == "Sucursal":
-        query = query.where("tipo_servicio", "==", "🏢 Sucursal")
-        sucursales = obtener_sucursales()
-        nombres_sucursales = [s["nombre"] for s in sucursales]
-        filtro_sucursal = st.selectbox("Seleccionar Sucursal", ["Todas"] + nombres_sucursales)
-        if filtro_sucursal != "Todas":
-            query = query.where("sucursal", "==", filtro_sucursal)
-    elif tipo_servicio == "Delivery":
-        query = query.where("tipo_servicio", "==", "🚚 Delivery")
+        sucursales = obtener_sucursales()  # Usa la caché de session_state
+        nombres_sucursales = ["Todas"] + [s["nombre"] for s in sucursales]
+        sucursal_seleccionada = st.selectbox(
+            "Seleccionar Sucursal", 
+            nombres_sucursales
+        )
 
-    # Filtro de fechas con inputs separados
+    # Filtro de fechas (igual que antes)
     col1, col2 = st.columns(2)
     with col1:
         fecha_inicio = st.date_input("Fecha de Inicio")
     with col2:
         fecha_fin = st.date_input("Fecha de Fin")
-    
+
+    # --- Consulta optimizada a Firebase ---
+    query = db.collection('boletas')
+
+    # Aplicar filtros directamente en Firestore
+    if tipo_servicio == "Sucursal":
+        query = query.where("tipo_servicio", "==", "🏢 Sucursal")
+        if sucursal_seleccionada and sucursal_seleccionada != "Todas":
+            query = query.where("sucursal", "==", sucursal_seleccionada)
+    elif tipo_servicio == "Delivery":
+        query = query.where("tipo_servicio", "==", "🚚 Delivery")
+
     if fecha_inicio and fecha_fin:
         query = query.where("fecha_registro", ">=", fecha_inicio.strftime("%Y-%m-%d")) \
-                   .where("fecha_registro", "<=", fecha_fin.strftime("%Y-%m-%d"))
+                     .where("fecha_registro", "<=", fecha_fin.strftime("%Y-%m-%d"))
 
-    # Paginación para limitar resultados
-    query = query.limit(500)  # Ajusta según necesidad
-    
-    # Procesar resultados
-    docs = query.stream()
+    # Ejecutar consulta (con límite para evitar sobrecarga)
+    try:
+        boletas = list(query.limit(1000).stream())
+    except Exception as e:
+        st.error(f"Error al cargar boletas: {e}")
+        return
 
-    # Procesar datos para aplicar los filtros
+    # --- Procesar datos (Mismo formato visual original) ---
     datos = []
-    for doc in docs:
+    for doc in boletas:
         boleta = doc.to_dict()
-        fecha_boleta = datetime.strptime(boleta.get("fecha_registro", "1970-01-01"), "%Y-%m-%d").date()
-        agregar = True
+        articulos = boleta.get("articulos", {})
+        articulos_lavados = "\n".join([f"{k}: {v}" for k, v in articulos.items()])
 
-        # Aplicar filtro de rango de fechas
-        if fecha_inicio and fecha_fin:
-            if not (fecha_inicio <= fecha_boleta <= fecha_fin):
-                agregar = False
+        # Formatear tipo de servicio (igual que antes)
+        tipo_servicio_formateado = boleta.get("tipo_servicio", "N/A")
+        if tipo_servicio_formateado == "🏢 Sucursal":
+            nombre_sucursal_boleta = boleta.get("sucursal", "Sin Nombre")
+            tipo_servicio_formateado = f"🏢 Sucursal: {nombre_sucursal_boleta}"
 
-        # Aplicar filtro de tipo de servicio
-        if tipo_servicio == "Sucursal" and agregar:
-            if filtro_sucursal == "Todas" or not filtro_sucursal:
-                # Mostrar todas las boletas de tipo sucursal dentro del rango de fechas
-                if boleta.get("tipo_servicio") != "🏢 Sucursal":
-                    agregar = False
-            elif filtro_sucursal != "Todas":
-                # Filtrar por una sucursal específica
-                if boleta.get("sucursal") != filtro_sucursal:
-                    agregar = False
-        elif tipo_servicio == "Delivery" and agregar:
-            if boleta.get("tipo_servicio") != "🚚 Delivery":
-                agregar = False
+        datos.append({
+            "Número de Boleta": boleta.get("numero_boleta", "N/A"),
+            "Cliente": boleta.get("nombre_cliente", "N/A"),
+            "Teléfono": boleta.get("telefono", "N/A"),
+            "Tipo de Servicio": tipo_servicio_formateado,
+            "Fecha de Registro": boleta.get("fecha_registro", "N/A"),
+            "Monto": f"S/. {boleta.get('monto', 0):.2f}",
+            "Artículos Lavados": articulos_lavados
+        })
 
-        # Agregar datos si cumplen con los filtros
-        if agregar:
-            articulos = boleta.get("articulos", {})
-            articulos_lavados = "\n".join([f"{articulo}: {cantidad}" for articulo, cantidad in articulos.items()])
-
-            tipo_servicio_formateado = boleta.get("tipo_servicio", "N/A")
-            if tipo_servicio_formateado == "🏢 Sucursal":
-                nombre_sucursal_boleta = boleta.get("sucursal", "Sin Nombre")
-                tipo_servicio_formateado = f"🏢 Sucursal: {nombre_sucursal_boleta}"
-
-            datos.append({
-                "Número de Boleta": boleta.get("numero_boleta", "N/A"),
-                "Cliente": boleta.get("nombre_cliente", "N/A"),
-                "Teléfono": boleta.get("telefono", "N/A"),
-                "Tipo de Servicio": tipo_servicio_formateado,
-                "Fecha de Registro": boleta.get("fecha_registro", "N/A"),
-                "Monto": f"S/. {boleta.get('monto', 0):.2f}",
-                "Artículos Lavados": articulos_lavados
-            })
-
-    # Mostrar tabla con los datos filtrados
+    # --- Mostrar resultados (Mismo estilo original) ---
     if datos:
         st.write("📋 Resultados Filtrados:")
-        st.dataframe(datos, width=1000, height=600)
+        st.dataframe(
+            datos, 
+            width=1000, 
+            height=600,
+            column_config={
+                "Artículos Lavados": st.column_config.TextColumn(width="large")
+            }
+        )
 
-        # Agregar botón para descargar en Excel
-        df = pd.DataFrame(datos)  # Convertir la lista de datos en un DataFrame
-
-        # Crear un archivo Excel en memoria
+        # Botón de descarga en Excel (opcional)
+        df = pd.DataFrame(datos)
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name="DatosBoletas")
-
-        # Descargar el archivo Excel
         st.download_button(
             label="📥 Descargar en Excel",
             data=excel_buffer.getvalue(),
