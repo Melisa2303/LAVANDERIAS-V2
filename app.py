@@ -385,6 +385,14 @@ def ingresar_sucursal():
         # Guardar en Firestore
         db.collection("sucursales").add(sucursal)
         st.success("Sucursal ingresada correctamente.")
+        # Reset form fields
+        st.session_state.nombre_sucursal = ""
+        st.session_state.direccion = "Arequipa, Perú"  # Reset to default
+        st.session_state.lat = -16.409047
+        st.session_state.lon = -71.537451
+        st.session_state.encargado = ""
+        st.session_state.telefono = ""
+        st.rerun()  # Force UI refresh
 
 # Función principal para solicitar recogida
 def solicitar_recogida():
