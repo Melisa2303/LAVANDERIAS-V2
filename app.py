@@ -45,6 +45,7 @@ def logout():
 # Leer datos de artículos desde Firestore
 def obtener_articulos():
     if 'articulos' not in st.session_state:
+        # Solo leer si no hay caché
         articulos_ref = db.collection('articulos')
         docs = articulos_ref.stream()
         st.session_state.articulos = [doc.to_dict().get('Nombre', 'Nombre no disponible') for doc in docs]
@@ -53,6 +54,7 @@ def obtener_articulos():
 # Leer datos de sucursales desde Firestore
 def obtener_sucursales():
     if 'sucursales' not in st.session_state:
+        # Solo leer si no hay caché
         sucursales_ref = db.collection('sucursales')
         docs = sucursales_ref.stream()
         st.session_state.sucursales = [
@@ -67,17 +69,33 @@ def obtener_sucursales():
     
 # Verificar unicidad del número de boleta
 def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
+    # Caché local para verificaciones recientes
+    cache_key = f"{numero_boleta}-{tipo_servicio}-{sucursal}"
+    if 'boletas_verificadas' in st.session_state and cache_key in st.session_state.boletas_verificadas:
+        return st.session_state.boletas_verificadas[cache_key]
+    
     boletas_ref = db.collection('boletas')
     
-    # Construimos una consulta dependiendo del tipo de servicio
-    if tipo_servicio == "🏢 Sucursal":  # Tipo sucursal
-        query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio).where('sucursal', '==', sucursal)
-    elif tipo_servicio == "🚚 Delivery":  # Tipo delivery
-        query = boletas_ref.where('numero_boleta', '==', numero_boleta).where('tipo_servicio', '==', tipo_servicio)
+    # Construimos una consulta con LIMIT 1 para optimizar
+    if tipo_servicio == "🏢 Sucursal":
+        query = boletas_ref.where('numero_boleta', '==', numero_boleta)\
+                          .where('tipo_servicio', '==', tipo_servicio)\
+                          .where('sucursal', '==', sucursal)\
+                          .limit(1)  # Solo necesitamos saber si existe al menos una
+    else:
+        query = boletas_ref.where('numero_boleta', '==', numero_boleta)\
+                          .where('tipo_servicio', '==', tipo_servicio)\
+                          .limit(1)
     
-    # Ejecutamos la consulta y verificamos si hay resultados
-    docs = query.stream()
-    return not any(docs)  # Retorna True si no hay documentos duplicados
+    # Verificamos si hay al menos un documento
+    existe = bool(next(query.stream(), None))
+    
+    # Actualizamos caché
+    if 'boletas_verificadas' not in st.session_state:
+        st.session_state.boletas_verificadas = {}
+    st.session_state.boletas_verificadas[cache_key] = not existe
+    
+    return not existe
 
 # Páginas de la aplicación
 def login():
@@ -387,14 +405,20 @@ def ingresar_sucursal():
         # Guardar en Firestore
         db.collection("sucursales").add(sucursal)
         st.success("Sucursal ingresada correctamente.")
-        # Reset form fields
-        st.session_state.nombre_sucursal = ""
-        st.session_state.direccion = "Arequipa, Perú"  # Reset to default
+        # Resetear el formulario
+        st.session_state.nombre_sucursal = ""  # Asegurar que se limpia
+        st.session_state.direccion = "Arequipa, Perú"
         st.session_state.lat = -16.409047
         st.session_state.lon = -71.537451
         st.session_state.encargado = ""
         st.session_state.telefono = ""
-        st.rerun()  # Force UI refresh
+        
+        # Limpiar caché para que se actualice
+        if 'sucursales' in st.session_state:
+            del st.session_state.sucursales
+        
+        # Forzar recarga para ver cambios inmediatos
+        st.rerun()
 
 # Función principal para solicitar recogida
 def solicitar_recogida():
@@ -777,14 +801,30 @@ else:
             st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Ruta"]
         elif usuario == "sucursal":
             st.session_state['menu'] = ["Solicitar Recogida", "Seguimiento al Vehículo"]
+   
+    with st.sidebar:
+        # Botón de actualización solo para admin
+        if usuario == "administrador":              
+            if st.button("🔄 Actualizar datos maestros"):
+                # Limpiar cachés
+                if 'articulos' in st.session_state:
+                    del st.session_state.articulos
+                if 'sucursales' in st.session_state:
+                    del st.session_state.sucursales
+                if 'boletas_verificadas' in st.session_state:
+                    del st.session_state.boletas_verificadas
+            
+                st.success("Datos actualizados. Refresca la página.")
+                st.rerun()
 
-    st.sidebar.title("Menú")
-    if st.sidebar.button("🔓 Cerrar sesión"):
-        logout()
+        # Elementos comunes del menú
+        st.title("Menú")
+        if st.button("🔓 Cerrar sesión"):
+            logout()
 
-    menu = st.session_state['menu']
-    choice = st.sidebar.selectbox("Selecciona una opción", menu)
+        choice = st.selectbox("Selecciona una opción", st.session_state['menu'])
 
+    # Navegación principal
     if choice == "Ingresar Boleta":
         ingresar_boleta()
     elif choice == "Ingresar Sucursal":
