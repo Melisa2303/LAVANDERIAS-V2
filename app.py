@@ -323,7 +323,6 @@ def obtener_sucursales_mapa():
         ]
     return st.session_state.sucursales_mapa
     
-# Función principal para ingresar sucursal
 def ingresar_sucursal():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -350,7 +349,8 @@ def ingresar_sucursal():
 
     # Desplegable para seleccionar dirección
     direccion_seleccionada = st.selectbox(
-        "Sugerencias de Direcciones:", opciones_desplegable if sugerencias else ["No hay sugerencias"]
+        "Sugerencias de Direcciones:", 
+        opciones_desplegable if sugerencias else ["No hay sugerencias"]
     )
 
     # Actualizar coordenadas en función de la dirección seleccionada
@@ -362,23 +362,42 @@ def ingresar_sucursal():
                 st.session_state.direccion = direccion_seleccionada
                 break
 
-    # Renderizar el mapa basado en las coordenadas actuales
-    m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
-    folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Punto seleccionado").add_to(m)
-    mapa = st_folium(m, width=700, height=500)
+    # --- Mapa optimizado (evita doble renderizado) ---
+    if 'mapa' not in st.session_state:
+        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
+        folium.Marker(
+            [st.session_state.lat, st.session_state.lon],
+            tooltip="Punto seleccionado"
+        ).add_to(m)
+        st.session_state.mapa = m
 
-    # Actualizar coordenadas en función de los clics en el mapa
-    seleccion_usuario = mapa.get("last_clicked")  # Coordenadas del último clic en el mapa
-    if seleccion_usuario:
-        st.session_state.lat = seleccion_usuario["lat"]
-        st.session_state.lon = seleccion_usuario["lng"]
+    # Renderizar el mapa (con key única para evitar recreación)
+    mapa = st_folium(
+        st.session_state.mapa,
+        width=700,
+        height=500,
+        key="mapa_unico"  # ¡Clave para evitar recarga!
+    )
+
+    # Actualizar coordenadas si el usuario hace clic en el mapa
+    if mapa.get("last_clicked"):
+        st.session_state.lat = mapa["last_clicked"]["lat"]
+        st.session_state.lon = mapa["last_clicked"]["lng"]
         st.session_state.direccion = obtener_direccion_desde_coordenadas(
             st.session_state.lat, st.session_state.lon
         )
-        # Renderizar mapa inmediatamente después de cambiar las coordenadas
-        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
-        folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Punto seleccionado").add_to(m)
-        st_folium(m, width=700, height=500)
+
+        # Actualizar el mapa existente (no crear uno nuevo)
+        st.session_state.mapa = folium.Map(
+            location=[st.session_state.lat, st.session_state.lon],
+            zoom_start=15
+        )
+        folium.Marker(
+            [st.session_state.lat, st.session_state.lon],
+            tooltip="Punto seleccionado"
+        ).add_to(st.session_state.mapa)
+
+        st.rerun()  # Actualización suave sin recargar toda la página
 
     # Mostrar la dirección final estilizada
     st.markdown(f"""
@@ -409,7 +428,7 @@ def ingresar_sucursal():
         # Crear el diccionario de datos para la sucursal
         sucursal = {
             "nombre": nombre_sucursal,
-            "direccion": st.session_state.direccion,  # Usará la dirección actualizada
+            "direccion": st.session_state.direccion,
             "coordenadas": {
                 "lat": st.session_state.lat,
                 "lon": st.session_state.lon
@@ -421,23 +440,23 @@ def ingresar_sucursal():
         # Guardar en Firestore
         db.collection("sucursales").add(sucursal)
         st.success("Sucursal ingresada correctamente.")
+        
         # Resetear el formulario
-        st.session_state.nombre_sucursal = ""  # Asegurar que se limpia
+        st.session_state.nombre_sucursal = ""
         st.session_state.direccion = "Arequipa, Perú"
         st.session_state.lat = -16.409047
         st.session_state.lon = -71.537451
         st.session_state.encargado = ""
         st.session_state.telefono = ""
         
-        # Limpiar caché para que se actualice
+        # Limpiar caché para actualizar
         if 'sucursales' in st.session_state:
             del st.session_state.sucursales
         if 'sucursales_mapa' in st.session_state:
             del st.session_state.sucursales_mapa
             
-        # Forzar recarga para ver cambios inmediatos
-        st.rerun()
-
+        st.rerun()  # Refrescar para ver cambios
+        
 # Función principal para solicitar recogida
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
