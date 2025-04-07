@@ -44,24 +44,26 @@ def logout():
 
 # Leer datos de artículos desde Firestore
 def obtener_articulos():
-    articulos_ref = db.collection('articulos')
-    docs = articulos_ref.stream()
-    articulos = [doc.to_dict().get('Nombre', 'Nombre no disponible') for doc in docs]  # Usar 'Nombre' y agregar manejo de errores
-    return articulos
+    if 'articulos' not in st.session_state:
+        articulos_ref = db.collection('articulos')
+        docs = articulos_ref.stream()
+        st.session_state.articulos = [doc.to_dict().get('Nombre', 'Nombre no disponible') for doc in docs]
+    return st.session_state.articulos
 
 # Leer datos de sucursales desde Firestore
 def obtener_sucursales():
-    sucursales_ref = db.collection('sucursales')
-    docs = sucursales_ref.stream()
-    sucursales = [
-        {
-            "nombre": doc.to_dict().get('nombre', 'Nombre no disponible'),
-            "direccion": doc.to_dict().get('direccion', 'Dirección no disponible'),
-            "coordenadas": doc.to_dict().get('coordenadas', {})  # Obtener todo el objeto coordenadas
-        }
-        for doc in docs
-    ]
-    return sucursales
+    if 'sucursales' not in st.session_state:
+        sucursales_ref = db.collection('sucursales')
+        docs = sucursales_ref.stream()
+        st.session_state.sucursales = [
+            {
+                "nombre": doc.to_dict().get('nombre', 'Nombre no disponible'),
+                "direccion": doc.to_dict().get('direccion', 'Dirección no disponible'),
+                "coordenadas": doc.to_dict().get('coordenadas', {})
+            }
+            for doc in docs
+        ]
+    return st.session_state.sucursales
     
 # Verificar unicidad del número de boleta
 def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
@@ -174,7 +176,7 @@ def ingresar_boleta():
         if articulos_a_eliminar:
             for articulo in articulos_a_eliminar:
                 del st.session_state['cantidades'][articulo]
-           # st.rerun()
+            st.rerun()
 
     # Si la bandera de actualización está activa, reiniciar después de la acción
     if 'update' in st.session_state and st.session_state['update']:
@@ -242,7 +244,7 @@ def ingresar_boleta():
             st.session_state.telefono = ""
             st.session_state.monto = 0.0
             st.session_state.fecha_registro = datetime.now()
-            # st.rerun()
+            st.rerun()
             
 # Inicializar Geolocalizador
 geolocator = Nominatim(user_agent="StreamlitApp/1.0")
