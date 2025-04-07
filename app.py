@@ -618,8 +618,8 @@ def datos_boletas():
 
     # --- Filtros (Mismo diseño original) ---
     tipo_servicio = st.radio(
-        "Filtrar por Tipo de Servicio", 
-        ["Todos", "Sucursal", "Delivery"], 
+        label="Filtrar por Tipo de Servicio",
+        options=["Todos", "Sucursal", "Delivery"],
         horizontal=True
     )
 
