@@ -331,133 +331,140 @@ def ingresar_sucursal():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📝 Ingresar Sucursal")
 
-    # Inicializar sesión para las coordenadas
-    if "lat" not in st.session_state:
-        st.session_state.lat, st.session_state.lon = -16.409047, -71.537451  # Coordenadas de Arequipa, Perú
-    if "direccion" not in st.session_state:
-        st.session_state.direccion = "Arequipa, Perú"
+    # --- Inicialización independiente de coordenadas (optimizado) ---
+    if "ingresar_sucursal_lat" not in st.session_state:
+        st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon = -16.409047, -71.537451  # Arequipa
+        st.session_state.ingresar_sucursal_direccion = "Arequipa, Perú"
 
-    # Campos de entrada
-    nombre_sucursal = st.text_input("Nombre de la Sucursal")
-    direccion_input = st.text_input("Dirección", value=st.session_state.direccion)
-
-    # Buscar sugerencias de direcciones mientras se escribe
-    sugerencias = []
-    if direccion_input:
-        sugerencias = obtener_sugerencias_direccion(direccion_input)
-        opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias]
-
-    # Desplegable para seleccionar dirección
-    direccion_seleccionada = st.selectbox(
-        "Sugerencias de Direcciones:", 
-        opciones_desplegable if sugerencias else ["No hay sugerencias"]
+    # --- Widgets de entrada ---
+    nombre_sucursal = st.text_input("Nombre de la Sucursal", key="nombre_sucursal_input")
+    direccion_input = st.text_input(
+        "Dirección", 
+        value=st.session_state.ingresar_sucursal_direccion,
+        key="ingresar_sucursal_direccion_input"
     )
 
-    # Actualizar coordenadas en función de la dirección seleccionada
+    # --- Buscar sugerencias (con caché si es posible) ---
+    sugerencias = []
+    if direccion_input and direccion_input != st.session_state.ingresar_sucursal_direccion:
+        sugerencias = obtener_sugerencias_direccion(direccion_input)
+    
+    opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"]
+    
+    direccion_seleccionada = st.selectbox(
+        "Sugerencias de Direcciones:", 
+        options=opciones_desplegable,
+        key="ingresar_sucursal_sugerencias"
+    )
+
+    # --- Actualizar al seleccionar sugerencia (sin recargar mapa duplicado) ---
     if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
         for sug in sugerencias:
             if direccion_seleccionada == sug["display_name"]:
-                st.session_state.lat = float(sug["lat"])
-                st.session_state.lon = float(sug["lon"])
-                st.session_state.direccion = direccion_seleccionada
+                st.session_state.ingresar_sucursal_lat = float(sug["lat"])
+                st.session_state.ingresar_sucursal_lon = float(sug["lon"])
+                st.session_state.ingresar_sucursal_direccion = direccion_seleccionada
+                # Actualizar mapa existente (no recrear)
+                if "ingresar_sucursal_mapa" in st.session_state:
+                    st.session_state.ingresar_sucursal_mapa.location = [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon]
+                    # Limpiar marcadores antiguos y agregar nuevo
+                    for mark in st.session_state.ingresar_sucursal_mapa._children:
+                        if isinstance(mark, folium.Marker):
+                            st.session_state.ingresar_sucursal_mapa._children.remove(mark)
+                    folium.Marker(
+                        [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
+                        tooltip="Punto seleccionado"
+                    ).add_to(st.session_state.ingresar_sucursal_mapa)
                 break
 
-    # --- Mapa optimizado (evita doble renderizado) ---
-    if 'mapa' not in st.session_state:
-        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
-        folium.Marker(
-            [st.session_state.lat, st.session_state.lon],
-            tooltip="Punto seleccionado"
-        ).add_to(m)
-        st.session_state.mapa = m
-
-    # Renderizar el mapa (con key única para evitar recreación)
-    mapa = st_folium(
-        st.session_state.mapa,
-        width=700,
-        height=500,
-        key="mapa_unico"  # ¡Clave para evitar recarga!
-    )
-
-    # Actualizar coordenadas si el usuario hace clic en el mapa
-    if mapa.get("last_clicked"):
-        st.session_state.lat = mapa["last_clicked"]["lat"]
-        st.session_state.lon = mapa["last_clicked"]["lng"]
-        st.session_state.direccion = obtener_direccion_desde_coordenadas(
-            st.session_state.lat, st.session_state.lon
-        )
-
-        # Actualizar el mapa existente (no crear uno nuevo)
-        st.session_state.mapa = folium.Map(
-            location=[st.session_state.lat, st.session_state.lon],
+    # --- Crear o actualizar mapa (optimizado para una sola instancia) ---
+    if "ingresar_sucursal_mapa" not in st.session_state:
+        st.session_state.ingresar_sucursal_mapa = folium.Map(
+            location=[st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
             zoom_start=15
         )
         folium.Marker(
-            [st.session_state.lat, st.session_state.lon],
+            [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
             tooltip="Punto seleccionado"
-        ).add_to(st.session_state.mapa)
+        ).add_to(st.session_state.ingresar_sucursal_mapa)
 
-        st.rerun()  # Actualización suave sin recargar toda la página
+    # --- Renderizar mapa (con clave única) ---
+    mapa = st_folium(
+        st.session_state.ingresar_sucursal_mapa,
+        width=700,
+        height=500,
+        key="ingresar_sucursal_mapa_folium"
+    )
 
-    # Mostrar la dirección final estilizada
+    # --- Actualizar al hacer clic en el mapa ---
+    if mapa.get("last_clicked"):
+        st.session_state.ingresar_sucursal_lat = mapa["last_clicked"]["lat"]
+        st.session_state.ingresar_sucursal_lon = mapa["last_clicked"]["lng"]
+        st.session_state.ingresar_sucursal_direccion = obtener_direccion_desde_coordenadas(
+            st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon
+        )
+        # Actualizar mapa existente
+        st.session_state.ingresar_sucursal_mapa.location = [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon]
+        for mark in st.session_state.ingresar_sucursal_mapa._children:
+            if isinstance(mark, folium.Marker):
+                st.session_state.ingresar_sucursal_mapa._children.remove(mark)
+        folium.Marker(
+            [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
+            tooltip="Punto seleccionado"
+        ).add_to(st.session_state.ingresar_sucursal_mapa)
+        st.rerun()
+
+    # --- Mostrar dirección final ---
     st.markdown(f"""
         <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
             <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-            <p style='color: #555; font-size: 16px;'>{st.session_state.direccion}</p>
+            <p style='color: #555; font-size: 16px;'>{st.session_state.ingresar_sucursal_direccion}</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # Otros campos opcionales
-    col1, col2 = st.columns(2)
-    with col1:
-        encargado = st.text_input("Encargado (Opcional)")
-    with col2:
-        telefono = st.text_input("Teléfono (Opcional)")
+    # --- Otros campos y guardado (optimizado para Firebase) ---
+    encargado = st.text_input("Encargado (Opcional)", key="encargado_input")
+    telefono = st.text_input("Teléfono (Opcional)", key="telefono_input", max_length=9)
 
-    # Botón para guardar datos
-    if st.button("💾 Ingresar Sucursal"):
+    if st.button("💾 Ingresar Sucursal", key="guardar_sucursal_btn"):
         # Validaciones
+        if not nombre_sucursal:
+            st.error("El nombre de la sucursal es obligatorio.")
+            return
         if telefono and not re.match(r"^\d{9}$", telefono):
-            st.error("El número de teléfono debe tener exactamente 9 dígitos.")
+            st.error("El teléfono debe tener 9 dígitos.")
             return
 
-        if not st.session_state.direccion or not st.session_state.lat or not st.session_state.lon:
-            st.error("La dirección no es válida. Por favor, ingrese una dirección existente y válida.")
-            return
-
-        # Crear el diccionario de datos para la sucursal
-        sucursal = {
+        # Guardar en Firestore (solo una escritura)
+        sucursal_data = {
             "nombre": nombre_sucursal,
-            "direccion": st.session_state.direccion,
+            "direccion": st.session_state.ingresar_sucursal_direccion,
             "coordenadas": {
-                "lat": st.session_state.lat,
-                "lon": st.session_state.lon
+                "lat": st.session_state.ingresar_sucursal_lat,
+                "lon": st.session_state.ingresar_sucursal_lon
             },
-            "encargado": encargado if encargado else "",
-            "telefono": telefono if telefono else "",
+            "encargado": encargado if encargado else None,
+            "telefono": telefono if telefono else None,
         }
 
-        # Guardar en Firestore
-        db.collection("sucursales").add(sucursal)
-        st.success("Sucursal ingresada correctamente.")
-        
-        # Resetear el formulario
-        st.session_state.nombre_sucursal = ""
-        st.session_state.direccion = "Arequipa, Perú"
-        st.session_state.lat = -16.409047
-        st.session_state.lon = -71.537451
-        st.session_state.encargado = ""
-        st.session_state.telefono = ""
-        
-        # Limpiar caché para actualizar
-        if 'sucursales' in st.session_state:
-            del st.session_state.sucursales
-        if 'sucursales_mapa' in st.session_state:
-            del st.session_state.sucursales_mapa
-            
-        st.rerun()  # Refrescar para ver cambios
-        
-# Función principal para solicitar recogida
+        try:
+            db.collection("sucursales").add(sucursal_data)
+            st.success("Sucursal registrada correctamente.")
+            # Limpiar caché de sucursales
+            if 'sucursales' in st.session_state:
+                del st.session_state.sucursales
+            if 'sucursales_mapa' in st.session_state:
+                del st.session_state.sucursales_mapa
+            # Resetear formulario
+            st.session_state.nombre_sucursal = ""
+            st.session_state.ingresar_sucursal_direccion = "Arequipa, Perú"
+            st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon = -16.409047, -71.537451
+            st.session_state.encargado = ""
+            st.session_state.telefono = ""            
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al guardar: {e}")
+              
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -466,24 +473,24 @@ def solicitar_recogida():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("🛒 Solicitar Recogida")
 
-    tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
+    tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True, key="tipo_solicitud_radio")
 
     if tipo_solicitud == "Sucursal":
-        sucursales_mapa = obtener_sucursales_mapa()  # <-- Cambio aquí
-        nombres_sucursales = [s['nombre'] for s in sucursales_mapa]
-        nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
+        sucursales = obtener_sucursales()  # Usa caché
+        nombres_sucursales = [s["nombre"] for s in sucursales]
+        nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales, key="sucursal_select")
         
-        sucursal_seleccionada = next((s for s in sucursales_mapa if s['nombre'] == nombre_sucursal), None)
+        sucursal_seleccionada = next((s for s in sucursales if s["nombre"] == nombre_sucursal), None)
         if sucursal_seleccionada:
-            lat, lon = sucursal_seleccionada['lat'], sucursal_seleccionada['lon']
-            direccion = sucursal_seleccionada['direccion']
+            lat, lon = sucursal_seleccionada["coordenadas"]["lat"], sucursal_seleccionada["coordenadas"]["lon"]
+            direccion = sucursal_seleccionada["direccion"]
         else:
-            st.error("Datos de sucursal incompletos")
+            st.error("Datos de sucursal incompletos.")
             return
             
-        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
+        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date(), key="fecha_recojo_sucursal")
 
-        if st.button("💾 Solicitar Recogida"):
+        if st.button("💾 Solicitar Recogida", key="guardar_recogida_sucursal_btn"):
             fecha_entrega = fecha_recojo + timedelta(days=3)
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
@@ -491,70 +498,106 @@ def solicitar_recogida():
                 "direccion": direccion,
                 "coordenadas": {"lat": lat, "lon": lon},
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
-                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
+                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
             }
             db.collection('recogidas').add(solicitud)
-            st.success(f"Recogida solicitada correctamente. La entrega se ha agendado para {fecha_entrega.strftime('%Y-%m-%d')}.")
+            st.success(f"Recogida agendada para {fecha_entrega.strftime('%Y-%m-%d')}.")
 
     elif tipo_solicitud == "Cliente Delivery":
-        # Inicializar sesión para las coordenadas
-        if "lat" not in st.session_state:
-            st.session_state.lat, st.session_state.lon = -16.409047, -71.537451  # Coordenadas de Arequipa, Perú
-        if "direccion" not in st.session_state:
-            st.session_state.direccion = "Arequipa, Perú"
+        # --- Variables independientes para Delivery ---
+        if "delivery_lat" not in st.session_state:
+            st.session_state.delivery_lat, st.session_state.delivery_lon = -16.409047, -71.537451
+            st.session_state.delivery_direccion = "Arequipa, Perú"
 
-        nombre_cliente = st.text_input("Nombre del Cliente")
-        telefono = st.text_input("Teléfono", max_chars=9)
-
-        # Dirección del cliente con sugerencias
-        direccion_input = st.text_input("Dirección", value=st.session_state.direccion)
-
-        sugerencias = []
-        if direccion_input:
-            sugerencias = obtener_sugerencias_direccion(direccion_input)
-            opciones_desplegable = ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias]
-
-        direccion_seleccionada = st.selectbox(
-            "Sugerencias de Direcciones:", opciones_desplegable if sugerencias else ["No hay sugerencias"]
+        nombre_cliente = st.text_input("Nombre del Cliente", key="delivery_nombre_cliente")
+        telefono = st.text_input("Teléfono", max_chars=9, key="delivery_telefono")
+        direccion_input = st.text_input(
+            "Dirección", 
+            value=st.session_state.delivery_direccion,
+            key="delivery_direccion_input"
         )
 
+        # --- Sugerencias con caché ---
+        sugerencias = []
+        if direccion_input and direccion_input != st.session_state.delivery_direccion:
+            sugerencias = obtener_sugerencias_direccion(direccion_input)
+        
+        direccion_seleccionada = st.selectbox(
+            "Sugerencias de Direcciones:", 
+            options=["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
+            key="delivery_sugerencias"
+        )
+
+        # --- Actualizar al seleccionar sugerencia ---
         if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
             for sug in sugerencias:
                 if direccion_seleccionada == sug["display_name"]:
-                    st.session_state.lat = float(sug["lat"])
-                    st.session_state.lon = float(sug["lon"])
-                    st.session_state.direccion = direccion_seleccionada
+                    st.session_state.delivery_lat = float(sug["lat"])
+                    st.session_state.delivery_lon = float(sug["lon"])
+                    st.session_state.delivery_direccion = direccion_seleccionada
+                    # Actualizar mapa existente
+                    if "delivery_mapa" in st.session_state:
+                        st.session_state.delivery_mapa.location = [st.session_state.delivery_lat, st.session_state.delivery_lon]
+                        for mark in st.session_state.delivery_mapa._children:
+                            if isinstance(mark, folium.Marker):
+                                st.session_state.delivery_mapa._children.remove(mark)
+                        folium.Marker(
+                            [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                            tooltip="Punto seleccionado"
+                        ).add_to(st.session_state.delivery_mapa)
                     break
 
-        # Renderizar mapa basado en coordenadas actuales
-        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=15)
-        folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Punto seleccionado").add_to(m)
-        mapa = st_folium(m, width=700, height=500)
-
-        # Actualizar coordenadas según el clic en el mapa
-        seleccion_usuario = mapa.get("last_clicked")
-        if seleccion_usuario:
-            st.session_state.lat = seleccion_usuario["lat"]
-            st.session_state.lon = seleccion_usuario["lng"]
-            st.session_state.direccion = obtener_direccion_desde_coordenadas(
-                st.session_state.lat, st.session_state.lon
+        # --- Mapa para Delivery ---
+        if "delivery_mapa" not in st.session_state:
+            st.session_state.delivery_mapa = folium.Map(
+                location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+                zoom_start=15
             )
+            folium.Marker(
+                [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                tooltip="Punto seleccionado"
+            ).add_to(st.session_state.delivery_mapa)
 
-        # Mostrar dirección final estilizada
+        mapa = st_folium(
+            st.session_state.delivery_mapa,
+            width=700,
+            height=500,
+            key="delivery_mapa_folium"
+        )
+
+        # --- Actualizar al hacer clic ---
+        if mapa.get("last_clicked"):
+            st.session_state.delivery_lat = mapa["last_clicked"]["lat"]
+            st.session_state.delivery_lon = mapa["last_clicked"]["lng"]
+            st.session_state.delivery_direccion = obtener_direccion_desde_coordenadas(
+                st.session_state.delivery_lat, st.session_state.delivery_lon
+            )
+            st.session_state.delivery_mapa.location = [st.session_state.delivery_lat, st.session_state.delivery_lon]
+            for mark in st.session_state.delivery_mapa._children:
+                if isinstance(mark, folium.Marker):
+                    st.session_state.delivery_mapa._children.remove(mark)
+            folium.Marker(
+                [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                tooltip="Punto seleccionado"
+            ).add_to(st.session_state.delivery_mapa)
+            st.rerun()
+
+        # --- Mostrar dirección final ---
         st.markdown(f"""
             <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
                 <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-                <p style='color: #555; font-size: 16px;'>{st.session_state.direccion}</p>
+                <p style='color: #555; font-size: 16px;'>{st.session_state.delivery_direccion}</p>
             </div>
         """, unsafe_allow_html=True)
 
-        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
+        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date(), key="delivery_fecha_recojo")
 
-        # Botón para registrar solicitud
-        if st.button("💾 Solicitar Recogida"):
-            # Validaciones
-            if not re.match(r'^\d{9}$', telefono):
-                st.error("El número de teléfono debe tener exactamente 9 dígitos.")
+        if st.button("💾 Solicitar Recogida", key="guardar_recogida_delivery_btn"):
+            if not nombre_cliente:
+                st.error("El nombre del cliente es obligatorio.")
+                return
+            if not re.match(r"^\d{9}$", telefono):
+                st.error("Teléfono debe tener 9 dígitos.")
                 return
 
             fecha_entrega = fecha_recojo + timedelta(days=3)
@@ -562,16 +605,17 @@ def solicitar_recogida():
                 "tipo_solicitud": tipo_solicitud,
                 "nombre_cliente": nombre_cliente,
                 "telefono": telefono,
-                "direccion": st.session_state.direccion,
-                "coordenadas": {
-                    "lat": st.session_state.lat,
-                    "lon": st.session_state.lon
-                },
+                "direccion": st.session_state.delivery_direccion,
+                "coordenadas": {"lat": st.session_state.delivery_lat, "lon": st.session_state.delivery_lon},
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
-                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
+                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
             }
             db.collection('recogidas').add(solicitud)
-            st.success(f"Recogida solicitada correctamente. La entrega se ha agendado para {fecha_entrega.strftime('%Y-%m-%d')}.")
+            st.success(f"Recogida agendada para {fecha_entrega.strftime('%Y-%m-%d')}.")
+            # Resetear formulario
+            st.session_state.delivery_direccion = "Arequipa, Perú"
+            st.session_state.delivery_lat, st.session_state.delivery_lon = -16.409047, -71.537451
+            st.rerun()
 
 def datos_ruta():
     col1, col2 = st.columns([1, 3])
