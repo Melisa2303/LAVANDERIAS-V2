@@ -432,7 +432,7 @@ def ingresar_sucursal():
     # Otros campos
     col1, col2 = st.columns(2)
     with col1:
-        encargado = st.text_input("Encargado (Opcional)"), value=st.session_state.encargado)
+        encargado = st.text_input("Encargado (Opcional)", value=st.session_state.encargado)
     with col2:
         telefono = st.text_input("Teléfono (Opcional)", value=st.session_state.telefono, max_chars=9)
         
