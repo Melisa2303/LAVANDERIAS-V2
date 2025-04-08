@@ -419,8 +419,11 @@ def ingresar_sucursal():
     """, unsafe_allow_html=True)
 
     # Otros campos
-    encargado = st.text_input("Encargado (Opcional)")
-    telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
+    col1, col2 = st.columns(2)
+    with col1:
+        encargado = st.text_input("Encargado (Opcional)")
+    with col2:
+        telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
 
     if st.button("💾 Ingresar Sucursal"):
         # Validaciones
@@ -514,9 +517,13 @@ def solicitar_recogida():
                 tooltip="Punto seleccionado"
             ).add_to(st.session_state.delivery_mapa)
 
-        # Widgets de entrada
-        nombre_cliente = st.text_input("Nombre del Cliente")
-        telefono = st.text_input("Teléfono", max_chars=9)
+        # Widgets de entrada      
+        col1, col2 = st.columns(2)
+        with col1:
+            nombre_cliente = st.text_input("Nombre del Cliente")
+        with col2:
+            telefono = st.text_input("Teléfono", max_chars=9)
+        
         direccion_input = st.text_input(
             "Dirección",
             value=st.session_state.delivery_direccion,
