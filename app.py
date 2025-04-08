@@ -503,12 +503,7 @@ def solicitar_recogida():
         if sucursal_seleccionada:
             lat, lon = sucursal_seleccionada["coordenadas"]["lat"], sucursal_seleccionada["coordenadas"]["lon"]
             direccion = sucursal_seleccionada["direccion"]
-            st.markdown(f"""
-                <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
-                    <h4 style='color: #333; margin: 0;'>Dirección de la Sucursal:</h4>
-                    <p style='color: #555; font-size: 16px;'>{direccion}</p>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"**Dirección:** {sucursal_seleccionada['direccion']}")
         else:
             st.error("Datos de sucursal incompletos.")
             return
