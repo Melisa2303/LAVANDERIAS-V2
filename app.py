@@ -477,8 +477,7 @@ def ingresar_sucursal():
                 "ingresar_sucursal_lon": -71.537451
             })
             
-            # Forzar actualización después de 1 segundo
-            time.sleep(1)
+            success_msg.empty()
             st.rerun()
             
         except Exception as e:
