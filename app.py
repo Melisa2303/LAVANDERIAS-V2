@@ -809,7 +809,7 @@ def datos_ruta():
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     nueva_hora = st.time_input(
-                        "Seleccionar hora (7:00 AM - 6:00 PM):",
+                        "Seleccionar hora:",
                         value=hora_actual,
                         step=1800,  # Intervalos de 30 minutos
                         key=f"hora_{delivery_data['id']}"
