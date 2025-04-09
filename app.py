@@ -662,22 +662,6 @@ def solicitar_recogida():
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
-from io import BytesIO
-import pandas as pd
-from datetime import datetime, timedelta
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import folium
-from streamlit_folium import st_folium
-
-
-# Inicializar Firebase si no está inicializado
-if not firebase_admin._apps:
-    cred = credentials.Certificate("ruta/a/tu/archivo/firebase.json")
-    firebase_admin.initialize_app(cred)
-
-
 def datos_ruta():
     # Encabezado de la página
     col1, col2 = st.columns([1, 3])
@@ -726,7 +710,6 @@ def datos_ruta():
     for item in recojos + entregas:
         es_entrega = item.get("fecha_entrega") == fecha_seleccionada.strftime("%Y-%m-%d")
         datos_procesados.append({
-            "ID": item.get("id", ""),
             "Tipo": "Sucursal" if item.get("tipo_solicitud") == "Sucursal" else "Delivery",
             "Operación": "Entrega" if es_entrega else "Recojo",
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
@@ -740,14 +723,30 @@ def datos_ruta():
         st.write(f"📅 Datos para el día: {fecha_seleccionada.strftime('%Y-%m-%d')}")
         df = pd.DataFrame(datos_procesados)
 
-        # Mostrar tabla con reprogramación por fila
-        for index, row in df.iterrows():
-            st.write(f"### {row['Cliente/Sucursal']} - {row['Operación']}")
-            st.write(f"Dirección: {row['Dirección']}, Teléfono: {row['Teléfono']}, Hora: {row['Hora']}")
+        # Mostrar tabla con las herramientas interactivas nativas de st.dataframe
+        st.dataframe(
+            df,
+            height=600,
+            width=1000,
+            use_container_width=True
+        )
 
-            if st.button("Reprogramar", key=f"btn_reprogramar_{index}"):
-                with st.form(key=f"form_reprogramar_{index}"):
-                    nueva_direccion = st.text_input("Nueva Dirección", value=row["Dirección"])
+        # --- Funcionalidad de Reprogramación ---
+        if tipo_servicio == "Delivery":
+            st.markdown("---")
+            st.subheader("Reprogramación de Deliveries")
+
+            # Seleccionar item para reprogramar
+            item_seleccionado = st.selectbox(
+                "Seleccionar Delivery a reprogramar:",
+                options=[f"{i['Cliente/Sucursal']} - {i['Operación']}" for i in datos_procesados if i["Tipo"] == "Delivery"]
+            )
+            
+            if item_seleccionado:
+                item_data = next(i for i in datos_procesados if f"{i['Cliente/Sucursal']} - {i['Operación']}" == item_seleccionado)
+
+                with st.form(key=f"reprogramar_form_{item_seleccionado}"):
+                    nueva_direccion = st.text_input("Nueva Dirección", value=item_data.get("Dirección", "N/A"))
 
                     nueva_fecha = st.date_input(
                         "Nueva Fecha",
@@ -755,26 +754,25 @@ def datos_ruta():
                         min_value=datetime.now().date()
                     )
 
-                    nueva_hora = st.text_input(
+                    nueva_hora = st.time_input(
                         "Hora específica (opcional)",
-                        value=row["Hora"],
-                        placeholder="Ej: 10:00 AM - 12:00 PM"
+                        value=datetime.strptime(item_data["Hora"], "%H:%M:%S").time() if item_data["Hora"] != "No especificada" else datetime.now().time()
                     )
 
                     # Mapa interactivo
+                    st.markdown("#### Ajustar Dirección en el Mapa")
                     m = folium.Map(location=[-16.409047, -71.537451], zoom_start=15)
                     folium.Marker(location=[-16.409047, -71.537451], tooltip="Marcador actual").add_to(m)
                     mapa = st_folium(m, height=300, width=700)
 
                     if st.form_submit_button("Guardar Cambios"):
-                        # Actualizar datos en Firestore
                         updates = {
                             "direccion": nueva_direccion,
-                            "hora_especifica": nueva_hora if nueva_hora else None,
+                            "hora_especifica": nueva_hora.strftime("%H:%M:%S"),
                             "fecha_recojo": nueva_fecha.strftime("%Y-%m-%d")
                         }
                         try:
-                            db.collection('recogidas').document(row["ID"]).update(updates)
+                            db.collection('recogidas').document(item_data["ID"]).update(updates)
                             st.success("¡Reprogramación exitosa!")
                             st.cache_data.clear()  # Limpiar cache
                             st.experimental_rerun()
