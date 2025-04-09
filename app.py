@@ -662,18 +662,6 @@ def solicitar_recogida():
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
-from io import BytesIO
-import pandas as pd
-from datetime import datetime, timedelta
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-
-# Inicializar Firebase si no está inicializado
-if not firebase_admin._apps:
-    cred = credentials.Certificate("ruta/a/tu/archivo/firebase.json")
-    firebase_admin.initialize_app(cred)
-
 def datos_ruta():
     # Encabezado de la página
     col1, col2 = st.columns([1, 3])
@@ -685,11 +673,11 @@ def datos_ruta():
 
     # Filtros
     fecha_seleccionada = st.date_input(
-        "Seleccionar Fecha", 
+        "Seleccionar Fecha",
         value=datetime.now().date(),
         key="filtro_fecha_ruta"
     )
-
+    
     tipo_servicio = st.radio(
         "Filtrar por Tipo",
         ["Todos", "Sucursal", "Delivery"],
@@ -710,7 +698,6 @@ def datos_ruta():
                 query_recojos = query_recojos.where("tipo_solicitud", "==", filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", filtro)
             
-            # Convertir resultados a diccionarios para que sean serializables
             recojos = [doc.to_dict() for doc in query_recojos.stream()]
             entregas = [doc.to_dict() for doc in query_entregas.stream()]
             
@@ -727,7 +714,6 @@ def datos_ruta():
         es_entrega = item.get("fecha_entrega") == fecha_seleccionada.strftime("%Y-%m-%d")
         
         datos_procesados.append({
-            "ID": item.get("id", "N/A"),  # Identificador único para reprogramar
             "Tipo": item.get("tipo_solicitud", "N/A"),
             "Operación": "Entrega" if es_entrega else "Recojo",
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
@@ -736,14 +722,22 @@ def datos_ruta():
             "Hora": item.get("hora_especifica", "No especificada")
         })
 
+    # --- Personalización de Columnas ---
+    todas_las_columnas = ["Tipo", "Operación", "Cliente/Sucursal", "Dirección", "Teléfono", "Hora"]
+    columnas_seleccionadas = st.multiselect(
+        "Seleccionar Columnas a Mostrar",
+        options=todas_las_columnas,
+        default=todas_las_columnas
+    )
+
     # --- Visualización de la Tabla ---
     if datos_procesados:
         st.write(f"📅 Datos para el día: {fecha_seleccionada.strftime('%Y-%m-%d')}")
         df = pd.DataFrame(datos_procesados)
-        
-        # Ordenar por Operación (Recojos primero)
-        df = df.sort_values(by="Operación", ascending=False)
-        
+
+        # Filtrar columnas seleccionadas
+        df = df[columnas_seleccionadas]
+
         # Mostrar tabla
         st.dataframe(
             df,
@@ -769,53 +763,39 @@ def datos_ruta():
                 
                 if st.button("Reprogramar", key="btn_reprogramar"):
                     idx = [i['Cliente/Sucursal'] + " - " + i['Operación'] for i in items_delivery].index(item_seleccionado)
-                    doc_id = items_delivery[idx]["ID"]
-                    item_data = next(item for item in recojos + entregas if item.get("id") == doc_id)
+                    item_data = items_delivery[idx]
                     
                     # Mostrar formulario de reprogramación
-                    with st.form(key=f"reprogramar_form_{doc_id}"):
-                        st.markdown(f"### Reprogramar {item_data.get('nombre_cliente', '')}")
-                        
-                        # Direcciones
+                    with st.form(key=f"reprogramar_form_{item_data['Cliente/Sucursal']}"):
                         nueva_direccion = st.text_input(
                             "Nueva Dirección",
-                            value=item_data.get("direccion", "N/A"),
-                            key=f"nueva_dir_{doc_id}"
+                            value=item_data.get("Dirección", "N/A")
                         )
                         
-                        # Fecha y hora
-                        fecha_actual = datetime.strptime(item_data["fecha_recojo" if item_data.get("fecha_recojo") == fecha_seleccionada.strftime("%Y-%m-%d") else "fecha_entrega"], "%Y-%m-%d").date()
                         nueva_fecha = st.date_input(
                             "Nueva Fecha",
-                            value=fecha_actual + timedelta(days=1),
-                            min_value=datetime.now().date(),
-                            key=f"nueva_fecha_{doc_id}"
+                            value=fecha_seleccionada + timedelta(days=1),
+                            min_value=datetime.now().date()
                         )
                         
                         nueva_hora = st.text_input(
                             "Hora específica (opcional)",
-                            value=item_data.get("hora_especifica", ""),
-                            placeholder="Ej: 10:00 AM - 12:00 PM",
-                            key=f"nueva_hora_{doc_id}"
+                            value=item_data.get("Hora", ""),
+                            placeholder="Ej: 10:00 AM - 12:00 PM"
                         )
                         
                         if st.form_submit_button("Guardar Cambios"):
                             # Actualizar en Firebase
                             updates = {
                                 "direccion": nueva_direccion,
+                                "fecha_recojo": nueva_fecha.strftime("%Y-%m-%d"),
                                 "hora_especifica": nueva_hora if nueva_hora else None
                             }
-                            
-                            if item_data.get("fecha_recojo") == fecha_seleccionada.strftime("%Y-%m-%d"):
-                                updates["fecha_recojo"] = nueva_fecha.strftime("%Y-%m-%d")
-                            else:
-                                updates["fecha_entrega"] = nueva_fecha.strftime("%Y-%m-%d")
-                            
                             try:
+                                doc_id = recojos[idx].get("id", "")  # Asegurar ID correcto
                                 db.collection('recogidas').document(doc_id).update(updates)
                                 st.success("¡Reprogramación exitosa!")
                                 st.cache_data.clear()  # Limpiar cache para refrescar datos
-                                time.sleep(1)
                                 st.experimental_rerun()
                             except Exception as e:
                                 st.error(f"Error al actualizar: {e}")
@@ -830,7 +810,7 @@ def datos_ruta():
         st.download_button(
             label="📥 Descargar en Excel",
             data=excel_buffer.getvalue(),
-            file_name=f"ruta_{fecha_seleccionada.strftime('%Y-%m-%d')}.xlsx",
+            file_name="datos_ruta.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
