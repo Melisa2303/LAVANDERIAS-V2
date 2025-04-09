@@ -14,6 +14,7 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
 from io import BytesIO
+import time
 
 # Cargar variables de entorno
 load_dotenv()
@@ -675,18 +676,11 @@ def datos_ruta():
     # --- Filtros ---
     col1, col2 = st.columns(2)
     with col1:
-        fecha_seleccionada = st.date_input(
-            "Seleccionar Fecha",
-            value=datetime.now().date()
-        )
+        fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
     with col2:
-        tipo_servicio = st.radio(
-            "Tipo de Servicio",
-            ["Todos", "Sucursal", "Delivery"],
-            horizontal=True
-        )
+        tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
 
-    # --- Obtener datos optimizados (solo campos necesarios) ---
+    # --- Obtener datos optimizados ---
     @st.cache_data(ttl=300)
     def cargar_ruta(fecha, tipo):
         try:
@@ -698,7 +692,6 @@ def datos_ruta():
                 query_recojos = query_recojos.where("tipo_solicitud", "==", tipo_filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", tipo_filtro)
 
-            # Solo obtenemos los campos necesarios para optimizar
             datos = []
             for doc in query_recojos.stream():
                 data = doc.to_dict()
@@ -739,17 +732,24 @@ def datos_ruta():
 
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
-    # --- Mostrar Tabla (solo columnas necesarias) ---
+    # --- Mostrar Tabla ---
     if datos:
-        # DataFrame solo con columnas a mostrar
-        df_tabla = pd.DataFrame([{
-            "Operación": item["operacion"],
-            "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
-            "Dirección": item.get("direccion", "N/A"),
-            "Teléfono": item.get("telefono", "N/A"),
-            "Hora": item.get("hora_especifica", "No especificada"),
-            "Tipo": item.get("tipo_solicitud", "N/A")
-        } for item in datos])
+        # Preparar datos para tabla
+        tabla_data = []
+        for item in datos:
+            # Determinar qué nombre mostrar (cliente o sucursal)
+            nombre_mostrar = item.get("nombre_cliente") if item["tipo_solicitud"] == "Cliente Delivery" else item.get("sucursal")
+            
+            tabla_data.append({
+                "Operación": item["operacion"],
+                "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
+                "Dirección": item.get("direccion", "N/A"),
+                "Teléfono": item.get("telefono", "N/A"),
+                "Hora": item.get("hora_especifica", "No especificada"),
+                "Tipo": item["tipo_solicitud"]
+            })
+
+        df_tabla = pd.DataFrame(tabla_data)
 
         st.dataframe(
             df_tabla,
@@ -769,9 +769,10 @@ def datos_ruta():
         for item in datos:
             coords = item.get("coordenadas", {})
             if coords and "lat" in coords and "lon" in coords:
+                nombre = item.get("nombre_cliente") if item["tipo_solicitud"] == "Cliente Delivery" else item.get("sucursal")
                 folium.Marker(
                     location=[coords["lat"], coords["lon"]],
-                    popup=f"{item.get('nombre_cliente', item.get('sucursal', 'N/A'))} - {item['operacion']}",
+                    popup=f"{nombre or 'N/A'} - {item['operacion']}",
                     icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
                 ).add_to(m)
         
@@ -784,20 +785,14 @@ def datos_ruta():
             st.markdown("---")
             st.subheader("🔄 Gestión de Deliveries")
             
+            # Seleccionar delivery
             selected = st.selectbox(
                 "Seleccionar delivery:",
-                list(set(
-                    item.get("nombre_cliente", item.get("sucursal", "N/A")) 
-                    for item in deliveries
-                ))
+                options=[item.get("nombre_cliente", "N/A") for item in deliveries],
+                format_func=lambda x: x if x != "N/A" else "Sin nombre"
             )
             
-            # Encontrar el delivery seleccionado
-            delivery_data = next(
-                (item for item in deliveries 
-                 if item.get("nombre_cliente", item.get("sucursal", "N/A")) == selected),
-                None
-            )
+            delivery_data = next((item for item in deliveries if item.get("nombre_cliente") == selected), None)
 
             if delivery_data:
                 # --- Sección de Hora ---
@@ -808,10 +803,7 @@ def datos_ruta():
                     else datetime.now().time()
                 )
                 
-                nueva_hora = st.time_input(
-                    "Nueva hora:",
-                    value=current_time
-                )
+                nueva_hora = st.time_input("Nueva hora:", value=current_time)
                 
                 if st.button("💾 Guardar Hora"):
                     try:
@@ -827,8 +819,63 @@ def datos_ruta():
 
                 # --- Sección de Reprogramación ---
                 st.markdown("### 📅 Reprogramación")
-                with st.expander("Cambiar fecha y ubicación"):
-                    # Fecha mínima según operación
+                with st.expander("Cambiar fecha y ubicación", expanded=True):
+                    # Inicializar variables de sesión para dirección
+                    if 'reprogramar_direccion' not in st.session_state:
+                        st.session_state.reprogramar_direccion = delivery_data.get("direccion", "")
+                        st.session_state.reprogramar_latlon = (
+                            delivery_data["coordenadas"]["lat"],
+                            delivery_data["coordenadas"]["lon"]
+                        )
+
+                    # Campo de dirección con sugerencias
+                    direccion_actual = st.text_input(
+                        "Dirección:",
+                        value=st.session_state.reprogramar_direccion,
+                        key="reprogramar_direccion_input"
+                    )
+
+                    # Buscar sugerencias al escribir
+                    if direccion_actual != st.session_state.reprogramar_direccion:
+                        sugerencias = obtener_sugerencias_direccion(direccion_actual)
+                        if sugerencias:
+                            direccion_seleccionada = st.selectbox(
+                                "Sugerencias de dirección:",
+                                [sug["display_name"] for sug in sugerencias],
+                                key="reprogramar_sugerencias"
+                            )
+                            if direccion_seleccionada:
+                                for sug in sugerencias:
+                                    if direccion_seleccionada == sug["display_name"]:
+                                        st.session_state.reprogramar_latlon = (float(sug["lat"]), float(sug["lon"]))
+                                        st.session_state.reprogramar_direccion = direccion_seleccionada
+                                        break
+
+                    # Mapa interactivo
+                    st.markdown("**📍 Arrastra el marcador para ajustar la ubicación:**")
+                    m = folium.Map(
+                        location=st.session_state.reprogramar_latlon,
+                        zoom_start=16
+                    )
+                    folium.Marker(
+                        st.session_state.reprogramar_latlon,
+                        draggable=True,
+                        tooltip="Arrastrar para ajustar"
+                    ).add_to(m)
+                    mapa_evento = st_folium(m, width=700, height=400)
+
+                    # Actualizar dirección al mover el marcador
+                    if mapa_evento.get("last_clicked"):
+                        nueva_lat = mapa_evento["last_clicked"]["lat"]
+                        nueva_lon = mapa_evento["last_clicked"]["lng"]
+                        st.session_state.reprogramar_direccion = obtener_direccion_desde_coordenadas(nueva_lat, nueva_lon)
+                        st.session_state.reprogramar_latlon = (nueva_lat, nueva_lon)
+                        st.rerun()
+
+                    # Mostrar dirección actualizada
+                    st.markdown(f"**Dirección seleccionada:** {st.session_state.reprogramar_direccion}")
+
+                    # Selector de fecha
                     min_date = (
                         datetime.now().date() 
                         if delivery_data["operacion"] == "Recojo" 
@@ -841,29 +888,15 @@ def datos_ruta():
                         min_value=min_date
                     )
 
-                    # Mapa interactivo
-                    st.markdown("**📍 Nueva ubicación:**")
-                    lat, lon = delivery_data["coordenadas"]["lat"], delivery_data["coordenadas"]["lon"]
-                    m = folium.Map(location=[lat, lon], zoom_start=16)
-                    folium.Marker([lat, lon], draggable=True).add_to(m)
-                    mapa_evento = st_folium(m, width=700, height=400)
-
                     if st.button("💾 Guardar Reprogramación"):
                         updates = {
-                            "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d")
+                            "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
+                            "direccion": st.session_state.reprogramar_direccion,
+                            "coordenadas": {
+                                "lat": st.session_state.reprogramar_latlon[0],
+                                "lon": st.session_state.reprogramar_latlon[1]
+                            }
                         }
-                        
-                        if mapa_evento.get("last_clicked"):
-                            updates.update({
-                                "coordenadas": {
-                                    "lat": mapa_evento["last_clicked"]["lat"],
-                                    "lon": mapa_evento["last_clicked"]["lng"]
-                                },
-                                "direccion": obtener_direccion_desde_coordenadas(
-                                    mapa_evento["last_clicked"]["lat"],
-                                    mapa_evento["last_clicked"]["lng"]
-                                )
-                            })
                         
                         try:
                             db.collection('recogidas').document(delivery_data["id"]).update(updates)
