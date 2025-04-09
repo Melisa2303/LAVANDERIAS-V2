@@ -662,6 +662,22 @@ def solicitar_recogida():
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
+from io import BytesIO
+import pandas as pd
+from datetime import datetime, timedelta
+import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore
+import folium
+from streamlit_folium import st_folium
+
+
+# Inicializar Firebase si no está inicializado
+if not firebase_admin._apps:
+    cred = credentials.Certificate("ruta/a/tu/archivo/firebase.json")
+    firebase_admin.initialize_app(cred)
+
+
 def datos_ruta():
     # Encabezado de la página
     col1, col2 = st.columns([1, 3])
@@ -685,22 +701,20 @@ def datos_ruta():
         key="filtro_tipo_ruta"
     )
 
-    # --- Consulta Optimizada ---
     @st.cache_data(ttl=300)  # Cache de 5 minutos
     def obtener_datos_ruta(fecha, tipo):
         try:
-            # Consultas para recojos y entregas
             query_recojos = db.collection('recogidas').where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d"))
             query_entregas = db.collection('recogidas').where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
-            
+
             if tipo != "Todos":
                 filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
                 query_recojos = query_recojos.where("tipo_solicitud", "==", filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", filtro)
-            
+
             recojos = [doc.to_dict() for doc in query_recojos.stream()]
             entregas = [doc.to_dict() for doc in query_entregas.stream()]
-            
+
             return recojos, entregas
         except Exception as e:
             st.error(f"Error al cargar datos: {e}")
@@ -708,12 +722,11 @@ def datos_ruta():
 
     recojos, entregas = obtener_datos_ruta(fecha_seleccionada, tipo_servicio)
 
-    # --- Procesamiento de Datos ---
     datos_procesados = []
     for item in recojos + entregas:
         es_entrega = item.get("fecha_entrega") == fecha_seleccionada.strftime("%Y-%m-%d")
-        
         datos_procesados.append({
+            "ID": item.get("id", ""),
             "Tipo": "Sucursal" if item.get("tipo_solicitud") == "Sucursal" else "Delivery",
             "Operación": "Entrega" if es_entrega else "Recojo",
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
@@ -727,68 +740,58 @@ def datos_ruta():
         st.write(f"📅 Datos para el día: {fecha_seleccionada.strftime('%Y-%m-%d')}")
         df = pd.DataFrame(datos_procesados)
 
-        # Mostrar tabla con opciones interactivas
-        st.dataframe(
-            df,
-            height=600,
-            width=1000,
-            use_container_width=True
-        )
+        # Mostrar tabla con reprogramación por fila
+        for index, row in df.iterrows():
+            st.write(f"### {row['Cliente/Sucursal']} - {row['Operación']}")
+            st.write(f"Dirección: {row['Dirección']}, Teléfono: {row['Teléfono']}, Hora: {row['Hora']}")
 
-        # --- Funcionalidad de Reprogramación ---
-        if tipo_servicio == "Delivery":
-            st.markdown("---")
-            st.subheader("Reprogramación (Solo Delivery)")
-            
-            # Seleccionar item a reprogramar
-            items_delivery = [i for i in datos_procesados if i["Tipo"] == "Delivery"]
-            
-            if items_delivery:
-                item_seleccionado = st.selectbox(
-                    "Seleccionar Delivery a reprogramar:",
-                    options=[f"{i['Cliente/Sucursal']} - {i['Operación']}" for i in items_delivery],
-                    key="select_reprogramar"
-                )
-                
-                if st.button("Reprogramar", key="btn_reprogramar"):
-                    idx = [i['Cliente/Sucursal'] + " - " + i['Operación'] for i in items_delivery].index(item_seleccionado)
-                    item_data = items_delivery[idx]
-                    
-                    # Mostrar formulario de reprogramación
-                    with st.form(key=f"reprogramar_form_{item_data['Cliente/Sucursal']}"):
-                        nueva_direccion = st.text_input(
-                            "Nueva Dirección",
-                            value=item_data.get("Dirección", "N/A")
-                        )
-                        
-                        nueva_fecha = st.date_input(
-                            "Nueva Fecha",
-                            value=fecha_seleccionada + timedelta(days=1),
-                            min_value=datetime.now().date()
-                        )
-                        
-                        nueva_hora = st.text_input(
-                            "Hora específica (opcional)",
-                            value=item_data.get("Hora", ""),
-                            placeholder="Ej: 10:00 AM - 12:00 PM"
-                        )
-                        
-                        if st.form_submit_button("Guardar Cambios"):
-                            # Actualizar en Firebase
-                            updates = {
-                                "direccion": nueva_direccion,
-                                "fecha_recojo": nueva_fecha.strftime("%Y-%m-%d"),
-                                "hora_especifica": nueva_hora if nueva_hora else None
-                            }
-                            try:
-                                db.collection('recogidas').document("Documento-ID").update(updates)
-                                st.success("¡Reprogramación exitosa!")
-                                st.cache_data.clear()  # Limpiar cache para refrescar datos
-                                st.experimental_rerun()
-                            except Exception as e:
-                                st.error(f"Error al actualizar: {e}")
-            else:
-                st.info("No hay deliveries para reprogramar en esta fecha")
+            if st.button("Reprogramar", key=f"btn_reprogramar_{index}"):
+                with st.form(key=f"form_reprogramar_{index}"):
+                    nueva_direccion = st.text_input("Nueva Dirección", value=row["Dirección"])
+
+                    nueva_fecha = st.date_input(
+                        "Nueva Fecha",
+                        value=fecha_seleccionada + timedelta(days=1),
+                        min_value=datetime.now().date()
+                    )
+
+                    nueva_hora = st.text_input(
+                        "Hora específica (opcional)",
+                        value=row["Hora"],
+                        placeholder="Ej: 10:00 AM - 12:00 PM"
+                    )
+
+                    # Mapa interactivo
+                    m = folium.Map(location=[-16.409047, -71.537451], zoom_start=15)
+                    folium.Marker(location=[-16.409047, -71.537451], tooltip="Marcador actual").add_to(m)
+                    mapa = st_folium(m, height=300, width=700)
+
+                    if st.form_submit_button("Guardar Cambios"):
+                        # Actualizar datos en Firestore
+                        updates = {
+                            "direccion": nueva_direccion,
+                            "hora_especifica": nueva_hora if nueva_hora else None,
+                            "fecha_recojo": nueva_fecha.strftime("%Y-%m-%d")
+                        }
+                        try:
+                            db.collection('recogidas').document(row["ID"]).update(updates)
+                            st.success("¡Reprogramación exitosa!")
+                            st.cache_data.clear()  # Limpiar cache
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Error al actualizar: {e}")
+
+        # --- Botón para Descargar en Excel ---
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name="DatosRuta")
+
+        st.download_button(
+            label="📥 Descargar en Excel",
+            data=excel_buffer.getvalue(),
+            file_name="datos_ruta.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
         st.info("No hay datos para la fecha seleccionada")
         
