@@ -795,28 +795,43 @@ def datos_ruta():
             delivery_data = next((item for item in deliveries if item.get("nombre_cliente") == selected), None)
 
             if delivery_data:
-                # --- Sección de Hora ---
+                # --- Sección de Hora Simplificada ---
                 st.markdown("### ⏰ Configurar Hora Específica")
-                current_time = (
-                    datetime.strptime(delivery_data["hora_especifica"], "%H:%M:%S").time() 
-                    if delivery_data.get("hora_especifica") != "No especificada" 
-                    else datetime.now().time()
+    
+                # 1. Obtener hora actual del registro
+                hora_actual = (
+                    datetime.strptime(delivery_data["hora_especifica"], "%H:%M:%S").time()
+                    if delivery_data.get("hora_especifica") != "No especificada"
+                    else datetime.strptime("12:00", "%H:%M").time()  # Valor por defecto mediodía
                 )
+    
+                # 2. Widget de hora con restricciones
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    nueva_hora = st.time_input(
+                        "Seleccionar hora (7:00 AM - 6:00 PM):",
+                        value=hora_actual,
+                        step=1800,  # Intervalos de 30 minutos
+                        key=f"hora_{delivery_data['id']}"
+                    )
+                with col2:
+                    st.markdown("<br>", unsafe_allow_html=True)  # Espacio vertical
+                    if st.button("💾 Guardar Hora", key=f"btn_hora_{delivery_data['id']}"):
+                        # Validar rango horario
+                        if datetime.strptime("07:00", "%H:%M").time() <= nueva_hora <= datetime.strptime("18:00", "%H:%M").time():
+                            try:
+                                db.collection('recogidas').document(delivery_data["id"]).update({
+                                    "hora_especifica": nueva_hora.strftime("%H:%M:%S")
+                                })
+                                st.success("Hora actualizada correctamente")
+                                st.cache_data.clear()
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al actualizar hora: {e}")
+                        else:
+                            st.error("El horario debe estar entre 7:00 AM y 6:00 PM")
                 
-                nueva_hora = st.time_input("Nueva hora:", value=current_time)
-                
-                if st.button("💾 Guardar Hora"):
-                    try:
-                        db.collection('recogidas').document(delivery_data["id"]).update({
-                            "hora_especifica": nueva_hora.strftime("%H:%M:%S")
-                        })
-                        st.success("Hora actualizada correctamente")
-                        st.cache_data.clear()
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al actualizar hora: {e}")
-
                 # --- Sección de Reprogramación ---
                 st.markdown("### 📅 Reprogramación")
                 with st.expander("Cambiar fecha y ubicación", expanded=True):
