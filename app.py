@@ -671,8 +671,8 @@ def datos_ruta():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
     st.title("📋 Ruta del Día")
-    
-    # --- Filtros Simplificados ---
+
+    # --- Filtros ---
     col1, col2 = st.columns(2)
     with col1:
         fecha_seleccionada = st.date_input(
@@ -690,9 +690,7 @@ def datos_ruta():
     @st.cache_data(ttl=300)
     def cargar_ruta(fecha, tipo):
         try:
-            # Consulta para recojos del día
             query_recojos = db.collection('recogidas').where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d"))
-            # Consulta para entregas del día
             query_entregas = db.collection('recogidas').where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
 
             if tipo != "Todos":
@@ -700,7 +698,6 @@ def datos_ruta():
                 query_recojos = query_recojos.where("tipo_solicitud", "==", tipo_filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", tipo_filtro)
 
-            # Combinar resultados
             recojos = [{"id": doc.id, **doc.to_dict(), "operacion": "Recojo"} for doc in query_recojos.stream()]
             entregas = [{"id": doc.id, **doc.to_dict(), "operacion": "Entrega"} for doc in query_entregas.stream()]
             
@@ -711,7 +708,7 @@ def datos_ruta():
 
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
-    # --- Mostrar Tabla Mejorada ---
+    # --- Mostrar Tabla (sin índice numérico) ---
     if datos:
         # Preparar datos para tabla
         df = pd.DataFrame([{
@@ -727,9 +724,9 @@ def datos_ruta():
             "Fecha Entrega": item.get("fecha_entrega")
         } for item in datos])
 
-        # Mostrar tabla
+        # Mostrar tabla (sin índice)
         st.dataframe(
-            df.drop(columns=["Coordenadas", "ID", "Fecha Recojo", "Fecha Entrega"]),
+            df.drop(columns=["Coordenadas", "ID", "Fecha Recojo", "Fecha Entrega"]).set_index("Operación"),  # Elimina columna numérica
             height=600,
             width=1000,
             column_config={
@@ -776,7 +773,7 @@ def datos_ruta():
             
             delivery_data = deliveries_df[deliveries_df["Cliente/Sucursal"] == selected].iloc[0].to_dict()
 
-            # --- Sección de Hora Independiente ---
+            # --- Sección de Hora (Independiente) ---
             st.markdown("### ⏰ Configurar Hora Específica")
             current_time = datetime.strptime(delivery_data["Hora"], "%H:%M:%S").time() if delivery_data["Hora"] != "No especificada" else datetime.now().time()
             
@@ -799,56 +796,86 @@ def datos_ruta():
                     except Exception as e:
                         st.error(f"Error al actualizar hora: {e}")
 
-            # --- Sección de Reprogramación ---
+            # --- Sección de Reprogramación (Dirección + Fecha) ---
             st.markdown("### 📅 Reprogramación")
             with st.expander("Cambiar fecha y/o ubicación", expanded=False):
-                # Determinar fecha mínima según operación
-                if delivery_data["Operación"] == "Recojo":
-                    min_date = datetime.now().date()
-                    current_date = datetime.strptime(delivery_data["Fecha Recojo"], "%Y-%m-%d").date()
-                else:  # Entrega
-                    min_date = datetime.strptime(delivery_data["Fecha Entrega"], "%Y-%m-%d").date()
-                    current_date = min_date
+                # Inicializar variables de sesión para dirección
+                if 'reprogramar_direccion' not in st.session_state:
+                    st.session_state.reprogramar_direccion = delivery_data["Dirección"]
+                    st.session_state.reprogramar_latlon = (
+                        delivery_data["Coordenadas"]["lat"],
+                        delivery_data["Coordenadas"]["lon"]
+                    )
 
-                nueva_fecha = st.date_input(
-                    "Nueva fecha:",
-                    value=current_date + timedelta(days=1),
-                    min_value=min_date
+                # Campo de dirección con sugerencias
+                direccion_actual = st.text_input(
+                    "Dirección:",
+                    value=st.session_state.reprogramar_direccion,
+                    key="reprogramar_direccion_input"
                 )
 
-                # Mapa interactivo
-                st.markdown("**📍 Nueva ubicación:**")
-                lat, lon = delivery_data["Coordenadas"]["lat"], delivery_data["Coordenadas"]["lon"]
-                m_reprogram = folium.Map(location=[lat, lon], zoom_start=16)
+                # Buscar sugerencias al escribir
+                if direccion_actual != st.session_state.reprogramar_direccion:
+                    sugerencias = obtener_sugerencias_direccion(direccion_actual)
+                    if sugerencias:
+                        direccion_seleccionada = st.selectbox(
+                            "Sugerencias de dirección:",
+                            [sug["display_name"] for sug in sugerencias],
+                            key="reprogramar_sugerencias"
+                        )
+                        if direccion_seleccionada:
+                            for sug in sugerencias:
+                                if direccion_seleccionada == sug["display_name"]:
+                                    st.session_state.reprogramar_latlon = (float(sug["lat"]), float(sug["lon"]))
+                                    st.session_state.reprogramar_direccion = direccion_seleccionada
+                                    break
+
+                # Mapa interactivo (arrastrable)
+                st.markdown("**📍 Arrastra el marcador para ajustar la ubicación:**")
+                m = folium.Map(
+                    location=st.session_state.reprogramar_latlon,
+                    zoom_start=16
+                )
                 folium.Marker(
-                    [lat, lon],
+                    st.session_state.reprogramar_latlon,
                     draggable=True,
-                    tooltip="Arrastra para ajustar"
-                ).add_to(m_reprogram)
-                mapa_evento = st_folium(m_reprogram, width=700, height=400)
+                    tooltip="Arrastrar para ajustar"
+                ).add_to(m)
+                mapa_evento = st_folium(m, width=700, height=400)
+
+                # Actualizar dirección al mover el marcador
+                if mapa_evento.get("last_clicked"):
+                    nueva_lat = mapa_evento["last_clicked"]["lat"]
+                    nueva_lon = mapa_evento["last_clicked"]["lng"]
+                    st.session_state.reprogramar_latlon = (nueva_lat, nueva_lon)
+                    st.session_state.reprogramar_direccion = obtener_direccion_desde_coordenadas(nueva_lat, nueva_lon)
+                    st.rerun()
+
+                # Selector de fecha
+                nueva_fecha = st.date_input(
+                    "Nueva fecha:",
+                    value=datetime.strptime(delivery_data["Fecha Recojo"], "%Y-%m-%d").date() + timedelta(days=1),
+                    min_value=datetime.now().date() if delivery_data["Operación"] == "Recojo" 
+                            else datetime.strptime(delivery_data["Fecha Entrega"], "%Y-%m-%d").date()
+                )
 
                 if st.button("💾 Guardar Reprogramación", key="guardar_reprogram"):
                     updates = {
-                        "fecha_recojo" if delivery_data["Operación"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d")
+                        "fecha_recojo": nueva_fecha.strftime("%Y-%m-%d"),
+                        "direccion": st.session_state.reprogramar_direccion,
+                        "coordenadas": {
+                            "lat": st.session_state.reprogramar_latlon[0],
+                            "lon": st.session_state.reprogramar_latlon[1]
+                        }
                     }
-
-                    # Actualizar coordenadas si se movió el marcador
-                    if mapa_evento.get("last_clicked"):
-                        nueva_lat = mapa_evento["last_clicked"]["lat"]
-                        nueva_lon = mapa_evento["last_clicked"]["lng"]
-                        updates.update({
-                            "coordenadas": {"lat": nueva_lat, "lon": nueva_lon},
-                            "direccion": obtener_direccion_desde_coordenadas(nueva_lat, nueva_lon)
-                        })
-
                     try:
                         db.collection('recogidas').document(delivery_data["ID"]).update(updates)
-                        st.success("Reprogramación guardada correctamente")
+                        st.success("¡Reprogramación guardada!")
                         st.cache_data.clear()
                         time.sleep(2)
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error al actualizar: {e}")
+                        st.error(f"Error: {e}")
 
         # --- Botón de Descarga ---
         excel_buffer = BytesIO()
