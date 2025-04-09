@@ -686,7 +686,7 @@ def datos_ruta():
             horizontal=True
         )
 
-    # --- Obtener datos optimizados ---
+    # --- Obtener datos optimizados (solo campos necesarios) ---
     @st.cache_data(ttl=300)
     def cargar_ruta(fecha, tipo):
         try:
@@ -698,19 +698,51 @@ def datos_ruta():
                 query_recojos = query_recojos.where("tipo_solicitud", "==", tipo_filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", tipo_filtro)
 
-            recojos = [{"id": doc.id, **doc.to_dict(), "operacion": "Recojo"} for doc in query_recojos.stream()]
-            entregas = [{"id": doc.id, **doc.to_dict(), "operacion": "Entrega"} for doc in query_entregas.stream()]
+            # Solo obtenemos los campos necesarios para optimizar
+            datos = []
+            for doc in query_recojos.stream():
+                data = doc.to_dict()
+                datos.append({
+                    "id": doc.id,
+                    "operacion": "Recojo",
+                    "nombre_cliente": data.get("nombre_cliente"),
+                    "sucursal": data.get("sucursal"),
+                    "direccion": data.get("direccion"),
+                    "telefono": data.get("telefono"),
+                    "hora_especifica": data.get("hora_especifica", "No especificada"),
+                    "tipo_solicitud": data.get("tipo_solicitud"),
+                    "coordenadas": data.get("coordenadas", {}),
+                    "fecha_recojo": data.get("fecha_recojo"),
+                    "fecha_entrega": data.get("fecha_entrega")
+                })
             
-            return recojos + entregas
+            for doc in query_entregas.stream():
+                data = doc.to_dict()
+                datos.append({
+                    "id": doc.id,
+                    "operacion": "Entrega",
+                    "nombre_cliente": data.get("nombre_cliente"),
+                    "sucursal": data.get("sucursal"),
+                    "direccion": data.get("direccion"),
+                    "telefono": data.get("telefono"),
+                    "hora_especifica": data.get("hora_especifica", "No especificada"),
+                    "tipo_solicitud": data.get("tipo_solicitud"),
+                    "coordenadas": data.get("coordenadas", {}),
+                    "fecha_recojo": data.get("fecha_recojo"),
+                    "fecha_entrega": data.get("fecha_entrega")
+                })
+            
+            return datos
         except Exception as e:
             st.error(f"Error al cargar datos: {e}")
             return []
 
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
-    # --- Mostrar Tabla ---
+    # --- Mostrar Tabla (solo columnas necesarias) ---
     if datos:
-        df = pd.DataFrame([{
+        # DataFrame solo con columnas a mostrar
+        df_tabla = pd.DataFrame([{
             "Operación": item["operacion"],
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
             "Dirección": item.get("direccion", "N/A"),
@@ -719,12 +751,11 @@ def datos_ruta():
             "Tipo": item.get("tipo_solicitud", "N/A")
         } for item in datos])
 
-        # Mostrar tabla sin índice numérico
         st.dataframe(
-            df,
+            df_tabla,
             height=600,
             use_container_width=True,
-            hide_index=True,  # Elimina la columna 0,1,2...
+            hide_index=True,
             column_config={
                 "Dirección": st.column_config.TextColumn(width="large"),
                 "Hora": st.column_config.TextColumn(width="small")
@@ -735,104 +766,118 @@ def datos_ruta():
         st.subheader("🗺️ Mapa de Ruta")
         m = folium.Map(location=[-16.409047, -71.537451], zoom_start=13)
         
-        for _, row in df.iterrows():
-            if row["Coordenadas"]:
+        for item in datos:
+            coords = item.get("coordenadas", {})
+            if coords and "lat" in coords and "lon" in coords:
                 folium.Marker(
-                    location=[row["Coordenadas"]["lat"], row["Coordenadas"]["lon"]],
-                    popup=f"{row['Cliente/Sucursal']} - {row['Operación']}",
-                    icon=folium.Icon(color="green" if row["Operación"] == "Recojo" else "blue")
+                    location=[coords["lat"], coords["lon"]],
+                    popup=f"{item.get('nombre_cliente', item.get('sucursal', 'N/A'))} - {item['operacion']}",
+                    icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
                 ).add_to(m)
         
         st_folium(m, width=700, height=500)
 
         # --- Gestión de Deliveries ---
-        deliveries_df = df[(df["Tipo"] == "Cliente Delivery")]
+        deliveries = [item for item in datos if item.get("tipo_solicitud") == "Cliente Delivery"]
         
-        if not deliveries_df.empty:
+        if deliveries:
             st.markdown("---")
             st.subheader("🔄 Gestión de Deliveries")
             
             selected = st.selectbox(
                 "Seleccionar delivery:",
-                deliveries_df["Cliente/Sucursal"].unique()
+                list(set(
+                    item.get("nombre_cliente", item.get("sucursal", "N/A")) 
+                    for item in deliveries
+                ))
             )
             
-            delivery_data = deliveries_df[deliveries_df["Cliente/Sucursal"] == selected].iloc[0].to_dict()
-
-            # --- Sección de Hora ---
-            st.markdown("### ⏰ Configurar Hora Específica")
-            current_time = datetime.strptime(delivery_data["Hora"], "%H:%M:%S").time() if delivery_data["Hora"] != "No especificada" else datetime.now().time()
-            
-            nueva_hora = st.time_input(
-                "Nueva hora:",
-                value=current_time
+            # Encontrar el delivery seleccionado
+            delivery_data = next(
+                (item for item in deliveries 
+                 if item.get("nombre_cliente", item.get("sucursal", "N/A")) == selected),
+                None
             )
-            
-            if st.button("💾 Guardar Hora"):
-                try:
-                    db.collection('recogidas').document(delivery_data["ID"]).update({
-                        "hora_especifica": nueva_hora.strftime("%H:%M:%S")
-                    })
-                    st.success("Hora actualizada correctamente")
-                    st.cache_data.clear()
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al actualizar hora: {e}")
 
-            # --- Sección de Reprogramación ---
-            st.markdown("### 📅 Reprogramación")
-            with st.expander("Cambiar fecha y ubicación"):
-                # Fecha mínima según operación
-                if delivery_data["Operación"] == "Recojo":
-                    min_date = datetime.now().date()  # Para recojos: desde hoy
-                else:
-                    # Para entregas: desde la fecha original programada
-                    min_date = datetime.strptime(delivery_data["Fecha Entrega"], "%Y-%m-%d").date()
-                
-                nueva_fecha = st.date_input(
-                    "Nueva fecha:",
-                    value=min_date + timedelta(days=1),  # Día siguiente por defecto
-                    min_value=min_date
+            if delivery_data:
+                # --- Sección de Hora ---
+                st.markdown("### ⏰ Configurar Hora Específica")
+                current_time = (
+                    datetime.strptime(delivery_data["hora_especifica"], "%H:%M:%S").time() 
+                    if delivery_data.get("hora_especifica") != "No especificada" 
+                    else datetime.now().time()
                 )
-
-                # Mapa interactivo
-                st.markdown("**📍 Nueva ubicación:**")
-                lat, lon = delivery_data["Coordenadas"]["lat"], delivery_data["Coordenadas"]["lon"]
-                m = folium.Map(location=[lat, lon], zoom_start=16)
-                folium.Marker([lat, lon], draggable=True).add_to(m)
-                mapa_evento = st_folium(m, width=700, height=400)
-
-                if st.button("💾 Guardar Reprogramación"):
-                    updates = {
-                        "fecha_recojo" if delivery_data["Operación"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d")
-                    }
-                    
-                    if mapa_evento.get("last_clicked"):
-                        updates.update({
-                            "coordenadas": {
-                                "lat": mapa_evento["last_clicked"]["lat"],
-                                "lon": mapa_evento["last_clicked"]["lng"]
-                            },
-                            "direccion": obtener_direccion_desde_coordenadas(
-                                mapa_evento["last_clicked"]["lat"],
-                                mapa_evento["last_clicked"]["lng"]
-                            )
-                        })
-                    
+                
+                nueva_hora = st.time_input(
+                    "Nueva hora:",
+                    value=current_time
+                )
+                
+                if st.button("💾 Guardar Hora"):
                     try:
-                        db.collection('recogidas').document(delivery_data["ID"]).update(updates)
-                        st.success("¡Reprogramación exitosa!")
+                        db.collection('recogidas').document(delivery_data["id"]).update({
+                            "hora_especifica": nueva_hora.strftime("%H:%M:%S")
+                        })
+                        st.success("Hora actualizada correctamente")
                         st.cache_data.clear()
-                        time.sleep(2)
+                        time.sleep(1)
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Error al actualizar hora: {e}")
+
+                # --- Sección de Reprogramación ---
+                st.markdown("### 📅 Reprogramación")
+                with st.expander("Cambiar fecha y ubicación"):
+                    # Fecha mínima según operación
+                    min_date = (
+                        datetime.now().date() 
+                        if delivery_data["operacion"] == "Recojo" 
+                        else datetime.strptime(delivery_data["fecha_entrega"], "%Y-%m-%d").date()
+                    )
+                    
+                    nueva_fecha = st.date_input(
+                        "Nueva fecha:",
+                        value=min_date + timedelta(days=1),
+                        min_value=min_date
+                    )
+
+                    # Mapa interactivo
+                    st.markdown("**📍 Nueva ubicación:**")
+                    lat, lon = delivery_data["coordenadas"]["lat"], delivery_data["coordenadas"]["lon"]
+                    m = folium.Map(location=[lat, lon], zoom_start=16)
+                    folium.Marker([lat, lon], draggable=True).add_to(m)
+                    mapa_evento = st_folium(m, width=700, height=400)
+
+                    if st.button("💾 Guardar Reprogramación"):
+                        updates = {
+                            "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d")
+                        }
+                        
+                        if mapa_evento.get("last_clicked"):
+                            updates.update({
+                                "coordenadas": {
+                                    "lat": mapa_evento["last_clicked"]["lat"],
+                                    "lon": mapa_evento["last_clicked"]["lng"]
+                                },
+                                "direccion": obtener_direccion_desde_coordenadas(
+                                    mapa_evento["last_clicked"]["lat"],
+                                    mapa_evento["last_clicked"]["lng"]
+                                )
+                            })
+                        
+                        try:
+                            db.collection('recogidas').document(delivery_data["id"]).update(updates)
+                            st.success("¡Reprogramación exitosa!")
+                            st.cache_data.clear()
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
         # --- Botón de Descarga ---
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df.drop(columns=["Coordenadas", "ID", "Fecha Recojo", "Fecha Entrega"]).to_excel(writer, index=False)
+            df_tabla.to_excel(writer, index=False)
         
         st.download_button(
             label="📥 Descargar Excel",
