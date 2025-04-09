@@ -677,7 +677,7 @@ def datos_ruta():
         value=datetime.now().date(),
         key="filtro_fecha_ruta"
     )
-    
+
     tipo_servicio = st.radio(
         "Filtrar por Tipo",
         ["Todos", "Sucursal", "Delivery"],
@@ -694,7 +694,7 @@ def datos_ruta():
             query_entregas = db.collection('recogidas').where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
             
             if tipo != "Todos":
-                filtro = "🏢 Sucursal" if tipo == "Sucursal" else "🚚 Delivery"
+                filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
                 query_recojos = query_recojos.where("tipo_solicitud", "==", filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", filtro)
             
@@ -714,7 +714,7 @@ def datos_ruta():
         es_entrega = item.get("fecha_entrega") == fecha_seleccionada.strftime("%Y-%m-%d")
         
         datos_procesados.append({
-            "Tipo": item.get("tipo_solicitud", "N/A"),
+            "Tipo": "Sucursal" if item.get("tipo_solicitud") == "Sucursal" else "Delivery",
             "Operación": "Entrega" if es_entrega else "Recojo",
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
             "Dirección": item.get("direccion", "N/A"),
@@ -722,23 +722,12 @@ def datos_ruta():
             "Hora": item.get("hora_especifica", "No especificada")
         })
 
-    # --- Personalización de Columnas ---
-    todas_las_columnas = ["Tipo", "Operación", "Cliente/Sucursal", "Dirección", "Teléfono", "Hora"]
-    columnas_seleccionadas = st.multiselect(
-        "Seleccionar Columnas a Mostrar",
-        options=todas_las_columnas,
-        default=todas_las_columnas
-    )
-
     # --- Visualización de la Tabla ---
     if datos_procesados:
         st.write(f"📅 Datos para el día: {fecha_seleccionada.strftime('%Y-%m-%d')}")
         df = pd.DataFrame(datos_procesados)
 
-        # Filtrar columnas seleccionadas
-        df = df[columnas_seleccionadas]
-
-        # Mostrar tabla
+        # Mostrar tabla con opciones interactivas
         st.dataframe(
             df,
             height=600,
@@ -752,7 +741,7 @@ def datos_ruta():
             st.subheader("Reprogramación (Solo Delivery)")
             
             # Seleccionar item a reprogramar
-            items_delivery = [i for i in datos_procesados if i["Tipo"] == "🚚 Delivery"]
+            items_delivery = [i for i in datos_procesados if i["Tipo"] == "Delivery"]
             
             if items_delivery:
                 item_seleccionado = st.selectbox(
@@ -792,8 +781,7 @@ def datos_ruta():
                                 "hora_especifica": nueva_hora if nueva_hora else None
                             }
                             try:
-                                doc_id = recojos[idx].get("id", "")  # Asegurar ID correcto
-                                db.collection('recogidas').document(doc_id).update(updates)
+                                db.collection('recogidas').document("Documento-ID").update(updates)
                                 st.success("¡Reprogramación exitosa!")
                                 st.cache_data.clear()  # Limpiar cache para refrescar datos
                                 st.experimental_rerun()
@@ -801,18 +789,6 @@ def datos_ruta():
                                 st.error(f"Error al actualizar: {e}")
             else:
                 st.info("No hay deliveries para reprogramar en esta fecha")
-
-        # --- Botón para Descargar en Excel ---
-        excel_buffer = BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name="DatosRuta")
-
-        st.download_button(
-            label="📥 Descargar en Excel",
-            data=excel_buffer.getvalue(),
-            file_name="datos_ruta.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
     else:
         st.info("No hay datos para la fecha seleccionada")
         
