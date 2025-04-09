@@ -662,7 +662,7 @@ def solicitar_recogida():
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
-def obtener_ruta():
+def datos_ruta():
     # Encabezado de la página
     col1, col2 = st.columns([1, 3])
     with col1:
