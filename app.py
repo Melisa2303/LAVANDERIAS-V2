@@ -662,6 +662,18 @@ def solicitar_recogida():
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
+from io import BytesIO
+import pandas as pd
+from datetime import datetime, timedelta
+import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Inicializar Firebase si no está inicializado
+if not firebase_admin._apps:
+    cred = credentials.Certificate("ruta/a/tu/archivo/firebase.json")
+    firebase_admin.initialize_app(cred)
+
 def datos_ruta():
     # Encabezado de la página
     col1, col2 = st.columns([1, 3])
@@ -671,14 +683,13 @@ def datos_ruta():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📋 Ruta del Día")
 
-    # Filtro por fecha
+    # Filtros
     fecha_seleccionada = st.date_input(
         "Seleccionar Fecha", 
         value=datetime.now().date(),
         key="filtro_fecha_ruta"
     )
 
-    # Filtro por tipo de servicio
     tipo_servicio = st.radio(
         "Filtrar por Tipo",
         ["Todos", "Sucursal", "Delivery"],
@@ -691,35 +702,32 @@ def datos_ruta():
     def obtener_datos_ruta(fecha, tipo):
         try:
             # Consultas para recojos y entregas
-            query_recojos = db.collection('recogidas')
-            query_recojos = query_recojos.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d"))
-            
-            query_entregas = db.collection('recogidas')
-            query_entregas = query_entregas.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
+            query_recojos = db.collection('recogidas').where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d"))
+            query_entregas = db.collection('recogidas').where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
             
             if tipo != "Todos":
                 filtro = "🏢 Sucursal" if tipo == "Sucursal" else "🚚 Delivery"
                 query_recojos = query_recojos.where("tipo_solicitud", "==", filtro)
                 query_entregas = query_entregas.where("tipo_solicitud", "==", filtro)
             
-            recojos = list(query_recojos.stream())
-            entregas = list(query_entregas.stream())
+            # Convertir resultados a diccionarios para que sean serializables
+            recojos = [doc.to_dict() for doc in query_recojos.stream()]
+            entregas = [doc.to_dict() for doc in query_entregas.stream()]
             
-            return recojos + entregas
+            return recojos, entregas
         except Exception as e:
             st.error(f"Error al cargar datos: {e}")
-            return []
+            return [], []
 
-    datos = obtener_datos_ruta(fecha_seleccionada, tipo_servicio)
+    recojos, entregas = obtener_datos_ruta(fecha_seleccionada, tipo_servicio)
 
     # --- Procesamiento de Datos ---
     datos_procesados = []
-    for doc in datos:
-        item = doc.to_dict()
+    for item in recojos + entregas:
         es_entrega = item.get("fecha_entrega") == fecha_seleccionada.strftime("%Y-%m-%d")
         
         datos_procesados.append({
-            "ID": doc.id,  # Para usar en reprogramación
+            "ID": item.get("id", "N/A"),  # Identificador único para reprogramar
             "Tipo": item.get("tipo_solicitud", "N/A"),
             "Operación": "Entrega" if es_entrega else "Recojo",
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
@@ -730,7 +738,7 @@ def datos_ruta():
 
     # --- Visualización de la Tabla ---
     if datos_procesados:
-        st.write(f"📅 Datos para el día: {fecha_seleccionada.strftime('%d-%m-%Y')}")
+        st.write(f"📅 Datos para el día: {fecha_seleccionada.strftime('%Y-%m-%d')}")
         df = pd.DataFrame(datos_procesados)
         
         # Ordenar por Operación (Recojos primero)
@@ -762,26 +770,21 @@ def datos_ruta():
                 if st.button("Reprogramar", key="btn_reprogramar"):
                     idx = [i['Cliente/Sucursal'] + " - " + i['Operación'] for i in items_delivery].index(item_seleccionado)
                     doc_id = items_delivery[idx]["ID"]
-                    item_data = next(doc.to_dict() for doc in datos if doc.id == doc_id)
+                    item_data = next(item for item in recojos + entregas if item.get("id") == doc_id)
                     
                     # Mostrar formulario de reprogramación
                     with st.form(key=f"reprogramar_form_{doc_id}"):
                         st.markdown(f"### Reprogramar {item_data.get('nombre_cliente', '')}")
                         
-                        # Direcciones y mapas
-                        if "reprogramar_lat" not in st.session_state:
-                            st.session_state.reprogramar_lat = item_data.get("coordenadas", {}).get("lat", -16.409047)
-                            st.session_state.reprogramar_lon = item_data.get("coordenadas", {}).get("lon", -71.537451)
-                            st.session_state.reprogramar_direccion = item_data.get("direccion", "Arequipa, Perú")
-                        
+                        # Direcciones
                         nueva_direccion = st.text_input(
                             "Nueva Dirección",
-                            value=st.session_state.reprogramar_direccion,
+                            value=item_data.get("direccion", "N/A"),
                             key=f"nueva_dir_{doc_id}"
                         )
                         
                         # Fecha y hora
-                        fecha_actual = datetime.strptime(item_data["fecha_recojo" if item_data["fecha_recojo"] == fecha_seleccionada.strftime("%Y-%m-%d") else "fecha_entrega"], "%Y-%m-%d").date()
+                        fecha_actual = datetime.strptime(item_data["fecha_recojo" if item_data.get("fecha_recojo") == fecha_seleccionada.strftime("%Y-%m-%d") else "fecha_entrega"], "%Y-%m-%d").date()
                         nueva_fecha = st.date_input(
                             "Nueva Fecha",
                             value=fecha_actual + timedelta(days=1),
@@ -803,7 +806,7 @@ def datos_ruta():
                                 "hora_especifica": nueva_hora if nueva_hora else None
                             }
                             
-                            if item_data["fecha_recojo"] == fecha_seleccionada.strftime("%Y-%m-%d"):
+                            if item_data.get("fecha_recojo") == fecha_seleccionada.strftime("%Y-%m-%d"):
                                 updates["fecha_recojo"] = nueva_fecha.strftime("%Y-%m-%d")
                             else:
                                 updates["fecha_entrega"] = nueva_fecha.strftime("%Y-%m-%d")
@@ -832,7 +835,7 @@ def datos_ruta():
         )
     else:
         st.info("No hay datos para la fecha seleccionada")
-
+        
 def datos_boletas():
     col1, col2 = st.columns([1, 3])
     with col1:
