@@ -678,28 +678,32 @@ def datos_ruta():
     with col2:
         tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
 
-    # --- Obtener datos optimizados ---
     @st.cache_data(ttl=300)
     def cargar_ruta(fecha, tipo):
         try:
             # Consulta combinada para recojos y entregas
             query = db.collection('recogidas')
-            
-            # Filtrar por fecha y tipo de servicio
-            query = query.where(filter=firebase.firestore.OR(
-                firebase.firestore.FieldFilter("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")),
-                firebase.firestore.FieldFilter("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
-            ))
-            
+        
+            # Crear consulta OR para fechas
+            query_recojos = query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d"))
+            query_entregas = query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d"))
+        
+            # Ejecutar ambas consultas por separado (solución compatible)
+            docs_recojos = query_recojos.stream()
+            docs_entregas = query_entregas.stream()
+        
+            # Combinar resultados
+            docs = list(docs_recojos) + list(docs_entregas)
+        
             if tipo != "Todos":
                 tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-                query = query.where("tipo_solicitud", "==", tipo_filtro)
+                docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
 
             datos = []
-            for doc in query.stream():
+            for doc in docs:
                 data = doc.to_dict()
                 doc_id = doc.id
-                
+            
                 # Procesar recojos para esta fecha
                 if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
                     datos.append({
@@ -707,14 +711,15 @@ def datos_ruta():
                         "operacion": "Recojo",
                         "nombre_cliente": data.get("nombre_cliente"),
                         "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_recojo", "N/A"),  # Solo dirección de recogida
+                        "direccion": data.get("direccion_recojo", "N/A"),
                         "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_recojo", ""),  # Solo hora de recogida
+                        "hora": data.get("hora_recojo", ""),
                         "tipo_solicitud": data.get("tipo_solicitud"),
                         "coordenadas": data.get("coordenadas_recojo", {}),
                         "fecha": data.get("fecha_recojo"),
+                        "estado": data.get("estado", "pendiente")
                     })
-                
+            
                 # Procesar entregas para esta fecha
                 if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
                     datos.append({
@@ -722,19 +727,20 @@ def datos_ruta():
                         "operacion": "Entrega",
                         "nombre_cliente": data.get("nombre_cliente"),
                         "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_entrega", "N/A"),  # Solo dirección de entrega
+                        "direccion": data.get("direccion_entrega", "N/A"),
                         "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_entrega", ""),  # Solo hora de entrega
+                        "hora": data.get("hora_entrega", ""),
                         "tipo_solicitud": data.get("tipo_solicitud"),
                         "coordenadas": data.get("coordenadas_entrega", {}),
                         "fecha": data.get("fecha_entrega"),
+                        "estado": data.get("estado", "pendiente")
                     })
-            
+        
             return datos
         except Exception as e:
             st.error(f"Error al cargar datos: {e}")
             return []
-
+            
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
     # --- Mostrar Tabla ---
