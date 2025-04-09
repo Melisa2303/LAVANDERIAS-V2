@@ -497,8 +497,8 @@ def solicitar_recogida():
         
         if dia_semana == 5:  # Sábado
             return fecha_recojo + timedelta(days=4)  # Miércoles
-        elif dia_semana == 4:  # Viernes
-            return fecha_recojo + timedelta(days=3)  # Lunes
+        elif dia_semana == 3:  # Jueves
+            return fecha_recojo + timedelta(days=4)  # Lunes
         else:
             return fecha_recojo + timedelta(days=3)  # Normal (3 días)
 
@@ -530,12 +530,11 @@ def solicitar_recogida():
                 "coordenadas": {"lat": lat, "lon": lon},
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
-                "estado": "pendiente"
             }
             
             try:
                 db.collection('recogidas').add(solicitud)
-                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%A %d/%m/%Y')}")
+                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
@@ -655,12 +654,11 @@ def solicitar_recogida():
                 },
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m/%d"),
-                "estado": "pendiente"
             }
 
             try:
                 db.collection('recogidas').add(solicitud)
-                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%A %d/%m/%Y')}")
+                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
                 # Resetear formulario
                 st.session_state.delivery_direccion = "Arequipa, Perú"
                 st.session_state.delivery_lat, st.session_state.delivery_lon = -16.409047, -71.537451
