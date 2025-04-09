@@ -4,7 +4,7 @@ from firebase_admin import credentials, firestore, initialize_app, auth
 import os
 from dotenv import load_dotenv
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests  # Importar requests
 import pydeck as pdk
 from streamlit_folium import st_folium
@@ -491,10 +491,21 @@ def solicitar_recogida():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("🛒 Solicitar Recogida")
 
+    # Función para calcular fecha de entrega según reglas
+    def calcular_fecha_entrega(fecha_recojo):
+        dia_semana = fecha_recojo.weekday()  # 0=Lunes, 6=Domingo
+        
+        if dia_semana == 5:  # Sábado
+            return fecha_recojo + timedelta(days=4)  # Miércoles
+        elif dia_semana == 4:  # Viernes
+            return fecha_recojo + timedelta(days=3)  # Lunes
+        else:
+            return fecha_recojo + timedelta(days=3)  # Normal (3 días)
+
     tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True, key="tipo_solicitud_radio")
 
     if tipo_solicitud == "Sucursal":
-        sucursales = obtener_sucursales()  # Usa caché
+        sucursales = obtener_sucursales()
         nombres_sucursales = [s["nombre"] for s in sucursales]
         nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales, key="sucursal_select")
         
@@ -502,7 +513,7 @@ def solicitar_recogida():
         if sucursal_seleccionada:
             lat, lon = sucursal_seleccionada["coordenadas"]["lat"], sucursal_seleccionada["coordenadas"]["lon"]
             direccion = sucursal_seleccionada["direccion"]
-            st.markdown(f"**Dirección:** {sucursal_seleccionada['direccion']}")
+            st.markdown(f"**Dirección:** {direccion}")
         else:
             st.error("Datos de sucursal incompletos.")
             return
@@ -510,7 +521,8 @@ def solicitar_recogida():
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date(), key="fecha_recojo_sucursal")
 
         if st.button("💾 Solicitar Recogida", key="guardar_recogida_sucursal_btn"):
-            fecha_entrega = fecha_recojo + timedelta(days=3)
+            fecha_entrega = calcular_fecha_entrega(fecha_recojo)
+            
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "sucursal": nombre_sucursal,
@@ -518,9 +530,14 @@ def solicitar_recogida():
                 "coordenadas": {"lat": lat, "lon": lon},
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+                "estado": "pendiente"
             }
-            db.collection('recogidas').add(solicitud)
-            st.success(f"Entrega agendada para {fecha_entrega.strftime('%Y-%m-%d')}.")
+            
+            try:
+                db.collection('recogidas').add(solicitud)
+                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%A %d/%m/%Y')}")
+            except Exception as e:
+                st.error(f"Error al guardar: {e}")
 
     elif tipo_solicitud == "Cliente Delivery":
         # Inicialización independiente
@@ -618,7 +635,6 @@ def solicitar_recogida():
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
 
         if st.button("💾 Solicitar Recogida"):
-            # Validaciones
             if not nombre_cliente:
                 st.error("El nombre del cliente es obligatorio.")
                 return
@@ -626,7 +642,8 @@ def solicitar_recogida():
                 st.error("El teléfono debe tener 9 dígitos.")
                 return
 
-            fecha_entrega = fecha_recojo + timedelta(days=3)
+            fecha_entrega = calcular_fecha_entrega(fecha_recojo)
+            
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "nombre_cliente": nombre_cliente,
@@ -637,12 +654,13 @@ def solicitar_recogida():
                     "lon": st.session_state.delivery_lon
                 },
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
-                "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+                "fecha_entrega": fecha_entrega.strftime("%Y-%m/%d"),
+                "estado": "pendiente"
             }
 
             try:
                 db.collection('recogidas').add(solicitud)
-                st.success(f"Entrega agendada para {fecha_entrega.strftime('%Y-%m-%d')}.")
+                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%A %d/%m/%Y')}")
                 # Resetear formulario
                 st.session_state.delivery_direccion = "Arequipa, Perú"
                 st.session_state.delivery_lat, st.session_state.delivery_lon = -16.409047, -71.537451
