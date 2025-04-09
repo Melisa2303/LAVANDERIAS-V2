@@ -970,9 +970,17 @@ def datos_ruta():
             worksheet = writer.sheets['Ruta']
             
             # Ajustar ancho de columnas
-            for i, col in enumerate(df_tabla.columns):
-                max_len = max(df_tabla[col].astype(str).map(len).max(), len(col)) + 2
-                worksheet.set_column(i, i, max_len)
+            for col in worksheet.columns:
+                max_length = 0
+                column = col[0].column_letter
+                for cell in col:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column].width = adjusted_width
         
         st.download_button(
             label="📥 Descargar Excel",
