@@ -711,7 +711,6 @@ def datos_ruta():
     # --- Mostrar Tabla ---
     if datos:
         df = pd.DataFrame([{
-        df = pd.DataFrame([{
             "Operación": item["operacion"],
             "Cliente/Sucursal": item.get("nombre_cliente", item.get("sucursal", "N/A")),
             "Dirección": item.get("direccion", "N/A"),
