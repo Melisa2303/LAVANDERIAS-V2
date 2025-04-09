@@ -737,7 +737,6 @@ def datos_ruta():
         # Preparar datos para tabla
         tabla_data = []
         for item in datos:
-            # Determinar qué nombre mostrar (cliente o sucursal)
             nombre_mostrar = item.get("nombre_cliente") if item["tipo_solicitud"] == "Cliente Delivery" else item.get("sucursal")
             
             tabla_data.append({
@@ -785,115 +784,128 @@ def datos_ruta():
             st.markdown("---")
             st.subheader("🔄 Gestión de Deliveries")
             
-            # Seleccionar delivery
+            # Agrupar por cliente y operación
+            opciones = []
+            for item in deliveries:
+                nombre = item.get("nombre_cliente", "N/A")
+                opciones.append(f"{item['operacion']} - {nombre}")
+            
             selected = st.selectbox(
-                "Seleccionar delivery:",
-                options=[item.get("nombre_cliente", "N/A") for item in deliveries],
-                format_func=lambda x: x if x != "N/A" else "Sin nombre"
+                "Seleccionar operación:",
+                options=opciones,
+                format_func=lambda x: f"📦 {x}" if "Recojo" in x else f"🚚 {x}"
             )
             
-            delivery_data = next((item for item in deliveries if item.get("nombre_cliente") == selected), None)
+            # Extraer datos del seleccionado
+            operacion, nombre = selected.split(" - ", 1)
+            delivery_data = next(
+                (item for item in deliveries 
+                 if item["operacion"] == operacion 
+                 and item.get("nombre_cliente") == nombre),
+                None
+            )
 
             if delivery_data:
-                # --- Sección de Hora Simplificada ---
-                st.markdown("### ⏰ Configurar Hora Específica")
-    
-                # 1. Obtener hora actual del registro
+                # --- Sección de Hora ---
+                st.markdown(f"### ⏰ Hora de {operacion}")
+                
+                # Widget de hora con restricciones
                 hora_actual = (
                     datetime.strptime(delivery_data["hora_especifica"], "%H:%M:%S").time()
                     if delivery_data.get("hora_especifica") != "No especificada"
-                    else datetime.strptime("12:00", "%H:%M").time()  # Valor por defecto mediodía
+                    else datetime.strptime("12:00", "%H:%M").time()
                 )
-    
-                # 2. Widget de hora con restricciones
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    nueva_hora = st.time_input(
-                        "Seleccionar hora:",
-                        value=hora_actual,
-                        step=1800,  # Intervalos de 30 minutos
-                        key=f"hora_{delivery_data['id']}"
-                    )
-                with col2:
-                    st.markdown("<br>", unsafe_allow_html=True)  # Espacio vertical
-                    if st.button("💾 Guardar Hora", key=f"btn_hora_{delivery_data['id']}"):
-                        # Validar rango horario
-                        if datetime.strptime("07:00", "%H:%M").time() <= nueva_hora <= datetime.strptime("18:00", "%H:%M").time():
-                            try:
-                                db.collection('recogidas').document(delivery_data["id"]).update({
-                                    "hora_especifica": nueva_hora.strftime("%H:%M:%S")
-                                })
-                                st.success("Hora actualizada correctamente")
-                                st.cache_data.clear()
-                                time.sleep(1)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error al actualizar hora: {e}")
-                        else:
-                            st.error("El horario debe estar entre 7:00 AM y 6:00 PM")
                 
+                nueva_hora = st.time_input(
+                    "Seleccionar hora (7AM - 6PM):",
+                    value=hora_actual,
+                    step=1800,  # Intervalos de 30 minutos
+                    key=f"hora_{delivery_data['id']}_{operacion}"
+                )
+                
+                if st.button(f"💾 Guardar Hora de {operacion}"):
+                    if datetime.strptime("07:00", "%H:%M").time() <= nueva_hora <= datetime.strptime("18:00", "%H:%M").time():
+                        try:
+                            db.collection('recogidas').document(delivery_data["id"]).update({
+                                "hora_especifica": nueva_hora.strftime("%H:%M:%S")
+                            })
+                            st.success("Hora actualizada correctamente")
+                            st.cache_data.clear()
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al actualizar hora: {e}")
+                    else:
+                        st.error("El horario debe estar entre 7:00 AM y 6:00 PM")
+
                 # --- Sección de Reprogramación ---
-                st.markdown("### 📅 Reprogramación")
+                st.markdown(f"### 📅 Reprogramación de {operacion}")
                 with st.expander("Cambiar fecha y ubicación", expanded=True):
-                    # Inicializar variables de sesión para dirección
-                    if 'reprogramar_direccion' not in st.session_state:
-                        st.session_state.reprogramar_direccion = delivery_data.get("direccion", "")
-                        st.session_state.reprogramar_latlon = (
-                            delivery_data["coordenadas"]["lat"],
-                            delivery_data["coordenadas"]["lon"]
-                        )
+                    # Inicializar variables de sesión
+                    session_key = f"reprogramar_{delivery_data['id']}_{operacion}"
+                    if session_key not in st.session_state:
+                        st.session_state[session_key] = {
+                            "direccion": delivery_data.get("direccion", ""),
+                            "latlon": (
+                                delivery_data["coordenadas"]["lat"],
+                                delivery_data["coordenadas"]["lon"]
+                            )
+                        }
 
                     # Campo de dirección con sugerencias
-                    direccion_actual = st.text_input(
-                        "Dirección:",
-                        value=st.session_state.reprogramar_direccion,
-                        key="reprogramar_direccion_input"
+                    nueva_direccion = st.text_input(
+                        "Nueva dirección:",
+                        value=st.session_state[session_key]["direccion"],
+                        key=f"direccion_{session_key}"
                     )
 
-                    # Buscar sugerencias al escribir
-                    if direccion_actual != st.session_state.reprogramar_direccion:
-                        sugerencias = obtener_sugerencias_direccion(direccion_actual)
+                    # Buscar sugerencias
+                    if nueva_direccion != st.session_state[session_key]["direccion"]:
+                        sugerencias = obtener_sugerencias_direccion(nueva_direccion)
                         if sugerencias:
-                            direccion_seleccionada = st.selectbox(
-                                "Sugerencias de dirección:",
+                            seleccion = st.selectbox(
+                                "Sugerencias:",
                                 [sug["display_name"] for sug in sugerencias],
-                                key="reprogramar_sugerencias"
+                                key=f"sugerencias_{session_key}"
                             )
-                            if direccion_seleccionada:
+                            if seleccion:
                                 for sug in sugerencias:
-                                    if direccion_seleccionada == sug["display_name"]:
-                                        st.session_state.reprogramar_latlon = (float(sug["lat"]), float(sug["lon"]))
-                                        st.session_state.reprogramar_direccion = direccion_seleccionada
+                                    if seleccion == sug["display_name"]:
+                                        st.session_state[session_key]["latlon"] = (float(sug["lat"]), float(sug["lon"]))
+                                        st.session_state[session_key]["direccion"] = seleccion
                                         break
 
                     # Mapa interactivo
-                    st.markdown("**📍 Arrastra el marcador para ajustar la ubicación:**")
+                    st.markdown("**📍 Arrastra el marcador para ajustar:**")
                     m = folium.Map(
-                        location=st.session_state.reprogramar_latlon,
+                        location=st.session_state[session_key]["latlon"],
                         zoom_start=16
                     )
                     folium.Marker(
-                        st.session_state.reprogramar_latlon,
+                        st.session_state[session_key]["latlon"],
                         draggable=True,
                         tooltip="Arrastrar para ajustar"
                     ).add_to(m)
                     mapa_evento = st_folium(m, width=700, height=400)
 
-                    # Actualizar dirección al mover el marcador
+                    # Actualizar al mover marcador
                     if mapa_evento.get("last_clicked"):
-                        nueva_lat = mapa_evento["last_clicked"]["lat"]
-                        nueva_lon = mapa_evento["last_clicked"]["lng"]
-                        st.session_state.reprogramar_direccion = obtener_direccion_desde_coordenadas(nueva_lat, nueva_lon)
-                        st.session_state.reprogramar_latlon = (nueva_lat, nueva_lon)
+                        st.session_state[session_key]["latlon"] = (
+                            mapa_evento["last_clicked"]["lat"],
+                            mapa_evento["last_clicked"]["lng"]
+                        )
+                        st.session_state[session_key]["direccion"] = obtener_direccion_desde_coordenadas(
+                            *st.session_state[session_key]["latlon"]
+                        )
                         st.rerun()
 
-                    # Mostrar dirección actualizada
-                    st.markdown(f"**Dirección seleccionada:** {st.session_state.reprogramar_direccion}")
+                    # Mostrar dirección actual
+                    st.markdown(f"**Dirección actual:** {st.session_state[session_key]['direccion']}")
 
                     # Selector de fecha
                     min_date = (
                         datetime.now().date() 
-                        if delivery_data["operacion"] == "Recojo" 
+                        if operacion == "Recojo" 
                         else datetime.strptime(delivery_data["fecha_entrega"], "%Y-%m-%d").date()
                     )
                     
@@ -903,19 +915,19 @@ def datos_ruta():
                         min_value=min_date
                     )
 
-                    if st.button("💾 Guardar Reprogramación"):
+                    if st.button(f"💾 Guardar Cambios de {operacion}"):
                         updates = {
-                            "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
-                            "direccion": st.session_state.reprogramar_direccion,
+                            "fecha_recojo" if operacion == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
+                            "direccion": st.session_state[session_key]["direccion"],
                             "coordenadas": {
-                                "lat": st.session_state.reprogramar_latlon[0],
-                                "lon": st.session_state.reprogramar_latlon[1]
+                                "lat": st.session_state[session_key]["latlon"][0],
+                                "lon": st.session_state[session_key]["latlon"][1]
                             }
                         }
                         
                         try:
                             db.collection('recogidas').document(delivery_data["id"]).update(updates)
-                            st.success("¡Reprogramación exitosa!")
+                            st.success("¡Cambios guardados!")
                             st.cache_data.clear()
                             time.sleep(2)
                             st.rerun()
