@@ -662,15 +662,13 @@ def solicitar_recogida():
                 st.error(f"Error al guardar: {e}")
 
 def datos_ruta():
-    # --- Configuración inicial ---
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    
     st.title("📋 Ruta del Día")
-
+   
     # --- Filtros ---
     col1, col2 = st.columns(2)
     with col1:
@@ -678,14 +676,13 @@ def datos_ruta():
     with col2:
         tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
 
-    # --- Obtener datos optimizados ---
+    # --- Obtener datos ---
     @st.cache_data(ttl=300)
     def cargar_ruta(fecha, tipo):
         try:
-            # Consulta combinada para recojos y entregas
             query = db.collection('recogidas')
             docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
+                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
 
             if tipo != "Todos":
                 tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
@@ -782,33 +779,44 @@ def datos_ruta():
             selected = st.selectbox("Seleccionar operación:", options=opciones.keys())
             delivery_data = opciones[selected]
 
-            # --- Campo de Hora Mejorado ---
+            # --- Selector de Hora Mejorado ---
             st.markdown(f"### ⏰ Hora de {delivery_data['operacion']}")
             
-            # Generar opciones de hora cada 30 minutos (7:00 a 18:00)
-            horas_disponibles = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
-            hora_actual = delivery_data.get("hora", "12:00:00")[:5]
-            
-            nueva_hora = st.selectbox(
-                "Seleccione hora:",
-                options=horas_disponibles,
-                index=horas_disponibles.index(hora_actual) if hora_actual in horas_disponibles else 0,
-                key=f"hora_select_{delivery_data['id']}"
-            )
-            
-            # Permitir edición manual
-            nueva_hora = st.text_input(
-                "O escriba manualmente (HH:MM):",
-                value=nueva_hora,
-                key=f"hora_manual_{delivery_data['id']}"
-            )
+            col_hora1, col_hora2 = st.columns([3, 2])
+            with col_hora1:
+                horas_disponibles = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
+                hora_actual = delivery_data.get("hora", "12:00:00")[:5]
+                
+                if hora_actual not in horas_disponibles:
+                    horas_disponibles.append(hora_actual)
+                    horas_disponibles.sort()
+                
+                hora_seleccionada = st.selectbox(
+                    "Seleccionar hora:",
+                    options=horas_disponibles,
+                    index=horas_disponibles.index(hora_actual) if hora_actual in horas_disponibles else 0,
+                    key=f"hora_select_{delivery_data['id']}",
+                    label_visibility="collapsed"
+                )
 
-            if st.button(f"💾 Guardar Hora"):
+            with col_hora2:
+                hora_manual = st.text_input(
+                    "Editar manualmente:",
+                    value=hora_seleccionada,
+                    key=f"hora_manual_{delivery_data['id']}",
+                    label_visibility="collapsed"
+                )
+                
+                if hora_manual != hora_seleccionada:
+                    hora_seleccionada = hora_manual
+                    st.rerun()
+
+            if st.button(f"💾 Guardar Hora", key=f"guardar_hora_{delivery_data['id']}"):
                 try:
-                    # Validar formato
-                    if ":" not in nueva_hora or len(nueva_hora.split(":")) != 2:
+                    if ":" not in hora_seleccionada or len(hora_seleccionada.split(":")) != 2:
                         raise ValueError
-                    hora, minutos = map(int, nueva_hora.split(":"))
+                    
+                    hora, minutos = map(int, hora_seleccionada.split(":"))
                     if not (0 <= hora < 24 and 0 <= minutos < 60):
                         raise ValueError
                     
@@ -824,19 +832,27 @@ def datos_ruta():
                     st.error("Formato inválido. Use HH:MM (ej: 14:30)")
                 except Exception as e:
                     st.error(f"Error al actualizar: {e}")
-
+                    
             # --- Reprogramación con Mapa Mejorado ---
             st.markdown(f"### 📅 Reprogramación de {delivery_data['operacion']}")
             with st.expander("Cambiar fecha y ubicación", expanded=False):
-                # 1. Input de dirección
-                direccion_actual = delivery_data["direccion"]
+                # 1. Inicialización de variables de sesión
+                session_key = f"reprogramar_{delivery_data['id']}"
+                if session_key not in st.session_state:
+                    st.session_state[session_key] = {
+                        "direccion": delivery_data["direccion"],
+                        "lat": delivery_data["coordenadas"]["lat"],
+                        "lon": delivery_data["coordenadas"]["lon"]
+                    }
+                
+                # 2. Input de dirección
                 nueva_direccion = st.text_input(
-                    "Dirección completa:",
-                    value=direccion_actual,
+                    "Dirección:",
+                    value=st.session_state[session_key]["direccion"],
                     key=f"dir_input_{delivery_data['id']}"
                 )
                 
-                # 2. Botón para buscar sugerencias
+                # 3. Botón para buscar sugerencias
                 if st.button("🔍 Buscar sugerencias de dirección"):
                     sugerencias = obtener_sugerencias_direccion(nueva_direccion)
                     
@@ -847,87 +863,65 @@ def datos_ruta():
                             key=f"sugerencias_{delivery_data['id']}"
                         )
                         
-                        # Actualizar mapa al seleccionar
                         if seleccion:
                             for sug in sugerencias:
                                 if seleccion == sug["display_name"]:
-                                    lat, lon = float(sug["lat"]), float(sug["lon"])
-                                    # Guardar en sesión
-                                    st.session_state[f"mapa_{delivery_data['id']}"] = {
-                                        "mapa": folium.Map(location=[lat, lon], zoom_start=16),
-                                        "latlon": [lat, lon],
-                                        "direccion": seleccion
-                                    }
+                                    st.session_state[session_key].update({
+                                        "direccion": seleccion,
+                                        "lat": float(sug["lat"]),
+                                        "lon": float(sug["lon"])
+                                    })
                                     st.rerun()
-                                    break
-
-                # 3. Mapa interactivo
-                if f"mapa_{delivery_data['id']}" in st.session_state:
-                    mapa_data = st.session_state[f"mapa_{delivery_data['id']}"]
-                    m = mapa_data["mapa"]
-                    folium.Marker(
-                        mapa_data["latlon"],
-                        popup=mapa_data["direccion"],
-                        draggable=True,
-                        icon=folium.Icon(color="red")
-                    ).add_to(m)
-                else:
-                    # Mapa inicial con ubicación actual
-                    lat, lon = delivery_data["coordenadas"]["lat"], delivery_data["coordenadas"]["lon"]
-                    m = folium.Map(location=[lat, lon], zoom_start=16)
-                    folium.Marker(
-                        [lat, lon],
-                        popup=delivery_data["direccion"],
-                        draggable=True,
-                        icon=folium.Icon(color="red")
-                    ).add_to(m)
-
-                # Mostrar mapa
+                
+                # 4. Mapa interactivo
+                m = folium.Map(
+                    location=[st.session_state[session_key]["lat"], st.session_state[session_key]["lon"]], 
+                    zoom_start=16
+                )
+                
+                folium.Marker(
+                    [st.session_state[session_key]["lat"], st.session_state[session_key]["lon"]],
+                    popup=st.session_state[session_key]["direccion"],
+                    draggable=True,
+                    icon=folium.Icon(color="red")
+                ).add_to(m)
+                
                 mapa_evento = st_folium(
                     m,
                     width=700,
                     height=400,
                     key=f"mapa_{delivery_data['id']}"
                 )
-
-                # Actualizar al mover marcador
+                
+                # 5. Actualizar al mover marcador
                 if mapa_evento.get("last_click_draggable"):
-                    new_lat = mapa_evento["last_click_draggable"]["lat"]
-                    new_lon = mapa_evento["last_click_draggable"]["lng"]
-                    nueva_dir = obtener_direccion_desde_coordenadas(new_lat, new_lon)
+                    nueva_lat = mapa_evento["last_click_draggable"]["lat"]
+                    nueva_lon = mapa_evento["last_click_draggable"]["lng"]
                     
-                    st.session_state[f"mapa_{delivery_data['id']}"] = {
-                        "mapa": folium.Map(location=[new_lat, new_lon], zoom_start=16),
-                        "latlon": [new_lat, new_lon],
-                        "direccion": nueva_dir
-                    }
+                    st.session_state[session_key].update({
+                        "lat": nueva_lat,
+                        "lon": nueva_lon,
+                        "direccion": obtener_direccion_desde_coordenadas(nueva_lat, nueva_lon)
+                    })
                     st.rerun()
-
-                # Selector de fecha
+                
+                # 6. Selector de fecha
                 min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
                 nueva_fecha = st.date_input(
                     "Nueva fecha:",
                     value=min_date + timedelta(days=1),
                     min_value=min_date
                 )
-
-                if st.button(f"💾 Guardar Cambios"):
+                
+                # 7. Guardar cambios
+                if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}"):
                     try:
-                        # Obtener datos del mapa (actual o por defecto)
-                        mapa_data = st.session_state.get(f"mapa_{delivery_data['id']}", {
-                            "latlon": [
-                                delivery_data["coordenadas"]["lat"],
-                                delivery_data["coordenadas"]["lon"]
-                            ],
-                            "direccion": delivery_data["direccion"]
-                        })
-
                         updates = {
                             "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
-                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": mapa_data["direccion"],
+                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": st.session_state[session_key]["direccion"],
                             "coordenadas_recojo" if delivery_data["operacion"] == "Recojo" else "coordenadas_entrega": {
-                                "lat": mapa_data["latlon"][0],
-                                "lon": mapa_data["latlon"][1]
+                                "lat": st.session_state[session_key]["lat"],
+                                "lon": st.session_state[session_key]["lon"]
                             }
                         }
                         
@@ -952,7 +946,7 @@ def datos_ruta():
         )
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
-        
+    
 def datos_boletas():
     col1, col2 = st.columns([1, 3])
     with col1:
