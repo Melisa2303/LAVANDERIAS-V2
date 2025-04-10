@@ -509,13 +509,13 @@ def solicitar_recogida():
         nombre_sucursal = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
         
         sucursal_seleccionada = next((s for s in sucursales if s["nombre"] == nombre_sucursal), None)
-        if not sucursal_seleccionada:
+        if sucursal_seleccionada:
+            lat, lon = sucursal_seleccionada["coordenadas"]["lat"], sucursal_seleccionada["coordenadas"]["lon"]
+            direccion = sucursal_seleccionada["direccion"]
+            st.markdown(f"**Dirección:** {direccion}")
+        else:
             st.error("Datos de sucursal incompletos.")
             return
-            
-        lat, lon = sucursal_seleccionada["coordenadas"]["lat"], sucursal_seleccionada["coordenadas"]["lon"]
-        direccion = sucursal_seleccionada["direccion"]
-        st.markdown(f"**Dirección:** {direccion}")
         
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
 
@@ -545,12 +545,19 @@ def solicitar_recogida():
 
     elif tipo_solicitud == "Cliente Delivery":
         # Configuración inicial del mapa
-        if "delivery_data" not in st.session_state:
-            st.session_state.delivery_data = {
-                "lat": -16.409047,
-                "lon": -71.537451,
-                "direccion": "Arequipa, Perú"
-            }
+        # Inicialización independiente
+        if "delivery_lat" not in st.session_state:
+            st.session_state.delivery_lat = -16.409047
+            st.session_state.delivery_lon = -71.537451
+            st.session_state.delivery_direccion = "Arequipa, Perú"
+            st.session_state.delivery_mapa = folium.Map(
+                location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+                zoom_start=15
+            )
+            st.session_state.delivery_marker = folium.Marker(
+                [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                tooltip="Punto seleccionado"
+            ).add_to(st.session_state.delivery_mapa)
 
         # Widgets de entrada
         col1, col2 = st.columns(2)
@@ -562,62 +569,72 @@ def solicitar_recogida():
         # Búsqueda de dirección
         direccion_input = st.text_input(
             "Dirección",
-            value=st.session_state.delivery_data["direccion"],
+            value=st.session_state.delivery_direccion,
             key="delivery_direccion_input"
         )
 
-        # Sugerencias de dirección
+        # Buscar sugerencias
         sugerencias = []
-        if direccion_input and direccion_input != st.session_state.delivery_data["direccion"]:
+        if direccion_input and direccion_input != st.session_state.delivery_direccion:
             sugerencias = obtener_sugerencias_direccion(direccion_input)
         
-        if sugerencias:
-            direccion_seleccionada = st.selectbox(
-                "Sugerencias de Dirección:",
-                [sug["display_name"] for sug in sugerencias],
-                key="delivery_sugerencias"
+        direccion_seleccionada = st.selectbox(
+            "Sugerencias de Direcciones:",
+            ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
+            key="delivery_sugerencias"
+        )
+
+        # Actualizar al seleccionar sugerencia
+        if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
+            for sug in sugerencias:
+                if direccion_seleccionada == sug["display_name"]:
+                    st.session_state.delivery_lat = float(sug["lat"])
+                    st.session_state.delivery_lon = float(sug["lon"])
+                    st.session_state.delivery_direccion = direccion_seleccionada
+                    
+                    # Actualizar mapa y marcador
+                    st.session_state.delivery_mapa = folium.Map(
+                        location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+                        zoom_start=15
+                    )
+                    st.session_state.delivery_marker = folium.Marker(
+                        [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                        tooltip="Punto seleccionado"
+                    ).add_to(st.session_state.delivery_mapa)
+                    break
+
+        # Renderizar mapa
+        mapa = st_folium(
+            st.session_state.delivery_mapa,
+            width=700,
+            height=500,
+            key="delivery_mapa_folium"
+        )
+
+        # Actualizar al hacer clic
+        if mapa.get("last_clicked"):
+            st.session_state.delivery_lat = mapa["last_clicked"]["lat"]
+            st.session_state.delivery_lon = mapa["last_clicked"]["lng"]
+            st.session_state.delivery_direccion = obtener_direccion_desde_coordenadas(
+                st.session_state.delivery_lat, st.session_state.delivery_lon
             )
             
-            if direccion_seleccionada:
-                for sug in sugerencias:
-                    if direccion_seleccionada == sug["display_name"]:
-                        st.session_state.delivery_data.update({
-                            "lat": float(sug["lat"]),
-                            "lon": float(sug["lon"]),
-                            "direccion": direccion_seleccionada
-                        })
-                        break
-
-        # Mapa interactivo
-        m = folium.Map(
-            location=[st.session_state.delivery_data["lat"], st.session_state.delivery_data["lon"]],
-            zoom_start=15
-        )
-        folium.Marker(
-            [st.session_state.delivery_data["lat"], st.session_state.delivery_data["lon"]],
-            tooltip="Arrastrar para ajustar",
-            draggable=True
-        ).add_to(m)
-        
-        mapa_evento = st_folium(m, width=700, height=500)
-
-        # Actualizar al mover marcador
-        if mapa_evento.get("last_clicked"):
-            st.session_state.delivery_data.update({
-                "lat": mapa_evento["last_clicked"]["lat"],
-                "lon": mapa_evento["last_clicked"]["lng"],
-                "direccion": obtener_direccion_desde_coordenadas(
-                    mapa_evento["last_clicked"]["lat"],
-                    mapa_evento["last_clicked"]["lng"]
-                )
-            })
+            # Actualizar mapa y marcador
+            st.session_state.delivery_mapa = folium.Map(
+                location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+                zoom_start=15
+            )
+            st.session_state.delivery_marker = folium.Marker(
+                [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                tooltip="Punto seleccionado"
+            ).add_to(st.session_state.delivery_mapa)
             st.rerun()
 
         # Mostrar dirección final
         st.markdown(f"""
             <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
                 <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-                <p style='color: #555; font-size: 16px;'>{st.session_state.delivery_data['direccion']}</p>
+                <p style='color: #555; font-size: 16px;'>{st.session_state.delivery_direccion}</p>
             </div>
         """, unsafe_allow_html=True)
 
