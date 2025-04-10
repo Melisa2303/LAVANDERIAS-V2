@@ -662,7 +662,7 @@ def solicitar_recogida():
                 st.error(f"Error al guardar: {e}")
 
 def datos_ruta():
-    # --- Encabezado y configuración inicial ---
+    # --- Configuración inicial ---
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
@@ -707,6 +707,7 @@ def datos_ruta():
                         "tipo_solicitud": data.get("tipo_solicitud"),
                         "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
                         "fecha": data.get("fecha_recojo"),
+                        "estado": data.get("estado", "pendiente")
                     })
                 
                 if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
@@ -721,6 +722,7 @@ def datos_ruta():
                         "tipo_solicitud": data.get("tipo_solicitud"),
                         "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
                         "fecha": data.get("fecha_entrega"),
+                        "estado": data.get("estado", "pendiente")
                     })
             
             return datos
@@ -742,6 +744,7 @@ def datos_ruta():
                 "Dirección": item["direccion"],
                 "Teléfono": item["telefono"],
                 "Hora": item["hora"] if item["hora"] else "Sin hora",
+                "Estado": item["estado"]
             })
 
         df_tabla = pd.DataFrame(tabla_data)
@@ -767,10 +770,9 @@ def datos_ruta():
                     horas_disponibles.append(hora_actual)
                     horas_disponibles.sort()
 
-                hora_input = st.selectbox(
-                    "Seleccionar o ingresar hora:",
-                    options=horas_disponibles,
-                    index=horas_disponibles.index(hora_actual) if hora_actual in horas_disponibles else 0,
+                hora_input = st.text_input(
+                    "Seleccionar o ingresar hora (HH:MM):",
+                    value=hora_actual,
                     key=f"hora_input_{delivery_data['id']}"
                 )
             with col2:
@@ -884,7 +886,7 @@ def datos_ruta():
             df_tabla.to_excel(writer, index=False)
         
         st.download_button(
-            label="📥 Descargar Excel",
+            label="Descargar Excel",
             data=excel_buffer.getvalue(),
             file_name=f"ruta_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
