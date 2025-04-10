@@ -682,7 +682,7 @@ def datos_ruta():
         try:
             query = db.collection('recogidas')
             docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
+                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
 
             if tipo != "Todos":
                 tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
