@@ -1171,8 +1171,8 @@ def calcular_ruta_respetando_calles(puntos):
 
 # Configuración del servidor Traccar
 TRACCAR_URL = "http://traccar-docker-production.up.railway.app"
-TRACCAR_USERNAME = "admin"
-TRACCAR_PASSWORD = "admin"
+TRACCAR_USERNAME = "Lavandería Americanas"
+TRACCAR_PASSWORD = "lavanderias"
 
 # Obtener posiciones desde la API
 @st.cache_data(ttl=10)  # Actualiza cada 10 segundos
