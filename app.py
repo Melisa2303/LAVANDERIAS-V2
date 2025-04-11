@@ -1188,6 +1188,25 @@ def obtener_posiciones():
         st.error(f"Error al obtener posiciones: {e}")
         return []
 
+# --- Configuración del servidor Traccar ---
+TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
+TRACCAR_USERNAME = "melisa.mezadelg@gmail.com"  # Cambia según tus credenciales
+TRACCAR_PASSWORD = "lavanderias"  # Cambia según tus credenciales
+
+# --- Obtener posiciones desde la API de Traccar ---
+@st.cache_data(ttl=10)  # Actualiza cada 10 segundos
+def obtener_posiciones():
+    try:
+        response = requests.get(
+            f"{TRACCAR_URL}/api/positions",
+            auth=(TRACCAR_USERNAME, TRACCAR_PASSWORD)
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error al obtener posiciones: {e}")
+        return []
+
 def seguimiento_vehiculo():
     # Encabezado
     col1, col2 = st.columns([1, 3])
@@ -1197,24 +1216,48 @@ def seguimiento_vehiculo():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📍 Seguimiento de Vehículo en Tiempo Real")
     
+    # Obtener posiciones actuales desde la API
     posiciones = obtener_posiciones()
     if posiciones:
-        # Configurar mapa
-        m = folium.Map(location=[-16.409047, -71.537451], zoom_start=13)
+        # Suponiendo que obtenemos detalles del primer vehículo
+        posicion = posiciones[0]  # Consideramos un solo vehículo
+        lat, lon = posicion["latitude"], posicion["longitude"]
+        device_id = posicion["deviceId"]
+        velocidad = posicion.get("speed", 0)  # Velocidad en km/h
+        ultima_actualizacion = posicion.get("fixTime", "No disponible")  # Hora de última posición
 
-        # Añadir marcadores al mapa
-        for posicion in posiciones:
-            lat = posicion["latitude"]
-            lon = posicion["longitude"]
-            device_id = posicion["deviceId"]
+        # Dividir en columnas para diseño
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            # Mapa interactivo
+            m = folium.Map(location=[lat, lon], zoom_start=13, control_scale=True)
             folium.Marker(
                 location=[lat, lon],
-                popup=f"Vehículo ID: {device_id}",
-                icon=folium.Icon(color="blue")
+                popup=f"Vehículo ID: {device_id}\nVelocidad: {velocidad} km/h",
+                icon=folium.Icon(color="red", icon="car", prefix="fa")
             ).add_to(m)
-        
-        # Mostrar mapa interactivo
-        st_folium(m, width=800, height=500)
+            st_folium(m, width=700, height=500)
+
+        with col2:
+            # Panel de detalles
+            st.markdown(f"""
+                <div style='background-color: #f9f9f9; padding: 15px; border-radius: 5px;'>
+                    <h4>🚗 <b>Detalles del Vehículo</b></h4>
+                    <p><b>ID:</b> {device_id}</p>
+                    <p><b>Velocidad:</b> {velocidad} km/h</p>
+                    <p><b>Última Actualización:</b> {ultima_actualizacion}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # Historial de ruta (si lo deseas agregar en el futuro)
+        # Nota: Esto requiere que implementes la función `obtener_historial`.
+        # historial = obtener_historial(device_id)
+        # if historial:
+        #     ruta = [(p["latitude"], p["longitude"]) for p in historial]
+        #     folium.PolyLine(ruta, color="blue", weight=2.5, opacity=1).add_to(m)
+
+        # Botón para actualizar manualmente (sin filtro dinámico)
+        st.button("🔄 Actualizar Datos")
     else:
         st.warning("No hay posiciones disponibles en este momento.")
 
