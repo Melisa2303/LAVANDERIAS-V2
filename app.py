@@ -1168,15 +1168,15 @@ def calcular_ruta_respetando_calles(puntos):
             return None
 
     return rutas_ordenadas
-    
+
 def seguimiento_vehiculo():
+    # Encabezado
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("Seguimiento al Vehículo")
-    # Implementar funcionalidad (opcional)
 
 # Inicializar 'logged_in', 'usuario_actual' y 'menu' en session_state
 if 'logged_in' not in st.session_state:
