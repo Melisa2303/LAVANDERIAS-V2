@@ -1169,6 +1169,25 @@ def calcular_ruta_respetando_calles(puntos):
 
     return rutas_ordenadas
 
+# Configuración del servidor Traccar
+TRACCAR_URL = "http://traccar-docker-production.up.railway.app"
+TRACCAR_USERNAME = "admin"
+TRACCAR_PASSWORD = "admin"
+
+# Obtener posiciones desde la API
+@st.cache_data(ttl=10)  # Actualiza cada 10 segundos
+def obtener_posiciones():
+    try:
+        response = requests.get(
+            f"{TRACCAR_URL}/api/positions",
+            auth=(TRACCAR_USERNAME, TRACCAR_PASSWORD)
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error al obtener posiciones: {e}")
+        return []
+
 def seguimiento_vehiculo():
     # Encabezado
     col1, col2 = st.columns([1, 3])
@@ -1176,7 +1195,28 @@ def seguimiento_vehiculo():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("Seguimiento al Vehículo")
+    st.title("📍 Seguimiento de Vehículo en Tiempo Real")
+    
+    posiciones = obtener_posiciones()
+    if posiciones:
+        # Configurar mapa
+        m = folium.Map(location=[-16.409047, -71.537451], zoom_start=13)
+
+        # Añadir marcadores al mapa
+        for posicion in posiciones:
+            lat = posicion["latitude"]
+            lon = posicion["longitude"]
+            device_id = posicion["deviceId"]
+            folium.Marker(
+                location=[lat, lon],
+                popup=f"Vehículo ID: {device_id}",
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+        
+        # Mostrar mapa interactivo
+        st_folium(m, width=800, height=500)
+    else:
+        st.warning("No hay posiciones disponibles en este momento.")
 
 # Inicializar 'logged_in', 'usuario_actual' y 'menu' en session_state
 if 'logged_in' not in st.session_state:
