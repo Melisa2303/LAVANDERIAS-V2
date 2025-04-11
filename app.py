@@ -1169,25 +1169,6 @@ def calcular_ruta_respetando_calles(puntos):
 
     return rutas_ordenadas
 
-# Configuración del servidor Traccar
-TRACCAR_URL = "http://traccar-docker-production.up.railway.app"
-TRACCAR_USERNAME = "melisa.mezadelg@gmail.com"
-TRACCAR_PASSWORD = "lavanderias"
-
-# Obtener posiciones desde la API
-@st.cache_data(ttl=10)  # Actualiza cada 10 segundos
-def obtener_posiciones():
-    try:
-        response = requests.get(
-            f"{TRACCAR_URL}/api/positions",
-            auth=(TRACCAR_USERNAME, TRACCAR_PASSWORD)
-        )
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        st.error(f"Error al obtener posiciones: {e}")
-        return []
-
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
 TRACCAR_USERNAME = "melisa.mezadelg@gmail.com"  # Cambia según tus credenciales
@@ -1205,6 +1186,25 @@ def obtener_posiciones():
         return response.json()
     except Exception as e:
         st.error(f"Error al obtener posiciones: {e}")
+        return []
+
+def obtener_historial(device_id):
+    try:
+        ahora = datetime.utcnow()
+        inicio = ahora.replace(hour=7, minute=30, second=0, microsecond=0)
+        fin = ahora.replace(hour=19, minute=0, second=0, microsecond=0)
+
+        # Asegura que esté en formato ISO (UTC)
+        inicio_str = inicio.isoformat() + "Z"
+        fin_str = fin.isoformat() + "Z"
+
+        url = f"{TRACCAR_URL}/api/positions?deviceId={device_id}&from={inicio_str}&to={fin_str}"
+
+        response = requests.get(url, auth=(TRACCAR_USERNAME, TRACCAR_PASSWORD))
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error al obtener historial: {e}")
         return []
 
 def seguimiento_vehiculo():
@@ -1258,12 +1258,16 @@ def seguimiento_vehiculo():
                 </div>
             """, unsafe_allow_html=True)
 
-        # Historial de ruta (si lo deseas agregar en el futuro)
-        # Nota: Esto requiere que implementes la función `obtener_historial`.
-        # historial = obtener_historial(device_id)
-        # if historial:
-        #     ruta = [(p["latitude"], p["longitude"]) for p in historial]
-        #     folium.PolyLine(ruta, color="blue", weight=2.5, opacity=1).add_to(m)
+        # --- Mostrar historial de ruta ---
+        historial = obtener_historial(device_id)
+        if historial and len(historial) > 1:
+            ruta = [(p["latitude"], p["longitude"]) for p in historial]
+            folium.PolyLine(ruta, color="blue", weight=2.5, opacity=0.8, tooltip="Ruta del Día").add_to(m)
+            
+            with st.expander("📜 Ver puntos del historial"):
+                for punto in historial:
+                    hora = punto.get("fixTime", "").replace("T", " ").split(".")[0]
+                    st.markdown(f"🕒 {hora} - 📍 ({punto['latitude']:.5f}, {punto['longitude']:.5f})")
 
         # Botón para actualizar manualmente (sin filtro dinámico)
         st.button("🔄 Actualizar Datos")
