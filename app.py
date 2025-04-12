@@ -1234,6 +1234,7 @@ def seguimiento_vehiculo():
         lat, lon = posicion["latitude"], posicion["longitude"]
         device_id = posicion["deviceId"]
         velocidad = posicion.get("speed", 0)  # Velocidad en km/h
+        ultima_actualizacion = posicion.get("fixTime", "No disponible")  # Hora de última posición
        
         # Convertir a hora local
         utc_dt = datetime.fromisoformat(ultima_actualizacion.replace("Z", "+00:00"))
