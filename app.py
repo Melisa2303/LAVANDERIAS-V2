@@ -15,6 +15,7 @@ from ortools.constraint_solver import pywrapcp
 import pandas as pd
 from io import BytesIO
 import time as tiempo
+import pytz
 
 # Cargar variables de entorno
 load_dotenv()
@@ -1233,7 +1234,12 @@ def seguimiento_vehiculo():
         lat, lon = posicion["latitude"], posicion["longitude"]
         device_id = posicion["deviceId"]
         velocidad = posicion.get("speed", 0)  # Velocidad en km/h
-        ultima_actualizacion = posicion.get("fixTime", "No disponible")  # Hora de última posición
+       
+        # Convertir a hora local
+        utc_dt = datetime.fromisoformat(ultima_actualizacion.replace("Z", "+00:00"))
+        local_tz = pytz.timezone("America/Lima")
+        local_dt = utc_dt.astimezone(local_tz)
+        ultima_actualizacion_local = local_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         # Dividir en columnas para diseño
         col1, col2 = st.columns([2, 1])
@@ -1254,7 +1260,7 @@ def seguimiento_vehiculo():
                     <h4>🚗 <b>Detalles del Vehículo</b></h4>
                     <p><b>ID:</b> {device_id}</p>
                     <p><b>Velocidad:</b> {velocidad} km/h</p>
-                    <p><b>Última Actualización:</b> {ultima_actualizacion}</p>
+                    <p><b>Última Actualización:</b> {ultima_actualizacion_local}</p>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -1264,10 +1270,11 @@ def seguimiento_vehiculo():
             ruta = [(p["latitude"], p["longitude"]) for p in historial]
             folium.PolyLine(ruta, color="blue", weight=2.5, opacity=0.8, tooltip="Ruta del Día").add_to(m)
             
-            with st.expander("📜 Ver puntos del historial"):
-                for punto in historial:
-                    hora = punto.get("fixTime", "").replace("T", " ").split(".")[0]
-                    st.markdown(f"🕒 {hora} - 📍 ({punto['latitude']:.5f}, {punto['longitude']:.5f})")
+        #   VER DESPLEGABLE CON PUNTOS DEL DÍA
+        #    with st.expander("📜 Ver puntos del historial"):
+        #        for punto in historial:
+        #            hora = punto.get("fixTime", "").replace("T", " ").split(".")[0]
+        #            st.markdown(f"🕒 {hora} - 📍 ({punto['latitude']:.5f}, {punto['longitude']:.5f})")
 
         # Botón para actualizar manualmente (sin filtro dinámico)
         st.button("🔄 Actualizar Datos")
