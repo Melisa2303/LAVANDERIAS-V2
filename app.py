@@ -1215,7 +1215,7 @@ def seguimiento_vehiculo():
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("📍 Seguimiento de Vehículol")
+    st.title("📍 Seguimiento de Vehículo")
 
     # --- Validación de horario permitido ---
     hora_actual = datetime.now().time()
