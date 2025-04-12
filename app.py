@@ -14,7 +14,7 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 import pandas as pd
 from io import BytesIO
-import time
+import time as tiempo
 
 # Cargar variables de entorno
 load_dotenv()
