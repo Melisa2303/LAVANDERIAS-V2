@@ -1080,8 +1080,16 @@ def datos_boletas():
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
-# Configuración de Google Maps API
-GOOGLE_MAPS_API_KEY = "AIzaSyCCmNC0IOTSxNxuMuoQSuO3w0GwjnJaP6s"  # Reemplazar con tu API key real
+# Obtener API keys de forma segura
+def get_api_key():
+    # Intenta obtener de Streamlit secrets primero
+    try:
+        return st.secrets["GOOGLE_MAPS_API_KEY"]
+    except:
+        # Si no existe, busca en variables de entorno
+        return os.getenv("GOOGLE_MAPS_API_KEY")
+
+GOOGLE_MAPS_API_KEY = get_api_key()
 
 # Puntos fijos (inicio y fin de ruta)
 PUNTOS_FIJOS = [
@@ -1095,27 +1103,21 @@ PUNTOS_FIJOS = [
 
 # Función para obtener matriz de distancias reales con Google Maps API
 @st.cache_data(ttl=3600)  # Cachear por 1 hora
-def obtener_matriz_tiempos(puntos, api_key):
-    """Obtiene matriz de tiempos reales usando Google Maps Distance Matrix API"""
+def obtener_matriz_tiempos(puntos):
+    """Versión segura que usa la API key de las variables de entorno"""
     locations = [f"{p['lat']},{p['lon']}" for p in puntos]
-    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={api_key}&departure_time=now"
+    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={GOOGLE_MAPS_API_KEY}&departure_time=now"
     response = requests.get(url)
     data = response.json()
-    
-    # Construir matriz de tiempos en segundos
-    matrix = []
-    for row in data['rows']:
-        matrix.append([element['duration']['value'] for element in row['elements']])
-    return matrix
+    return [[e['duration']['value'] for e in row['elements']] for row in data['rows']]
 
 # Función para obtener geometría de ruta con Directions API
 @st.cache_data(ttl=3600)
-def obtener_geometria_ruta(puntos, api_key):
-    """Obtiene la geometría de la ruta optimizada"""
+def obtener_geometria_ruta(puntos):
+    """Versión segura para Directions API"""
     waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos[1:-1]])
-    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={puntos[0]['lat']},{puntos[0]['lon']}&destination={puntos[-1]['lat']},{puntos[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={api_key}"
-    response = requests.get(url)
-    return response.json()
+    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={puntos[0]['lat']},{puntos[0]['lon']}&destination={puntos[-1]['lat']},{puntos[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={GOOGLE_MAPS_API_KEY}"
+    return requests.get(url).json()
 
 # Algoritmo 1: Path Cheapest Arc + Guided Local Search
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, api_key):
