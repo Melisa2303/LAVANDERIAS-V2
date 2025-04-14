@@ -1456,6 +1456,56 @@ def mostrar_ruta_en_mapa(ruta, api_key):
         st.error(f"Error al generar mapa: {str(e)}")
         return None
 
+@st.cache_data(ttl=300)  # Cachear por 5 minutos
+def obtener_puntos_por_fecha(fecha, db):
+    """Obtiene todos los puntos de recogida y entrega para una fecha específica"""
+    try:
+        # Convertir fecha a string en formato YYYY-MM-DD
+        fecha_str = fecha.strftime("%Y-%m-%d")
+        
+        puntos = []
+        
+        # 1. Obtener recogidas programadas para esta fecha
+        recogidas_ref = db.collection('recogidas')
+        recogidas_query = recogidas_ref.where('fecha_recojo', '==', fecha_str).stream()
+        
+        for doc in recogidas_query:
+            data = doc.to_dict()
+            if 'coordenadas_recojo' in data:
+                puntos.append({
+                    "id": doc.id,
+                    "tipo": "recojo",
+                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
+                    "direccion": data.get('direccion_recojo', 'Sin dirección'),
+                    "coordenadas": data['coordenadas_recojo'],
+                    "hora": data.get('hora_recojo'),
+                    "tipo_servicio": data.get('tipo_solicitud', 'Desconocido'),
+                    "duracion_estimada": 15  # minutos
+                })
+        
+        # 2. Obtener entregas programadas para esta fecha
+        entregas_query = recogidas_ref.where('fecha_entrega', '==', fecha_str).stream()
+        
+        for doc in entregas_query:
+            data = doc.to_dict()
+            if 'coordenadas_entrega' in data:
+                puntos.append({
+                    "id": doc.id,
+                    "tipo": "entrega",
+                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
+                    "direccion": data.get('direccion_entrega', 'Sin dirección'),
+                    "coordenadas": data['coordenadas_entrega'],
+                    "hora": data.get('hora_entrega'),
+                    "tipo_servicio": data.get('tipo_solicitud', 'Desconocido'),
+                    "duracion_estimada": 15  # minutos
+                })
+        
+        return puntos
+        
+    except Exception as e:
+        st.error(f"Error al obtener puntos: {str(e)}")
+        return []
+
 def ver_ruta_optimizada():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -1464,7 +1514,20 @@ def ver_ruta_optimizada():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("🚐 Ver Ruta Optimizada")
     
-    # 1. Selección de algoritmo
+    # 1. Selección de fecha
+    fecha_seleccionada = st.date_input(
+        "Seleccionar fecha de ruta",
+        min_value=datetime.now().date()
+    )
+
+    # 2. Obtener puntos para esa fecha
+    puntos_dia = obtener_puntos_por_fecha(fecha_seleccionada, db)
+    
+    if not puntos_dia:
+        st.warning("No hay puntos programados para esta fecha")
+        return
+    
+    # 3. Selección de algoritmo
     algoritmo = st.selectbox(
         "Seleccionar algoritmo de optimización",
         ["Algoritmo 1 (Path Cheapest Arc + GLS)", 
@@ -1473,13 +1536,13 @@ def ver_ruta_optimizada():
          "Algoritmo 4 (Christofides + GA)"],
         index=0
     )
-    
-    # 2. Obtener datos (simulados o de Firebase)
-    puntos_dia = obtener_puntos_del_dia()  # Implementar según tu fuente de datos
-    
-    # 3. Construir ruta completa
-    puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
-    puntos_sin_hora = [p for p in puntos_dia if not p.get('hora')]
+
+    # 4. Construir ruta completa incluyendo puntos fijos
+    ruta_completa = (
+        [p for p in PUNTOS_FIJOS if p['orden'] >= 0] +  # Puntos fijos iniciales
+        puntos_optimizados +                             # Puntos optimizados
+        [p for p in PUNTOS_FIJOS if p['orden'] < 0]     # Puntos fijos finales
+    )
     
     # 4. Optimizar según algoritmo seleccionado
     if algoritmo == "Algoritmo 1 (Path Cheapest Arc + GLS)":
