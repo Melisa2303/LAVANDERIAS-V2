@@ -1098,7 +1098,7 @@ PUNTOS_FIJOS = [
 def obtener_matriz_tiempos(puntos, api_key):
     """Obtiene matriz de tiempos reales usando Google Maps Distance Matrix API"""
     locations = [f"{p['lat']},{p['lon']}" for p in puntos]
-    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={api_key}"
+    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={api_key}&departure_time=now"
     response = requests.get(url)
     data = response.json()
     
@@ -1108,6 +1108,16 @@ def obtener_matriz_tiempos(puntos, api_key):
         matrix.append([element['duration']['value'] for element in row['elements']])
     return matrix
 
+# Función para obtener geometría de ruta con Directions API
+@st.cache_data(ttl=3600)
+def obtener_geometria_ruta(puntos, api_key):
+    """Obtiene la geometría de la ruta optimizada"""
+    waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos[1:-1]])
+    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={puntos[0]['lat']},{puntos[0]['lon']}&destination={puntos[-1]['lat']},{puntos[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={api_key}"
+    response = requests.get(url)
+    return response.json()
+
+# Algoritmo 1: Path Cheapest Arc + Guided Local Search
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, api_key):
     """Algoritmo principal: Path Cheapest Arc + Guided Local Search"""
     try:
@@ -1180,6 +1190,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
+# Algoritmo 2: Savings + Tabu Search
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, api_key):
     """Savings Algorithm + Tabu Search"""
     try:
@@ -1253,8 +1264,9 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
+# Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing
 def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, api_key):
-    """Nearest Neighbor + Simulated Annealing"""
+    """Parallel Cheapest Insertion + Simulated Annealing"""
     try:
         # 1. Obtener matriz de tiempos reales
         time_matrix = obtener_matriz_tiempos(puntos_intermedios, api_key)
@@ -1326,6 +1338,7 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
+# Algoritmo 4: Christofides + Genetic Algorithm
 def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
     """Christofides + Genetic Algorithm"""
     try:
@@ -1399,6 +1412,85 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
+@st.cache_data(ttl=300)  # Cachear por 5 minutos
+def obtener_puntos_del_dia(fecha):
+    """Obtiene puntos de recogidas y entregas para una fecha específica"""
+    try:
+        fecha_str = fecha.strftime("%Y-%m-%d")
+        puntos = []
+        
+        # Consulta optimizada para obtener recogidas y entregas en una sola operación
+        docs = db.collection('recogidas').where('fecha_recojo', '==', fecha_str).stream()
+        docs += db.collection('recogidas').where('fecha_entrega', '==', fecha_str).stream()
+        
+        for doc in docs:
+            data = doc.to_dict()
+            if data.get('fecha_recojo') == fecha_str and 'coordenadas_recojo' in data:
+                puntos.append({
+                    "id": doc.id,
+                    "tipo": "recojo",
+                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
+                    "direccion": data.get('direccion_recojo', 'Sin dirección'),
+                    "coordenadas": data['coordenadas_recojo'],
+                    "hora": data.get('hora_recojo'),
+                    "duracion_estimada": 15
+                })
+            if data.get('fecha_entrega') == fecha_str and 'coordenadas_entrega' in data:
+                puntos.append({
+                    "id": doc.id,
+                    "tipo": "entrega",
+                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
+                    "direccion": data.get('direccion_entrega', 'Sin dirección'),
+                    "coordenadas": data['coordenadas_entrega'],
+                    "hora": data.get('hora_entrega'),
+                    "duracion_estimada": 15
+                })
+        
+        return puntos
+        
+    except Exception as e:
+        st.error(f"Error al obtener puntos: {str(e)}")
+        return []
+
+def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
+    """Combina puntos fijos con la ruta optimizada"""
+    return (
+        [p for p in puntos_fijos if p['orden'] >= 0] +  # Puntos fijos iniciales
+        puntos_intermedios_optimizados +                 # Puntos optimizados
+        [p for p in puntos_fijos if p['orden'] < 0]      # Puntos fijos finales
+    )
+
+def mostrar_ruta_en_mapa(ruta_completa, api_key):
+    """Muestra la ruta en un mapa interactivo"""
+    try:
+        # Obtener geometría de la ruta
+        route_data = obtener_geometria_ruta(ruta_completa, api_key)
+        
+        # Crear mapa centrado en el primer punto
+        m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
+        
+        # Añadir línea de ruta
+        if 'routes' in route_data and route_data['routes']:
+            points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
+            folium.PolyLine(points, color='blue', weight=5).add_to(m)
+        
+        # Añadir marcadores
+        for i, punto in enumerate(ruta_completa):
+            folium.Marker(
+                [punto['lat'], punto['lon']],
+                popup=f"{i+1}. {punto['direccion']}",
+                icon=folium.Icon(
+                    color='red' if punto['tipo'] == 'fijo' else 'green' if punto['tipo'] == 'recojo' else 'blue',
+                    icon='home' if punto['tipo'] == 'fijo' else 'shopping-cart' if punto['tipo'] == 'recojo' else 'gift'
+                )
+            ).add_to(m)
+        
+        return m
+        
+    except Exception as e:
+        st.error(f"Error al generar mapa: {str(e)}")
+        return None
+
 def mostrar_metricas(ruta):
     """Calcula y muestra métricas de comparación"""
     # Calcular distancia total y tiempo estimado
@@ -1422,142 +1514,80 @@ def mostrar_metricas(ruta):
         file_name="ruta_optimizada.xlsx"
     )
 
-def mostrar_ruta_en_mapa(ruta, api_key):
-    """Visualiza la ruta usando Google Maps Directions API"""
-    try:
-        # Obtener geometría de la ruta
-        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in ruta[1:-1]])
-        url = f"https://maps.googleapis.com/maps/api/directions/json?origin={ruta[0]['lat']},{ruta[0]['lon']}&destination={ruta[-1]['lat']},{ruta[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={api_key}"
-        response = requests.get(url)
-        route_data = response.json()
-        
-        # Crear mapa
-        m = folium.Map(location=[ruta[0]['lat'], ruta[0]['lon']], zoom_start=13)
-        
-        # Añadir ruta
-        if 'routes' in route_data and route_data['routes']:
-            points = decode_polyline(route_data['routes'][0]['overview_polyline']['points'])
-            folium.PolyLine(points, color="blue", weight=5).add_to(m)
-            
-            # Añadir marcadores
-            for i, punto in enumerate(ruta):
-                folium.Marker(
-                    [punto['lat'], punto['lon']],
-                    popup=f"{i+1}. {punto['direccion']}",
-                    icon=folium.Icon(
-                        color='red' if punto['tipo'] == 'fijo' else 'green' if punto['tipo'] == 'recojo' else 'blue',
-                        icon='home' if punto['tipo'] == 'fijo' else 'shopping-cart' if punto['tipo'] == 'recojo' else 'gift'
-                    )
-                ).add_to(m)
-        
-        return m
-        
-    except Exception as e:
-        st.error(f"Error al generar mapa: {str(e)}")
-        return None
-
-@st.cache_data(ttl=300)  # Cachear por 5 minutos
-def obtener_puntos_por_fecha(fecha, db):
-    """Obtiene todos los puntos de recogida y entrega para una fecha específica"""
-    try:
-        # Convertir fecha a string en formato YYYY-MM-DD
-        fecha_str = fecha.strftime("%Y-%m-%d")
-        
-        puntos = []
-        
-        # 1. Obtener recogidas programadas para esta fecha
-        recogidas_ref = db.collection('recogidas')
-        recogidas_query = recogidas_ref.where('fecha_recojo', '==', fecha_str).stream()
-        
-        for doc in recogidas_query:
-            data = doc.to_dict()
-            if 'coordenadas_recojo' in data:
-                puntos.append({
-                    "id": doc.id,
-                    "tipo": "recojo",
-                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
-                    "direccion": data.get('direccion_recojo', 'Sin dirección'),
-                    "coordenadas": data['coordenadas_recojo'],
-                    "hora": data.get('hora_recojo'),
-                    "tipo_servicio": data.get('tipo_solicitud', 'Desconocido'),
-                    "duracion_estimada": 15  # minutos
-                })
-        
-        # 2. Obtener entregas programadas para esta fecha
-        entregas_query = recogidas_ref.where('fecha_entrega', '==', fecha_str).stream()
-        
-        for doc in entregas_query:
-            data = doc.to_dict()
-            if 'coordenadas_entrega' in data:
-                puntos.append({
-                    "id": doc.id,
-                    "tipo": "entrega",
-                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
-                    "direccion": data.get('direccion_entrega', 'Sin dirección'),
-                    "coordenadas": data['coordenadas_entrega'],
-                    "hora": data.get('hora_entrega'),
-                    "tipo_servicio": data.get('tipo_solicitud', 'Desconocido'),
-                    "duracion_estimada": 15  # minutos
-                })
-        
-        return puntos
-        
-    except Exception as e:
-        st.error(f"Error al obtener puntos: {str(e)}")
-        return []
-
 def ver_ruta_optimizada():
+    # Configuración de la página
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    
     st.title("🚐 Ver Ruta Optimizada")
     
     # 1. Selección de fecha
     fecha_seleccionada = st.date_input(
         "Seleccionar fecha de ruta",
+        value=datetime.now().date(),
         min_value=datetime.now().date()
     )
-
+    
     # 2. Obtener puntos para esa fecha
-    puntos_dia = obtener_puntos_por_fecha(fecha_seleccionada, db)
+    puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
     
     if not puntos_dia:
         st.warning("No hay puntos programados para esta fecha")
         return
     
-    # 3. Selección de algoritmo
+    # 3. Separar puntos con hora fija
+    puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
+    puntos_sin_hora = [p for p in puntos_dia if not p.get('hora')]
+    
+    # 4. Selección de algoritmo
     algoritmo = st.selectbox(
         "Seleccionar algoritmo de optimización",
-        ["Algoritmo 1 (Path Cheapest Arc + GLS)", 
-         "Algoritmo 2 (Savings + Tabu Search)",
-         "Algoritmo 3 (Nearest Neighbor + SA)",
-         "Algoritmo 4 (Christofides + GA)"],
+        [
+            "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
+            "Algoritmo 2: Savings + Tabu Search",
+            "Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing",
+            "Algoritmo 4: Christofides + Genetic Algorithm"
+        ],
         index=0
     )
-
-    # 4. Construir ruta completa incluyendo puntos fijos
-    ruta_completa = (
-        [p for p in PUNTOS_FIJOS if p['orden'] >= 0] +  # Puntos fijos iniciales
-        puntos_optimizados +                             # Puntos optimizados
-        [p for p in PUNTOS_FIJOS if p['orden'] < 0]     # Puntos fijos finales
-    )
     
-    # 4. Optimizar según algoritmo seleccionado
-    if algoritmo == "Algoritmo 1 (Path Cheapest Arc + GLS)":
-        ruta_optimizada = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
-    elif algoritmo == "Algoritmo 2 (Savings + Tabu Search)":
-        ruta_optimizada = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
-    # ... (otros casos)
+    # 5. Optimizar ruta según algoritmo seleccionado
+    if algoritmo == "Algoritmo 1: Path Cheapest Arc + Guided Local Search":
+        puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
+    elif algoritmo == "Algoritmo 2: Savings + Tabu Search":
+        puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
+    elif algoritmo == "Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing":
+        puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
+    else:
+        puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
     
-    # 5. Visualizar resultados
-    mapa = mostrar_ruta_en_mapa(ruta_optimizada, GOOGLE_MAPS_API_KEY)
+    # 6. Construir ruta completa con puntos fijos
+    ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
+    
+    # 7. Mostrar resultados
+    with st.expander("📋 Itinerario de Ruta", expanded=True):
+        st.dataframe(pd.DataFrame([
+            {
+                "Orden": i+1,
+                "Tipo": p['tipo'].capitalize(),
+                "Nombre": p['nombre'],
+                "Dirección": p['direccion'],
+                "Hora": p.get('hora', 'Flexible')
+            }
+            for i, p in enumerate(ruta_completa)
+        ]))
+    
+    st.subheader("🗺️ Mapa de Ruta")
+    mapa = mostrar_ruta_en_mapa(ruta_completa, GOOGLE_MAPS_API_KEY)
     if mapa:
         st_folium(mapa, width=700, height=500)
     
-    # 6. Mostrar métricas comparativas
-    mostrar_metricas(ruta_optimizada)
+    # 8. Métricas de rendimiento
+    st.subheader("📊 Métricas de Rendimiento")
+    calcular_y_mostrar_metricas(ruta_completa)
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
