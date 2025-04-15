@@ -1420,25 +1420,22 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
+@st.cache_data(ttl=300)  # Cachear por 5 minutos
 def obtener_puntos_del_dia(fecha):
-    """Función envoltorio para manejar el cache"""
-    # Determinar TTL basado en si es fecha histórica
-    ttl = 3600 if fecha < datetime.now().date() else 300
-    return _obtener_puntos_del_dia_cached(fecha, ttl)
-
-@st.cache_data(ttl=lambda _, ttl: ttl)  # TTL dinámico
-def _obtener_puntos_del_dia_cached(fecha, ttl):
-    """Función interna con cache"""
+    """Obtiene puntos de recogidas y entregas para una fecha específica"""
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         puntos = []
-        recogidas_ref = db.collection('recogidas')
         
-        # Procesar recogidas
-        for doc in recogidas_ref.where('fecha_recojo', '==', fecha_str).stream():
+        # 1. Obtener recogidas programadas para esta fecha
+        recogidas_ref = db.collection('recogidas')
+        recogidas_query = recogidas_ref.where('fecha_recojo', '==', fecha_str).stream()
+        
+        # Convertir el generador a lista y procesar
+        for doc in list(recogidas_query):  # Convertimos a lista explícitamente
             data = doc.to_dict()
             if 'coordenadas_recojo' in data:
-                punto = {
+                puntos.append({
                     "id": doc.id,
                     "tipo": "recojo",
                     "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
@@ -1446,14 +1443,16 @@ def _obtener_puntos_del_dia_cached(fecha, ttl):
                     "coordenadas": data['coordenadas_recojo'],
                     "hora": data.get('hora_recojo'),
                     "duracion_estimada": 15
-                }
-                puntos.append(punto)
+                })
         
-        # Procesar entregas
-        for doc in recogidas_ref.where('fecha_entrega', '==', fecha_str).stream():
+        # 2. Obtener entregas programadas para esta fecha
+        entregas_query = recogidas_ref.where('fecha_entrega', '==', fecha_str).stream()
+        
+        # Convertir el generador a lista y procesar
+        for doc in list(entregas_query):  # Convertimos a lista explícitamente
             data = doc.to_dict()
             if 'coordenadas_entrega' in data:
-                punto = {
+                puntos.append({
                     "id": doc.id,
                     "tipo": "entrega",
                     "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
@@ -1461,15 +1460,14 @@ def _obtener_puntos_del_dia_cached(fecha, ttl):
                     "coordenadas": data['coordenadas_entrega'],
                     "hora": data.get('hora_entrega'),
                     "duracion_estimada": 15
-                }
-                puntos.append(punto)
+                })
         
         return puntos
         
     except Exception as e:
         st.error(f"Error al obtener puntos: {str(e)}")
         return []
-
+        
 def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     """Combina puntos fijos con la ruta optimizada"""
     return (
