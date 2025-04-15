@@ -1188,23 +1188,20 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora):
             return puntos_intermedios
 
 # Algoritmo 2: Savings + Tabu Search
-def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, api_key):
+def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora):
     """Savings Algorithm + Tabu Search"""
     try:
-        # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
+        # 1. Obtener matriz de tiempos (usa API key global)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
         # 3. Definir función de coste
-        def time_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
-        
-        transit_callback_index = routing.RegisterTransitCallback(time_callback)
+        transit_callback_index = routing.RegisterTransitCallback(
+            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+        )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
         # 4. Añadir restricción de tiempo total (8:00-17:00)
@@ -1253,32 +1250,26 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, api_key):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+        
+        except Exception as e:
+            st.error(f"Error en algoritmo 1: {str(e)}")
             return puntos_intermedios
-            
-    except Exception as e:
-        st.error(f"Error en optimización: {str(e)}")
-        return puntos_intermedios
 
 # Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing
-def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, api_key):
+def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora):
     """Parallel Cheapest Insertion + Simulated Annealing"""
     try:
-        # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
+        # 1. Obtener matriz de tiempos (usa API key global)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
         # 3. Definir función de coste
-        def time_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
-        
-        transit_callback_index = routing.RegisterTransitCallback(time_callback)
+        transit_callback_index = routing.RegisterTransitCallback(
+            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+        )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
         # 4. Añadir restricción de tiempo total (8:00-17:00)
@@ -1327,32 +1318,26 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, api_key):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+        
+        except Exception as e:
+            st.error(f"Error en algoritmo 1: {str(e)}")
             return puntos_intermedios
-            
-    except Exception as e:
-        st.error(f"Error en optimización: {str(e)}")
-        return puntos_intermedios
 
 # Algoritmo 4: Christofides + Genetic Algorithm
-def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
+def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
     """Christofides + Genetic Algorithm"""
     try:
-        # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
+        # 1. Obtener matriz de tiempos (usa API key global)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
         # 3. Definir función de coste
-        def time_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
-        
-        transit_callback_index = routing.RegisterTransitCallback(time_callback)
+        transit_callback_index = routing.RegisterTransitCallback(
+            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+        )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
         # 4. Añadir restricción de tiempo total (8:00-17:00)
@@ -1401,13 +1386,10 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+        
+        except Exception as e:
+            st.error(f"Error en algoritmo 1: {str(e)}")
             return puntos_intermedios
-            
-    except Exception as e:
-        st.error(f"Error en optimización: {str(e)}")
-        return puntos_intermedios
 
 def obtener_puntos_del_dia(fecha):
     """Función principal con cache condicional"""
