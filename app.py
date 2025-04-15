@@ -1081,15 +1081,7 @@ def datos_boletas():
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
 
 # Obtener API keys de forma segura
-def get_api_key():
-    # Intenta obtener de Streamlit secrets primero
-    try:
-        return st.secrets["GOOGLE_MAPS_API_KEY"]
-    except:
-        # Si no existe, busca en variables de entorno
-        return os.getenv("GOOGLE_MAPS_API_KEY")
-
-GOOGLE_MAPS_API_KEY = get_api_key()
+GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.getenv("GOOGLE_MAPS_API_KEY")
 
 # Puntos fijos (inicio y fin de ruta)
 PUNTOS_FIJOS = [
@@ -1105,15 +1097,18 @@ PUNTOS_FIJOS = [
 @st.cache_data(ttl=3600)
 def obtener_matriz_tiempos(puntos):
     """Usa la API key global"""
+    if not GOOGLE_MAPS_API_KEY:
+        st.error("API key de Google Maps no configurada")
+        return [[0]*len(puntos) for _ in puntos]
+    
     locations = [f"{p['lat']},{p['lon']}" for p in puntos]
-    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={GOOGLE_MAPS_API_KEY}&departure_time=now"
+    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={GOOGLE_MAPS_API_KEY}"
     response = requests.get(url)
     data = response.json()
     
-    # Manejo de errores de API
     if data.get('status') != 'OK':
         st.error(f"Error en Distance Matrix API: {data.get('error_message', 'Desconocido')}")
-        return [[0]*len(puntos) for _ in puntos]  # Matriz de ceros como fallback
+        return [[0]*len(puntos) for _ in puntos]
     
     return [[e['duration']['value'] for e in row['elements']] for row in data['rows']]
 
@@ -1126,23 +1121,20 @@ def obtener_geometria_ruta(puntos):
     return requests.get(url).json()
 
 # Algoritmo 1: Path Cheapest Arc + Guided Local Search
-def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, api_key):
-    """Algoritmo principal: Path Cheapest Arc + Guided Local Search"""
+def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora):
+    """Algoritmo 1: Path Cheapest Arc + Guided Local Search"""
     try:
-        # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
+        # 1. Obtener matriz de tiempos (usa API key global)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
         # 3. Definir función de coste
-        def time_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
-        
-        transit_callback_index = routing.RegisterTransitCallback(time_callback)
+        transit_callback_index = routing.RegisterTransitCallback(
+            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+        )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
         # 4. Añadir restricción de tiempo total (8:00-17:00)
@@ -1190,13 +1182,10 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, api_key):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+        
+        except Exception as e:
+            st.error(f"Error en algoritmo 1: {str(e)}")
             return puntos_intermedios
-            
-    except Exception as e:
-        st.error(f"Error en optimización: {str(e)}")
-        return puntos_intermedios
 
 # Algoritmo 2: Savings + Tabu Search
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, api_key):
@@ -1420,43 +1409,45 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
-@st.cache_data(ttl=300)  # Cachear por 5 minutos
 def obtener_puntos_del_dia(fecha):
-    """Obtiene puntos de recogidas y entregas para una fecha específica"""
+    """Función principal con cache condicional"""
+    # Determinar TTL basado en si es fecha histórica
+    ttl = 3600 if fecha < datetime.now().date() else 300
+    return _obtener_puntos_del_dia(fecha, ttl)
+
+@st.cache_data(ttl=lambda args, kwargs: args[1])  # Usar el segundo argumento (ttl) como valor
+def _obtener_puntos_del_dia(fecha, ttl):
+    """Función interna con cache implementado correctamente"""
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         puntos = []
-        
-        # 1. Obtener recogidas programadas para esta fecha
         recogidas_ref = db.collection('recogidas')
-        recogidas_query = recogidas_ref.where('fecha_recojo', '==', fecha_str).stream()
         
-        # Convertir el generador a lista y procesar
-        for doc in list(recogidas_query):  # Convertimos a lista explícitamente
+        # Consulta para recogidas
+        recogidas = list(recogidas_ref.where('fecha_recojo', '==', fecha_str).stream())
+        for doc in recogidas:
             data = doc.to_dict()
             if 'coordenadas_recojo' in data:
                 puntos.append({
                     "id": doc.id,
                     "tipo": "recojo",
-                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
-                    "direccion": data.get('direccion_recojo', 'Sin dirección'),
+                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Punto de recogida'),
+                    "direccion": data.get('direccion_recojo', 'Dirección no especificada'),
                     "coordenadas": data['coordenadas_recojo'],
                     "hora": data.get('hora_recojo'),
                     "duracion_estimada": 15
                 })
         
-        # 2. Obtener entregas programadas para esta fecha
-        entregas_query = recogidas_ref.where('fecha_entrega', '==', fecha_str).stream()
-        
-        # Convertir el generador a lista y procesar
-        for doc in list(entregas_query):  # Convertimos a lista explícitamente
+        # Consulta para entregas
+        entregas = list(recogidas_ref.where('fecha_entrega', '==', fecha_str).stream())
+        for doc in entregas:
             data = doc.to_dict()
             if 'coordenadas_entrega' in data:
                 puntos.append({
                     "id": doc.id,
                     "tipo": "entrega",
-                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
-                    "direccion": data.get('direccion_entrega', 'Sin dirección'),
+                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Punto de entrega'),
+                    "direccion": data.get('direccion_entrega', 'Dirección no especificada'),
                     "coordenadas": data['coordenadas_entrega'],
                     "hora": data.get('hora_entrega'),
                     "duracion_estimada": 15
