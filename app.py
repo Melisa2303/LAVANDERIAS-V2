@@ -1421,13 +1421,14 @@ def obtener_puntos_del_dia(fecha):
         fecha_str = fecha.strftime("%Y-%m-%d")
         puntos = []
         
-        # Consulta optimizada para obtener recogidas y entregas en una sola operación
-        docs = db.collection('recogidas').where('fecha_recojo', '==', fecha_str).stream()
-        docs += db.collection('recogidas').where('fecha_entrega', '==', fecha_str).stream()
+        # 1. Obtener recogidas programadas para esta fecha
+        recogidas_ref = db.collection('recogidas')
+        recogidas_query = recogidas_ref.where('fecha_recojo', '==', fecha_str).stream()
         
-        for doc in docs:
+        # Convertir el generador a lista y procesar
+        for doc in list(recogidas_query):  # Convertimos a lista explícitamente
             data = doc.to_dict()
-            if data.get('fecha_recojo') == fecha_str and 'coordenadas_recojo' in data:
+            if 'coordenadas_recojo' in data:
                 puntos.append({
                     "id": doc.id,
                     "tipo": "recojo",
@@ -1437,7 +1438,14 @@ def obtener_puntos_del_dia(fecha):
                     "hora": data.get('hora_recojo'),
                     "duracion_estimada": 15
                 })
-            if data.get('fecha_entrega') == fecha_str and 'coordenadas_entrega' in data:
+        
+        # 2. Obtener entregas programadas para esta fecha
+        entregas_query = recogidas_ref.where('fecha_entrega', '==', fecha_str).stream()
+        
+        # Convertir el generador a lista y procesar
+        for doc in list(entregas_query):  # Convertimos a lista explícitamente
+            data = doc.to_dict()
+            if 'coordenadas_entrega' in data:
                 puntos.append({
                     "id": doc.id,
                     "tipo": "entrega",
