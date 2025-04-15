@@ -1102,13 +1102,19 @@ PUNTOS_FIJOS = [
 ]
 
 # Función para obtener matriz de distancias reales con Google Maps API
-@st.cache_data(ttl=3600)  # Cachear por 1 hora
+@st.cache_data(ttl=3600)
 def obtener_matriz_tiempos(puntos):
-    """Versión segura que usa la API key de las variables de entorno"""
+    """Usa la API key global"""
     locations = [f"{p['lat']},{p['lon']}" for p in puntos]
     url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={GOOGLE_MAPS_API_KEY}&departure_time=now"
     response = requests.get(url)
     data = response.json()
+    
+    # Manejo de errores de API
+    if data.get('status') != 'OK':
+        st.error(f"Error en Distance Matrix API: {data.get('error_message', 'Desconocido')}")
+        return [[0]*len(puntos) for _ in puntos]  # Matriz de ceros como fallback
+    
     return [[e['duration']['value'] for e in row['elements']] for row in data['rows']]
 
 # Función para obtener geometría de ruta con Directions API
@@ -1124,7 +1130,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, api_key):
     """Algoritmo principal: Path Cheapest Arc + Guided Local Search"""
     try:
         # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios, api_key)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1197,7 +1203,7 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, api_key):
     """Savings Algorithm + Tabu Search"""
     try:
         # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios, api_key)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1271,7 +1277,7 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, api_key):
     """Parallel Cheapest Insertion + Simulated Annealing"""
     try:
         # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios, api_key)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1345,7 +1351,7 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
     """Christofides + Genetic Algorithm"""
     try:
         # 1. Obtener matriz de tiempos reales
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios, api_key)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios)  # api_key ya es global
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1414,22 +1420,25 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
-@st.cache_data(ttl=300)
 def obtener_puntos_del_dia(fecha):
-    """Obtiene puntos de recogidas y entregas para una fecha específica"""
+    """Función envoltorio para manejar el cache"""
+    # Determinar TTL basado en si es fecha histórica
+    ttl = 3600 if fecha < datetime.now().date() else 300
+    return _obtener_puntos_del_dia_cached(fecha, ttl)
+
+@st.cache_data(ttl=lambda _, ttl: ttl)  # TTL dinámico
+def _obtener_puntos_del_dia_cached(fecha, ttl):
+    """Función interna con cache"""
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         puntos = []
-        
-        # 1. Obtener recogidas programadas para esta fecha
         recogidas_ref = db.collection('recogidas')
-        recogidas_query = recogidas_ref.where('fecha_recojo', '==', fecha_str).stream()
         
-        # Convertir el generador a lista y procesar
-        for doc in list(recogidas_query):  # Convertimos a lista explícitamente
+        # Procesar recogidas
+        for doc in recogidas_ref.where('fecha_recojo', '==', fecha_str).stream():
             data = doc.to_dict()
             if 'coordenadas_recojo' in data:
-                puntos.append({
+                punto = {
                     "id": doc.id,
                     "tipo": "recojo",
                     "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
@@ -1437,16 +1446,14 @@ def obtener_puntos_del_dia(fecha):
                     "coordenadas": data['coordenadas_recojo'],
                     "hora": data.get('hora_recojo'),
                     "duracion_estimada": 15
-                })
+                }
+                puntos.append(punto)
         
-        # 2. Obtener entregas programadas para esta fecha
-        entregas_query = recogidas_ref.where('fecha_entrega', '==', fecha_str).stream()
-        
-        # Convertir el generador a lista y procesar
-        for doc in list(entregas_query):  # Convertimos a lista explícitamente
+        # Procesar entregas
+        for doc in recogidas_ref.where('fecha_entrega', '==', fecha_str).stream():
             data = doc.to_dict()
             if 'coordenadas_entrega' in data:
-                puntos.append({
+                punto = {
                     "id": doc.id,
                     "tipo": "entrega",
                     "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Sin nombre'),
@@ -1454,7 +1461,8 @@ def obtener_puntos_del_dia(fecha):
                     "coordenadas": data['coordenadas_entrega'],
                     "hora": data.get('hora_entrega'),
                     "duracion_estimada": 15
-                })
+                }
+                puntos.append(punto)
         
         return puntos
         
@@ -1535,25 +1543,15 @@ def ver_ruta_optimizada():
     st.title("🚐 Ver Ruta Optimizada")
     
     # 1. Selección de fecha
-    fecha_seleccionada = st.date_input(
-        "Seleccionar fecha de ruta",
-        value=datetime.now().date()  # Valor por defecto hoy, pero permite seleccionar cualquier fecha
-    )
-    if fecha_seleccionada < datetime.now().date():
-        st.info("⚠️ Estás viendo una ruta de una fecha pasada")
+    fecha_seleccionada = st.date_input("Seleccionar fecha de ruta", value=datetime.now().date())
     
     # 2. Obtener puntos para esa fecha
     puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
-    
     if not puntos_dia:
-        st.warning("No hay puntos programados para esta fecha")
+        st.warning(f"No hay puntos programados para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
         return
     
-    # 3. Separar puntos con hora fija
-    puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
-    puntos_sin_hora = [p for p in puntos_dia if not p.get('hora')]
-    
-    # 4. Selección de algoritmo
+    # 3. Selección de algoritmo
     algoritmo = st.selectbox(
         "Seleccionar algoritmo de optimización",
         [
@@ -1565,40 +1563,53 @@ def ver_ruta_optimizada():
         index=0
     )
     
-    # 5. Optimizar ruta según algoritmo seleccionado
-    if algoritmo == "Algoritmo 1: Path Cheapest Arc + Guided Local Search":
-        puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
-    elif algoritmo == "Algoritmo 2: Savings + Tabu Search":
-        puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
-    elif algoritmo == "Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing":
-        puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
-    else:
-        puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora, GOOGLE_MAPS_API_KEY)
+    # 4. Optimizar según algoritmo seleccionado
+    puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
     
-    # 6. Construir ruta completa con puntos fijos
-    ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
-    
-    # 7. Mostrar resultados
-    with st.expander("📋 Itinerario de Ruta", expanded=True):
-        st.dataframe(pd.DataFrame([
-            {
-                "Orden": i+1,
-                "Tipo": p['tipo'].capitalize(),
-                "Nombre": p['nombre'],
-                "Dirección": p['direccion'],
-                "Hora": p.get('hora', 'Flexible')
-            }
-            for i, p in enumerate(ruta_completa)
-        ]))
-    
-    st.subheader("🗺️ Mapa de Ruta")
-    mapa = mostrar_ruta_en_mapa(ruta_completa, GOOGLE_MAPS_API_KEY)
-    if mapa:
-        st_folium(mapa, width=700, height=500)
-    
-    # 8. Métricas de rendimiento
-    st.subheader("📊 Métricas de Rendimiento")
-    calcular_y_mostrar_metricas(ruta_completa)
+    try:
+        if algoritmo.startswith("Algoritmo 1"):
+            puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora)
+        elif algoritmo.startswith("Algoritmo 2"):
+            puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora)
+        elif algoritmo.startswith("Algoritmo 3"):
+            puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora)
+        else:
+            puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora)
+        
+        # 5. Construir ruta completa
+        ruta_completa = (
+            [p for p in PUNTOS_FIJOS if p['orden'] >= 0] +  # Puntos fijos iniciales
+            puntos_optimizados +                             # Puntos optimizados
+            [p for p in PUNTOS_FIJOS if p['orden'] < 0]     # Puntos fijos finales
+        )
+        
+        # 6. Mostrar resultados
+        with st.expander("📋 Itinerario de Ruta", expanded=True):
+            df_ruta = pd.DataFrame([
+                {
+                    "Orden": i+1,
+                    "Tipo": p['tipo'].capitalize(),
+                    "Nombre/Lugar": p.get('nombre', p.get('direccion', 'Sin nombre')),
+                    "Dirección": p.get('direccion', ''),
+                    "Hora": p.get('hora', 'Flexible'),
+                    "Tipo Punto": "Fijo" if 'orden' in p else "Programado"
+                }
+                for i, p in enumerate(ruta_completa)
+            ])
+            st.dataframe(df_ruta)
+        
+        # 7. Mostrar mapa
+        st.subheader("🗺️ Mapa de Ruta")
+        mapa = mostrar_ruta_en_mapa(ruta_completa)
+        if mapa:
+            st_folium(mapa, width=700, height=500)
+        
+        # 8. Mostrar métricas
+        st.subheader("📊 Métricas de Rendimiento")
+        calcular_y_mostrar_metricas(ruta_completa)
+        
+    except Exception as e:
+        st.error(f"Error al optimizar la ruta: {str(e)}")
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
