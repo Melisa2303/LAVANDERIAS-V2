@@ -1414,7 +1414,7 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, api_key):
         st.error(f"Error en optimización: {str(e)}")
         return puntos_intermedios
 
-@st.cache_data(ttl=3600 if fecha_seleccionada < datetime.now().date() else 300)
+@st.cache_data(ttl=300)
 def obtener_puntos_del_dia(fecha):
     """Obtiene puntos de recogidas y entregas para una fecha específica"""
     try:
