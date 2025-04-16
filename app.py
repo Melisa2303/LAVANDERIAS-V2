@@ -17,6 +17,7 @@ import pandas as pd
 from io import BytesIO
 import time as tiempo
 import pytz
+from googlemaps.convert import decode_polyline
 
 # Cargar variables de entorno
 load_dotenv()
@@ -1115,7 +1116,11 @@ def obtener_matriz_tiempos(puntos):
 # Función para obtener geometría de ruta con Directions API
 @st.cache_data(ttl=3600)
 def obtener_geometria_ruta(puntos):
-    """Versión segura para Directions API"""
+    """Versión segura para Directions API usando API key global"""
+    if not GOOGLE_MAPS_API_KEY:
+        st.error("API key de Google Maps no configurada")
+        return {}
+    
     waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos[1:-1]])
     url = f"https://maps.googleapis.com/maps/api/directions/json?origin={puntos[0]['lat']},{puntos[0]['lon']}&destination={puntos[-1]['lat']},{puntos[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={GOOGLE_MAPS_API_KEY}"
     return requests.get(url).json()
@@ -1404,14 +1409,14 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
         return puntos_intermedios
 
 def obtener_puntos_del_dia(fecha):
-    """Función principal con cache condicional"""
+    """Función principal con caché condicional"""
     # Determinar TTL basado en si es fecha histórica
     ttl = 3600 if fecha < datetime.now().date() else 300
-    return _obtener_puntos_del_dia(fecha, ttl)
+    return _obtener_puntos_del_dia_cached(fecha, ttl)
 
-@st.cache_data(ttl=lambda args, kwargs: args[1])  # Usar el segundo argumento (ttl) como valor
-def _obtener_puntos_del_dia(fecha, ttl):
-    """Función interna con cache implementado correctamente"""
+@st.cache_data(ttl=3600)  # Usamos el máximo TTL posible, el control real está en la función principal
+def _obtener_puntos_del_dia_cached(fecha, _ttl=None):
+    """Función interna con caché"""
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         puntos = []
@@ -1465,7 +1470,7 @@ def mostrar_ruta_en_mapa(ruta_completa, api_key):
     """Muestra la ruta en un mapa interactivo"""
     try:
         # Obtener geometría de la ruta
-        route_data = obtener_geometria_ruta(ruta_completa, api_key)
+        route_data = obtener_geometria_ruta(ruta_completa)
         
         # Crear mapa centrado en el primer punto
         m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
@@ -1481,8 +1486,8 @@ def mostrar_ruta_en_mapa(ruta_completa, api_key):
                 [punto['lat'], punto['lon']],
                 popup=f"{i+1}. {punto['direccion']}",
                 icon=folium.Icon(
-                    color='red' if punto['tipo'] == 'fijo' else 'green' if punto['tipo'] == 'recojo' else 'blue',
-                    icon='home' if punto['tipo'] == 'fijo' else 'shopping-cart' if punto['tipo'] == 'recojo' else 'gift'
+                    color='red' if punto.get('tipo') == 'fijo' else 'green' if punto.get('tipo') == 'recojo' else 'blue',
+                    icon='home' if punto.get('tipo') == 'fijo' else 'shopping-cart' if punto.get('tipo') == 'recojo' else 'gift'
                 )
             ).add_to(m)
         
@@ -1589,7 +1594,7 @@ def ver_ruta_optimizada():
         
         # 8. Mostrar métricas
         st.subheader("📊 Métricas de Rendimiento")
-        calcular_y_mostrar_metricas(ruta_completa)
+        mostrar_metricas(ruta_completa)
         
     except Exception as e:
         st.error(f"Error al optimizar la ruta: {str(e)}")
