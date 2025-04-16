@@ -1089,9 +1089,9 @@ PUNTOS_FIJOS = [
     {"lat": -16.4141434959913, "lon": -71.51839574233342, "direccion": "Cochera", "tipo": "fijo", "orden": 0, "hora": "08:00"},
     {"lat": -16.398605226701633, "lon": -71.4376266111019, "direccion": "Planta", "tipo": "fijo", "orden": 1, "hora": "08:30"},
     {"lat": -16.43564123078658, "lon": -71.52216190495753, "direccion": "Sucursal Av Dolores", "tipo": "fijo", "orden": 2, "hora": "09:00"},
-    {"lat": -16.43564123078658, "lon": -71.52216190495753, "direccion": "Sucursal Av Dolores", "tipo": "fijo", "orden": -2, "hora": "16:00"},
-    {"lat": -16.398605226701633, "lon": -71.4376266111019, "direccion": "Planta", "tipo": "fijo", "orden": -1, "hora": "16:40"},
-    {"lat": -16.4141434959913, "lon": -71.51839574233342, "direccion": "Cochera", "tipo": "fijo", "orden": -0, "hora": "17:00"}
+    {"lat": -16.43564123078658, "lon": -71.52216190495753, "direccion": "Sucursal Av Dolores", "tipo": "fijo", "orden": -3, "hora": "16:00"},
+    {"lat": -16.398605226701633, "lon": -71.4376266111019, "direccion": "Planta", "tipo": "fijo", "orden": -2, "hora": "16:40"},
+    {"lat": -16.4141434959913, "lon": -71.51839574233342, "direccion": "Cochera", "tipo": "fijo", "orden": -1, "hora": "17:00"}
 ]
 
 # Función para obtener matriz de distancias reales con Google Maps API
@@ -1483,11 +1483,11 @@ def _obtener_puntos_del_dia_cached(fecha, _ttl=None):
         return []
         
 def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
-    """Combina puntos fijos con la ruta optimizada en el orden correcto"""
-    # Puntos fijos iniciales (orden >= 0)
+    """Combina puntos fijos con la ruta optimizada en el orden CORRECTO"""
+    # Ordenar puntos fijos iniciales (orden >= 0)
     inicio = sorted([p for p in puntos_fijos if p['orden'] >= 0], key=lambda x: x['orden'])
     
-    # Puntos fijos finales (orden < 0)
+    # Ordenar puntos fijos finales (orden < 0)
     fin = sorted([p for p in puntos_fijos if p['orden'] < 0], key=lambda x: x['orden'])
     
     return inicio + puntos_intermedios_optimizados + fin
@@ -1526,17 +1526,20 @@ def mostrar_ruta_en_mapa(ruta_completa, api_key):
 
 def mostrar_metricas(ruta):
     """Calcula y muestra métricas de comparación"""
-    # Calcular distancia total y tiempo estimado
+    # Calcular distancia total aproximada (en línea recta)
     distancia_total = sum(
-        ((ruta[i]['lat']-ruta[i+1]['lat'])**2 + (ruta[i]['lon']-ruta[i+1]['lon'])**2)**0.5
+        math.sqrt((ruta[i]['lat']-ruta[i+1]['lat'])**2 + (ruta[i]['lon']-ruta[i+1]['lon'])**2)
         for i in range(len(ruta)-1)
-    )
+    ) * 111  # Convertir grados a km (aproximadamente)
+    
+    # Calcular tiempo total estimado (asumiendo 30 km/h promedio)
+    tiempo_total = distancia_total / 30  # en horas
     
     st.subheader("📊 Métricas de Rendimiento")
     col1, col2, col3 = st.columns(3)
     col1.metric("Puntos en ruta", len(ruta))
-    col2.metric("Distancia total (km)", f"{distancia_total*100:.2f}")
-    col3.metric("Tiempo estimado", calcular_tiempo_total(ruta))
+    col2.metric("Distancia total (km)", f"{distancia_total:.2f}")
+    col3.metric("Tiempo estimado", f"{tiempo_total:.1f} horas")
     
     # Exportar resultados
     excel_buffer = BytesIO()
@@ -1610,7 +1613,7 @@ def ver_ruta_optimizada():
             st.dataframe(df_ruta)
         
         # Mostrar mapa
-        st.subheader("🗺️ Mapa de Ruta")
+        # st.subheader("🗺️ Mapa de Ruta")
         mapa = mostrar_ruta_en_mapa(ruta_completa)
         if mapa:
             st_folium(mapa, width=700, height=500)
