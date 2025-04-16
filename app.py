@@ -1182,10 +1182,13 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        
-        except Exception as e:
-            st.error(f"Error en algoritmo 1: {str(e)}")
+        else:
+            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
             return puntos_intermedios
+            
+    except Exception as e:
+        st.error(f"Error en algoritmo 1: {str(e)}")
+        return puntos_intermedios
 
 # Algoritmo 2: Savings + Tabu Search
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora):
@@ -1250,10 +1253,13 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        
-        except Exception as e:
-            st.error(f"Error en algoritmo 1: {str(e)}")
+        else:
+            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
             return puntos_intermedios
+            
+    except Exception as e:
+        st.error(f"Error en algoritmo 1: {str(e)}")
+        return puntos_intermedios
 
 # Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing
 def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora):
@@ -1318,10 +1324,13 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        
-        except Exception as e:
-            st.error(f"Error en algoritmo 1: {str(e)}")
+        else:
+            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
             return puntos_intermedios
+            
+    except Exception as e:
+        st.error(f"Error en algoritmo 1: {str(e)}")
+        return puntos_intermedios
 
 # Algoritmo 4: Christofides + Genetic Algorithm
 def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
@@ -1386,10 +1395,13 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
                 index = solution.Value(routing.NextVar(index))
             
             return [puntos_intermedios[i] for i in route_order]
-        
-        except Exception as e:
-            st.error(f"Error en algoritmo 1: {str(e)}")
+        else:
+            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
             return puntos_intermedios
+            
+    except Exception as e:
+        st.error(f"Error en algoritmo 1: {str(e)}")
+        return puntos_intermedios
 
 def obtener_puntos_del_dia(fecha):
     """Función principal con cache condicional"""
