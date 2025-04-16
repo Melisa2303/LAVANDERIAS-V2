@@ -1244,7 +1244,7 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora):
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.TABU_SEARCH)
         search_parameters.time_limit.seconds = 10
-        search_parameters.tabu_search_acceptance_penalty = 1000
+        # Eliminar línea con tabu_search_acceptance_penalty
         
         # 7. Resolver el problema
         solution = routing.SolveWithParameters(search_parameters)
@@ -1315,7 +1315,7 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora):
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
         search_parameters.time_limit.seconds = 10
-        search_parameters.simulated_annealing_temperature_init = 1000
+        # Eliminar línea con simulated_annealing_temperature_init
         
         # 7. Resolver el problema
         solution = routing.SolveWithParameters(search_parameters)
@@ -1384,9 +1384,9 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.CHRISTOFIDES)
         search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GENETIC_ALGORITHM)
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)  # Cambiado de GENETIC_ALGORITHM
         search_parameters.time_limit.seconds = 10
-        search_parameters.genetic_algorithm_mutation_probability = 0.1
+        # Eliminar línea con genetic_algorithm_mutation_probability
         
         # 7. Resolver el problema
         solution = routing.SolveWithParameters(search_parameters)
@@ -1492,19 +1492,22 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     
     return inicio + puntos_intermedios_optimizados + fin
     
-def mostrar_ruta_en_mapa(ruta_completa, api_key):
-    """Muestra la ruta en un mapa interactivo"""
+def mostrar_ruta_en_mapa(ruta_completa):
+    """Muestra la ruta en un mapa interactivo usando la API key global"""
     try:
-        # Usar la API key global
-        global GOOGLE_MAPS_API_KEY
-        
+        # Verificar que todos los puntos tienen coordenadas
+        if not all('lat' in p and 'lon' in p for p in ruta_completa):
+            st.warning("Algunos puntos no tienen coordenadas válidas")
+            return None
+            
         # Obtener geometría de la ruta
         route_data = obtener_geometria_ruta(ruta_completa)
         
-        # Crear mapa
+        # Crear mapa centrado en el primer punto
         m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
         
-        if 'routes' in route_data and route_data['routes']:
+        # Añadir línea de ruta si hay datos
+        if route_data and 'routes' in route_data and route_data['routes']:
             points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
             folium.PolyLine(points, color='blue', weight=5).add_to(m)
         
@@ -1514,41 +1517,44 @@ def mostrar_ruta_en_mapa(ruta_completa, api_key):
                 [punto['lat'], punto['lon']],
                 popup=f"{i+1}. {punto.get('direccion', 'Sin dirección')}",
                 icon=folium.Icon(
-                    color='red' if punto.get('orden', None) is not None else 'blue',
-                    icon='home' if punto.get('orden', None) is not None else 'shopping-cart'
+                    color='red' if punto.get('orden') is not None else 'blue',
+                    icon='home' if punto.get('orden') is not None else 'shopping-cart'
                 )
             ).add_to(m)
         
         return m
+        
     except Exception as e:
-        st.error(f"Error al mostrar mapa: {str(e)}")
+        st.error(f"Error al generar mapa: {str(e)}")
         return None
 
-def mostrar_metricas(ruta):
-    """Calcula y muestra métricas de comparación"""
-    # Calcular distancia total aproximada (en línea recta)
-    distancia_total = sum(
-        math.sqrt((ruta[i]['lat']-ruta[i+1]['lat'])**2 + (ruta[i]['lon']-ruta[i+1]['lon'])**2)
+def mostrar_metricas(ruta, time_matrix):
+    """Muestra métricas BASADAS EN LA MATRIZ REAL DE TIEMPOS"""
+    if len(ruta) <= 1:
+        st.warning("No hay suficientes puntos para calcular métricas")
+        return
+    
+    # Calcular usando la matriz de tiempos real
+    tiempo_total = sum(
+        time_matrix[i][i+1] 
         for i in range(len(ruta)-1)
-    ) * 111  # Convertir grados a km (aproximadamente)
+    ) / 3600  # Convertir a horas
     
-    # Calcular tiempo total estimado (asumiendo 30 km/h promedio)
-    tiempo_total = distancia_total / 30  # en horas
-    
-    st.subheader("📊 Métricas de Rendimiento")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Puntos en ruta", len(ruta))
-    col2.metric("Distancia total (km)", f"{distancia_total:.2f}")
-    col3.metric("Tiempo estimado", f"{tiempo_total:.1f} horas")
-    
-    # Exportar resultados
-    excel_buffer = BytesIO()
-    pd.DataFrame(ruta).to_excel(excel_buffer)
-    st.download_button(
-        "Descargar ruta en Excel",
-        excel_buffer.getvalue(),
-        file_name="ruta_optimizada.xlsx"
+    # Calcular distancia aproximada (solo para referencia)
+    distancia_aproximada = sum(
+        math.sqrt((ruta[i]['lat']-ruta[i+1]['lat'])**2 + (ruta[i]['lon']-ruta[i+1]['lon'])**2) * 111
+        for i in range(len(ruta)-1)
     )
+    
+    # Mostrar métricas limpias
+    st.subheader("📊 Métricas de Eficiencia")
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total de paradas", len(ruta))
+    col2.metric("Tiempo estimado", f"{tiempo_total:.1f} horas", 
+               help="Calculado con datos reales de Google Maps")
+    col3.metric("Distancia aproximada", f"{distancia_aproximada:.1f} km",
+               help="Calculada en línea recta entre puntos")
 
 def ver_ruta_optimizada():
     # Configuración de la página
