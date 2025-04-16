@@ -1414,9 +1414,9 @@ def obtener_puntos_del_dia(fecha):
     ttl = 3600 if fecha < datetime.now().date() else 300
     return _obtener_puntos_del_dia_cached(fecha, ttl)
 
-@st.cache_data(ttl=3600)  # Usamos el máximo TTL posible, el control real está en la función principal
+@st.cache_data(ttl=3600)
 def _obtener_puntos_del_dia_cached(fecha, _ttl=None):
-    """Función interna con caché"""
+    """Función interna con caché - Versión modificada mínima"""
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         puntos = []
@@ -1427,30 +1427,54 @@ def _obtener_puntos_del_dia_cached(fecha, _ttl=None):
         for doc in recogidas:
             data = doc.to_dict()
             if 'coordenadas_recojo' in data:
-                puntos.append({
+                punto = {
                     "id": doc.id,
                     "tipo": "recojo",
                     "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Punto de recogida'),
                     "direccion": data.get('direccion_recojo', 'Dirección no especificada'),
-                    "coordenadas": data['coordenadas_recojo'],
                     "hora": data.get('hora_recojo'),
                     "duracion_estimada": 15
-                })
+                }
+                # Conversión segura de coordenadas
+                coords = data['coordenadas_recojo']
+                if hasattr(coords, 'latitude'):  # Si es GeoPoint
+                    punto.update({
+                        "lat": coords.latitude,
+                        "lon": coords.longitude
+                    })
+                elif isinstance(coords, dict):  # Si es diccionario
+                    punto.update({
+                        "lat": coords.get('lat'),
+                        "lon": coords.get('lon')
+                    })
+                puntos.append(punto)
         
-        # Consulta para entregas
+        # Consulta para entregas (misma lógica que arriba)
         entregas = list(recogidas_ref.where('fecha_entrega', '==', fecha_str).stream())
         for doc in entregas:
             data = doc.to_dict()
             if 'coordenadas_entrega' in data:
-                puntos.append({
+                punto = {
                     "id": doc.id,
                     "tipo": "entrega",
                     "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Punto de entrega'),
                     "direccion": data.get('direccion_entrega', 'Dirección no especificada'),
-                    "coordenadas": data['coordenadas_entrega'],
                     "hora": data.get('hora_entrega'),
                     "duracion_estimada": 15
-                })
+                }
+                # Conversión segura de coordenadas
+                coords = data['coordenadas_entrega']
+                if hasattr(coords, 'latitude'):
+                    punto.update({
+                        "lat": coords.latitude,
+                        "lon": coords.longitude
+                    })
+                elif isinstance(coords, dict):
+                    punto.update({
+                        "lat": coords.get('lat'),
+                        "lon": coords.get('lon')
+                    })
+                puntos.append(punto)
         
         return puntos
         
@@ -1459,23 +1483,27 @@ def _obtener_puntos_del_dia_cached(fecha, _ttl=None):
         return []
         
 def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
-    """Combina puntos fijos con la ruta optimizada"""
-    return (
-        [p for p in puntos_fijos if p['orden'] >= 0] +  # Puntos fijos iniciales
-        puntos_intermedios_optimizados +                 # Puntos optimizados
-        [p for p in puntos_fijos if p['orden'] < 0]      # Puntos fijos finales
-    )
-
+    """Combina puntos fijos con la ruta optimizada en el orden correcto"""
+    # Puntos fijos iniciales (orden >= 0)
+    inicio = sorted([p for p in puntos_fijos if p['orden'] >= 0], key=lambda x: x['orden'])
+    
+    # Puntos fijos finales (orden < 0)
+    fin = sorted([p for p in puntos_fijos if p['orden'] < 0], key=lambda x: x['orden'])
+    
+    return inicio + puntos_intermedios_optimizados + fin
+    
 def mostrar_ruta_en_mapa(ruta_completa, api_key):
     """Muestra la ruta en un mapa interactivo"""
     try:
+        # Usar la API key global
+        global GOOGLE_MAPS_API_KEY
+        
         # Obtener geometría de la ruta
         route_data = obtener_geometria_ruta(ruta_completa)
         
-        # Crear mapa centrado en el primer punto
+        # Crear mapa
         m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
         
-        # Añadir línea de ruta
         if 'routes' in route_data and route_data['routes']:
             points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
             folium.PolyLine(points, color='blue', weight=5).add_to(m)
@@ -1484,17 +1512,16 @@ def mostrar_ruta_en_mapa(ruta_completa, api_key):
         for i, punto in enumerate(ruta_completa):
             folium.Marker(
                 [punto['lat'], punto['lon']],
-                popup=f"{i+1}. {punto['direccion']}",
+                popup=f"{i+1}. {punto.get('direccion', 'Sin dirección')}",
                 icon=folium.Icon(
-                    color='red' if punto.get('tipo') == 'fijo' else 'green' if punto.get('tipo') == 'recojo' else 'blue',
-                    icon='home' if punto.get('tipo') == 'fijo' else 'shopping-cart' if punto.get('tipo') == 'recojo' else 'gift'
+                    color='red' if punto.get('orden', None) is not None else 'blue',
+                    icon='home' if punto.get('orden', None) is not None else 'shopping-cart'
                 )
             ).add_to(m)
         
         return m
-        
     except Exception as e:
-        st.error(f"Error al generar mapa: {str(e)}")
+        st.error(f"Error al mostrar mapa: {str(e)}")
         return None
 
 def mostrar_metricas(ruta):
@@ -1565,13 +1592,9 @@ def ver_ruta_optimizada():
             puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora)
         
         # 5. Construir ruta completa
-        ruta_completa = (
-            [p for p in PUNTOS_FIJOS if p['orden'] >= 0] +  # Puntos fijos iniciales
-            puntos_optimizados +                             # Puntos optimizados
-            [p for p in PUNTOS_FIJOS if p['orden'] < 0]     # Puntos fijos finales
-        )
+        ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
         
-        # 6. Mostrar resultados
+        # Mostrar itinerario
         with st.expander("📋 Itinerario de Ruta", expanded=True):
             df_ruta = pd.DataFrame([
                 {
@@ -1586,11 +1609,14 @@ def ver_ruta_optimizada():
             ])
             st.dataframe(df_ruta)
         
-        # 7. Mostrar mapa
+        # Mostrar mapa
         st.subheader("🗺️ Mapa de Ruta")
         mapa = mostrar_ruta_en_mapa(ruta_completa)
         if mapa:
             st_folium(mapa, width=700, height=500)
+    
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
         
         # 8. Mostrar métricas
         st.subheader("📊 Métricas de Rendimiento")
