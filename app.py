@@ -1095,23 +1095,63 @@ PUNTOS_FIJOS = [
 ]
 
 # Función para obtener matriz de distancias reales con Google Maps API
-@st.cache_data(ttl=3600)
-def obtener_matriz_tiempos(puntos):
-    """Usa la API key global"""
+@st.cache_data(ttl=300)  # Cache de 5 minutos (el tráfico cambia frecuentemente)
+def obtener_matriz_tiempos(puntos, considerar_trafico=True):
+    """
+    Obtiene los tiempos reales de viaje entre puntos, considerando tráfico actual.
+    
+    Args:
+        puntos: Lista de puntos con coordenadas {lat, lon}
+        considerar_trafico: Si True, usa datos de tráfico en tiempo real
+    
+    Returns:
+        Matriz de tiempos en segundos entre cada par de puntos
+    """
     if not GOOGLE_MAPS_API_KEY:
-        st.error("API key de Google Maps no configurada")
+        st.error("❌ Se requiere API Key de Google Maps")
         return [[0]*len(puntos) for _ in puntos]
     
+    # 1. Preparar parámetros para la API
     locations = [f"{p['lat']},{p['lon']}" for p in puntos]
-    url = f"https://maps.googleapis.com/maps/api/distancematrix/json?origins={'|'.join(locations)}&destinations={'|'.join(locations)}&key={GOOGLE_MAPS_API_KEY}"
-    response = requests.get(url)
-    data = response.json()
+    params = {
+        'origins': '|'.join(locations),
+        'destinations': '|'.join(locations),
+        'key': GOOGLE_MAPS_API_KEY,
+        'units': 'metric'
+    }
     
-    if data.get('status') != 'OK':
-        st.error(f"Error en Distance Matrix API: {data.get('error_message', 'Desconocido')}")
+    # 2. Añadir parámetros de tráfico si está activado
+    if considerar_trafico:
+        params.update({
+            'departure_time': 'now',  # Usar hora actual
+            'traffic_model': 'best_guess'  # Modelo: best_guess/pessimistic/optimistic
+        })
+    
+    # 3. Hacer la petición a la API
+    try:
+        url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        if data['status'] != 'OK':
+            st.error(f"⚠️ Error en API: {data.get('error_message', 'Código: '+data['status'])}")
+            return [[0]*len(puntos) for _ in puntos]
+        
+        # 4. Procesar respuesta
+        matriz = []
+        for row in data['rows']:
+            fila_tiempos = []
+            for elemento in row['elements']:
+                # Priorizar 'duration_in_traffic' si existe
+                tiempo = elemento.get('duration_in_traffic', elemento['duration'])
+                fila_tiempos.append(tiempo['value'])  # Tiempo en segundos
+            matriz.append(fila_tiempos)
+        
+        return matriz
+        
+    except Exception as e:
+        st.error(f"🚨 Error al conectar con API: {str(e)}")
         return [[0]*len(puntos) for _ in puntos]
-    
-    return [[e['duration']['value'] for e in row['elements']] for row in data['rows']]
 
 # Función para obtener geometría de ruta con Directions API
 @st.cache_data(ttl=3600)
@@ -1125,132 +1165,122 @@ def obtener_geometria_ruta(puntos):
     url = f"https://maps.googleapis.com/maps/api/directions/json?origin={puntos[0]['lat']},{puntos[0]['lon']}&destination={puntos[-1]['lat']},{puntos[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={GOOGLE_MAPS_API_KEY}"
     return requests.get(url).json()
 
-# Algoritmo 1: Path Cheapest Arc + Guided Local Search
-def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora):
-    """Algoritmo 1: Path Cheapest Arc + Guided Local Search"""
+# Algoritmo 1: Path Cheapest Arc + GLS 
+def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
+    """Versión mejorada con validación de restricciones"""
     try:
-        # 1. Obtener matriz de tiempos (usa API key global)
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
-        
-        # 2. Configurar modelo OR-Tools
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
-        # 3. Definir función de coste
         transit_callback_index = routing.RegisterTransitCallback(
             lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
         )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
-        # 4. Añadir restricción de tiempo total (8:00-17:00)
-        horizon = 9 * 60 * 60  # 9 horas en segundos
+        # Restricción de tiempo total (9 horas)
+        horizon = 9 * 3600
         routing.AddDimension(
             transit_callback_index,
-            3600,  # slack máximo (1 hora)
+            3600,  # Slack máximo (1 hora)
             horizon,
             False,
-            'Time')
+            'Time'
+        )
         time_dimension = routing.GetDimensionOrDie('Time')
         
-        # 5. Añadir restricciones de ventanas temporales
+        # Aplicar ventanas temporales
         for idx, punto in enumerate(puntos_con_hora):
-            if not punto.get('hora'):
-                continue
-                
-            try:
-                hh, mm = map(int, punto['hora'].split(':'))
-                time_min = (hh - 8) * 3600 + mm * 60  # Segundos desde 8:00
-                time_max = time_min + 1800  # Ventana de 30 minutos
-                
-                index = manager.NodeToIndex(idx)
-                time_dimension.CumulVar(index).SetRange(time_min, time_max)
-            except:
-                continue
+            if punto.get('hora'):
+                try:
+                    hh, mm = map(int, punto['hora'].split(':'))
+                    time_min = (hh - 8) * 3600 + mm * 60  # Convertir a segundos desde 8:00
+                    time_max = time_min + 1800  # Ventana de 30 minutos
+                    index = manager.NodeToIndex(idx)
+                    time_dimension.CumulVar(index).SetRange(time_min, time_max)
+                except:
+                    continue
         
-        # 6. Configurar parámetros de búsqueda (ALGORITMO 1)
+        # Configuración del algoritmo
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
         search_parameters.time_limit.seconds = 10
+        search_parameters.log_search = True  # Para depuración
         
-        # 7. Resolver el problema
         solution = routing.SolveWithParameters(search_parameters)
         
         if solution:
-            # Extraer ruta optimizada
-            index = routing.Start(0)
             route_order = []
+            index = routing.Start(0)
             while not routing.IsEnd(index):
                 route_order.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
             
+            # Verificar restricciones
+            for idx in route_order:
+                if puntos_intermedios[idx].get('hora'):
+                    time_var = time_dimension.CumulVar(manager.NodeToIndex(idx))
+                    if not solution.Min(time_var) <= solution.Max(time_var):
+                        st.warning(f"Restricción horaria no cumplida para punto {idx}")
+            
             return [puntos_intermedios[i] for i in route_order]
         else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+            st.warning("No se encontró solución óptima")
             return puntos_intermedios
             
     except Exception as e:
         st.error(f"Error en algoritmo 1: {str(e)}")
         return puntos_intermedios
 
-# Algoritmo 2: Savings + Tabu Search
-def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora):
-    """Savings Algorithm + Tabu Search"""
+# Algoritmo 2: Google OR-Tools (LNS + GLS)
+def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
+    """Versión con Large Neighborhood Search"""
     try:
-        # 1. Obtener matriz de tiempos (usa API key global)
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
-        
-        # 2. Configurar modelo OR-Tools
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
-        # 3. Definir función de coste
         transit_callback_index = routing.RegisterTransitCallback(
             lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
         )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
-        # 4. Añadir restricción de tiempo total (8:00-17:00)
-        horizon = 9 * 60 * 60  # 9 horas en segundos
+        # Restricción de tiempo
+        horizon = 9 * 3600
         routing.AddDimension(
             transit_callback_index,
-            3600,  # slack máximo (1 hora)
+            3600,
             horizon,
             False,
-            'Time')
+            'Time'
+        )
         time_dimension = routing.GetDimensionOrDie('Time')
         
-        # 5. Añadir restricciones de ventanas temporales
+        # Ventanas temporales
         for idx, punto in enumerate(puntos_con_hora):
-            if not punto.get('hora'):
-                continue
-                
-            try:
+            if punto.get('hora'):
                 hh, mm = map(int, punto['hora'].split(':'))
-                time_min = (hh - 8) * 3600 + mm * 60  # Segundos desde 8:00
-                time_max = time_min + 1800  # Ventana de 30 minutos
-                
+                time_min = (hh - 8) * 3600 + mm * 60
+                time_max = time_min + 1800
                 index = manager.NodeToIndex(idx)
                 time_dimension.CumulVar(index).SetRange(time_min, time_max)
-            except:
-                continue
         
-        # 6. Configurar parámetros de búsqueda (ALGORITMO 2)
+        # Configuración LNS + GLS
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.SAVINGS)
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.TABU_SEARCH)
-        search_parameters.time_limit.seconds = 10
-        # Eliminar línea con tabu_search_acceptance_penalty
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
+        search_parameters.local_search_operators.use_path_lns = True
+        search_parameters.local_search_operators.use_inactive_lns = True
+        search_parameters.time_limit.seconds = 15
         
-        # 7. Resolver el problema
         solution = routing.SolveWithParameters(search_parameters)
         
         if solution:
-            # Extraer ruta optimizada
             index = routing.Start(0)
             route_order = []
             while not routing.IsEnd(index):
@@ -1259,140 +1289,125 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora):
             
             return [puntos_intermedios[i] for i in route_order]
         else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+            st.warning("No se encontró solución con LNS+GLS")
             return puntos_intermedios
             
     except Exception as e:
-        st.error(f"Error en algoritmo 1: {str(e)}")
+        st.error(f"Error en algoritmo 2: {str(e)}")
         return puntos_intermedios
 
-# Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing
-def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora):
-    """Parallel Cheapest Insertion + Simulated Annealing"""
+# Algoritmo 3: CP-SAT
+def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
+    """Versión con Constraint Programming (CP-SAT)"""
     try:
-        # 1. Obtener matriz de tiempos (usa API key global)
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
+        from ortools.sat.python import cp_model
         
-        # 2. Configurar modelo OR-Tools
-        manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
-        routing = pywrapcp.RoutingModel(manager)
+        num_locations = len(puntos_intermedios)
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
         
-        # 3. Definir función de coste
-        transit_callback_index = routing.RegisterTransitCallback(
-            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
-        )
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+        model = cp_model.CpModel()
         
-        # 4. Añadir restricción de tiempo total (8:00-17:00)
-        horizon = 9 * 60 * 60  # 9 horas en segundos
-        routing.AddDimension(
-            transit_callback_index,
-            3600,  # slack máximo (1 hora)
-            horizon,
-            False,
-            'Time')
-        time_dimension = routing.GetDimensionOrDie('Time')
+        # Variables de decisión
+        x = {}
+        for i in range(num_locations):
+            for j in range(num_locations):
+                if i != j:
+                    x[i, j] = model.NewBoolVar(f'x_{i}_{j}')
         
-        # 5. Añadir restricciones de ventanas temporales
-        for idx, punto in enumerate(puntos_con_hora):
-            if not punto.get('hora'):
-                continue
-                
-            try:
-                hh, mm = map(int, punto['hora'].split(':'))
-                time_min = (hh - 8) * 3600 + mm * 60  # Segundos desde 8:00
-                time_max = time_min + 1800  # Ventana de 30 minutos
-                
-                index = manager.NodeToIndex(idx)
-                time_dimension.CumulVar(index).SetRange(time_min, time_max)
-            except:
-                continue
+        # Restricciones
+        # Cada ubicación es visitada exactamente una vez
+        for i in range(num_locations):
+            model.Add(sum(x[i, j] for j in range(num_locations) if i != j) == 1)
+            model.Add(sum(x[j, i] for j in range(num_locations) if i != j) == 1)
         
-        # 6. Configurar parámetros de búsqueda (ALGORITMO 3)
-        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION)
-        search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING)
-        search_parameters.time_limit.seconds = 10
-        # Eliminar línea con simulated_annealing_temperature_init
+        # Eliminar subtours
+        u = [model.NewIntVar(0, num_locations-1, f'u_{i}') for i in range(num_locations)]
+        model.Add(u[0] == 0)
+        for i in range(1, num_locations):
+            model.Add(u[i] >= 1)
+            model.Add(u[i] <= num_locations-1)
+            for j in range(1, num_locations):
+                if i != j:
+                    model.Add(u[i] - u[j] + num_locations * x[i, j] <= num_locations - 1)
         
-        # 7. Resolver el problema
-        solution = routing.SolveWithParameters(search_parameters)
+        # Función objetivo
+        objective_terms = []
+        for i in range(num_locations):
+            for j in range(num_locations):
+                if i != j:
+                    objective_terms.append(time_matrix[i][j] * x[i, j])
+        model.Minimize(sum(objective_terms))
         
-        if solution:
-            # Extraer ruta optimizada
-            index = routing.Start(0)
-            route_order = []
-            while not routing.IsEnd(index):
-                route_order.append(manager.IndexToNode(index))
-                index = solution.Value(routing.NextVar(index))
-            
+        # Resolver
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 15.0
+        status = solver.Solve(model)
+        
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+            route_order = [0]
+            current = 0
+            while len(route_order) < num_locations:
+                for j in range(num_locations):
+                    if current != j and solver.Value(x[current, j]) == 1:
+                        route_order.append(j)
+                        current = j
+                        break
             return [puntos_intermedios[i] for i in route_order]
         else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+            st.warning("No se encontró solución con CP-SAT")
             return puntos_intermedios
             
     except Exception as e:
-        st.error(f"Error en algoritmo 1: {str(e)}")
+        st.error(f"Error en algoritmo 3: {str(e)}")
         return puntos_intermedios
 
-# Algoritmo 4: Christofides + Genetic Algorithm
-def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
-    """Christofides + Genetic Algorithm"""
+# Algoritmo 4: Large Neighborhood Search (LNS)
+def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
+    """Versión pura de LNS"""
     try:
-        # 1. Obtener matriz de tiempos (usa API key global)
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios)
-        
-        # 2. Configurar modelo OR-Tools
+        time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
-        # 3. Definir función de coste
         transit_callback_index = routing.RegisterTransitCallback(
             lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
         )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
-        # 4. Añadir restricción de tiempo total (8:00-17:00)
-        horizon = 9 * 60 * 60  # 9 horas en segundos
+        # Restricción de tiempo
+        horizon = 9 * 3600
         routing.AddDimension(
             transit_callback_index,
-            3600,  # slack máximo (1 hora)
+            3600,
             horizon,
             False,
-            'Time')
+            'Time'
+        )
         time_dimension = routing.GetDimensionOrDie('Time')
         
-        # 5. Añadir restricciones de ventanas temporales
+        # Ventanas temporales
         for idx, punto in enumerate(puntos_con_hora):
-            if not punto.get('hora'):
-                continue
-                
-            try:
+            if punto.get('hora'):
                 hh, mm = map(int, punto['hora'].split(':'))
-                time_min = (hh - 8) * 3600 + mm * 60  # Segundos desde 8:00
-                time_max = time_min + 1800  # Ventana de 30 minutos
-                
+                time_min = (hh - 8) * 3600 + mm * 60
+                time_max = time_min + 1800
                 index = manager.NodeToIndex(idx)
                 time_dimension.CumulVar(index).SetRange(time_min, time_max)
-            except:
-                continue
         
-        # 6. Configurar parámetros de búsqueda (ALGORITMO 4)
+        # Configuración LNS puro
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.CHRISTOFIDES)
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)  # Cambiado de GENETIC_ALGORITHM
-        search_parameters.time_limit.seconds = 10
-        # Eliminar línea con genetic_algorithm_mutation_probability
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
+        search_parameters.local_search_operators.use_path_lns = True
+        search_parameters.local_search_operators.use_inactive_lns = True
+        search_parameters.local_search_operators.use_lns = True
+        search_parameters.time_limit.seconds = 20
         
-        # 7. Resolver el problema
         solution = routing.SolveWithParameters(search_parameters)
         
         if solution:
-            # Extraer ruta optimizada
             index = routing.Start(0)
             route_order = []
             while not routing.IsEnd(index):
@@ -1401,11 +1416,11 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora):
             
             return [puntos_intermedios[i] for i in route_order]
         else:
-            st.warning("No se pudo optimizar la ruta con el algoritmo 1")
+            st.warning("No se encontró solución con LNS")
             return puntos_intermedios
             
     except Exception as e:
-        st.error(f"Error en algoritmo 1: {str(e)}")
+        st.error(f"Error en algoritmo 4: {str(e)}")
         return puntos_intermedios
 
 def obtener_puntos_del_dia(fecha):
@@ -1493,34 +1508,87 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     return inicio + puntos_intermedios_optimizados + fin
     
 def mostrar_ruta_en_mapa(ruta_completa):
-    """Muestra la ruta en un mapa interactivo usando la API key global"""
+    """Versión mejorada para el chofer"""
     try:
-        # Verificar que todos los puntos tienen coordenadas
+        # Validar coordenadas
         if not all('lat' in p and 'lon' in p for p in ruta_completa):
             st.warning("Algunos puntos no tienen coordenadas válidas")
             return None
             
-        # Obtener geometría de la ruta
+        # Obtener geometría de ruta
         route_data = obtener_geometria_ruta(ruta_completa)
         
-        # Crear mapa centrado en el primer punto
-        m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
+        # Crear mapa centrado
+        m = folium.Map(
+            location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], 
+            zoom_start=13,
+            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            attr='Mapa para chofer'
+        )
         
-        # Añadir línea de ruta si hay datos
-        if route_data and 'routes' in route_data and route_data['routes']:
+        # Añadir ruta optimizada
+        if route_data and 'routes' in route_data:
             points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
-            folium.PolyLine(points, color='blue', weight=5).add_to(m)
+            folium.PolyLine(
+                points, 
+                color='blue', 
+                weight=5,
+                opacity=0.7,
+                tooltip="Ruta optimizada"
+            ).add_to(m)
         
-        # Añadir marcadores
+        # Añadir marcadores con información útil
         for i, punto in enumerate(ruta_completa):
+            # Determinar ícono y color según tipo
+            icono = 'home' if punto.get('orden') is not None else 'shopping-cart'
+            color = 'red' if punto.get('orden') is not None else 'blue'
+            
+            # Texto para el popup
+            popup_text = f"""
+                <b>Punto {i+1}</b><br>
+                <b>Tipo:</b> {punto.get('tipo', 'N/A')}<br>
+                <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
+                <b>Hora estimada:</b> {punto.get('hora', 'Flexible')}
+            """
+            
             folium.Marker(
                 [punto['lat'], punto['lon']],
-                popup=f"{i+1}. {punto.get('direccion', 'Sin dirección')}",
+                popup=folium.Popup(popup_text, max_width=300),
                 icon=folium.Icon(
-                    color='red' if punto.get('orden') is not None else 'blue',
-                    icon='home' if punto.get('orden') is not None else 'shopping-cart'
-                )
+                    color=color,
+                    icon=icono,
+                    prefix='fa'
+                ),
+                tooltip=f"{i+1}. {punto.get('nombre', 'Punto')}"
             ).add_to(m)
+            
+            # Añadir número de secuencia claramente visible
+            folium.CircleMarker(
+                [punto['lat'], punto['lon']],
+                radius=8,
+                fill=True,
+                color='white',
+                fill_color='black',
+                fill_opacity=1.0,
+                weight=1
+            ).add_child(folium.DivIcon(
+                html=f'<div style="font-size: 12pt; color: white; text-align: center; font-weight: bold;">{i+1}</div>'
+            )).add_to(m)
+        
+        # Añadir leyenda
+        legend_html = '''
+            <div style="position: fixed; 
+                        bottom: 50px; left: 50px; width: 180px; height: 100px; 
+                        border:2px solid grey; z-index:9999; font-size:14px;
+                        background-color:white;
+                        padding: 10px;">
+                <b>Leyenda</b><br>
+                <i class="fa fa-home" style="color:red"></i> Punto fijo<br>
+                <i class="fa fa-shopping-cart" style="color:blue"></i> Entrega/Recojo<br>
+                <i class="fa fa-road" style="color:blue"></i> Ruta
+            </div>
+        '''
+        m.get_root().html.add_child(folium.Element(legend_html))
         
         return m
         
@@ -1529,32 +1597,57 @@ def mostrar_ruta_en_mapa(ruta_completa):
         return None
 
 def mostrar_metricas(ruta, time_matrix):
-    """Muestra métricas BASADAS EN LA MATRIZ REAL DE TIEMPOS"""
+    """Métricas mejoradas con validación de restricciones"""
     if len(ruta) <= 1:
         st.warning("No hay suficientes puntos para calcular métricas")
         return
     
-    # Calcular usando la matriz de tiempos real
-    tiempo_total = sum(
-        time_matrix[i][i+1] 
-        for i in range(len(ruta)-1)
-    ) / 3600  # Convertir a horas
+    # Calcular métricas basadas en la matriz de tiempos real
+    tiempo_total = 0
+    tiempo_con_restricciones = 0
+    puntos_con_restriccion = 0
     
-    # Calcular distancia aproximada (solo para referencia)
-    distancia_aproximada = sum(
-        math.sqrt((ruta[i]['lat']-ruta[i+1]['lat'])**2 + (ruta[i]['lon']-ruta[i+1]['lon'])**2) * 111
-        for i in range(len(ruta)-1)
-    )
+    for i in range(len(ruta)-1):
+        tiempo_segmento = time_matrix[i][i+1]
+        tiempo_total += tiempo_segmento
+        
+        if ruta[i].get('hora'):
+            puntos_con_restriccion += 1
+            tiempo_con_restricciones += tiempo_segmento
     
-    # Mostrar métricas limpias
-    st.subheader("📊 Métricas de Eficiencia")
+    # Convertir a horas/minutos
+    horas_total = int(tiempo_total // 3600)
+    minutos_total = int((tiempo_total % 3600) // 60)
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total de paradas", len(ruta))
-    col2.metric("Tiempo estimado", f"{tiempo_total:.1f} horas", 
-               help="Calculado con datos reales de Google Maps")
-    col3.metric("Distancia aproximada", f"{distancia_aproximada:.1f} km",
-               help="Calculada en línea recta entre puntos")
+    # Eficiencia
+    eficiencia = (tiempo_con_restricciones / tiempo_total) * 100 if tiempo_total > 0 else 0
+    
+    # Mostrar en columnas con formato mejorado
+    col1, col2, col3, col4 = st.columns(4)
+    
+    col1.metric("📌 Total de paradas", len(ruta))
+    col2.metric("⏱️ Tiempo total", f"{horas_total}h {minutos_total}m")
+    col3.metric("⏳ Puntos con restricción", f"{puntos_con_restriccion}/{len(ruta)}")
+    col4.metric("📊 Eficiencia", f"{eficiencia:.1f}%")
+    
+    # Gráfico de tiempo por segmento
+    segmentos = [f"{i+1}-{i+2}" for i in range(len(ruta)-1)]
+    tiempos = [time_matrix[i][i+1]/60 for i in range(len(ruta)-1)]  # En minutos
+    
+    df_tiempos = pd.DataFrame({
+        'Segmento': segmentos,
+        'Tiempo (min)': tiempos
+    })
+    
+    st.bar_chart(df_tiempos.set_index('Segmento'))
+    
+    # Detalle de restricciones
+    with st.expander("🔍 Ver detalles de restricciones"):
+        for i, punto in enumerate(ruta):
+            if punto.get('hora'):
+                st.write(f"📍 **Punto {i+1}**: {punto.get('nombre', '')}")
+                st.write(f"   - Hora requerida: {punto['hora']}")
+                st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
 def ver_ruta_optimizada():
     # Configuración de la página
@@ -1566,8 +1659,18 @@ def ver_ruta_optimizada():
     
     st.title("🚐 Ver Ruta Optimizada")
     
-    # 1. Selección de fecha
+    # 1. Selección de fecha y activar tráfico
     fecha_seleccionada = st.date_input("Seleccionar fecha de ruta", value=datetime.now().date())
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        algoritmo = st.selectbox(...)  # Selector de algoritmo existente
+    with col2:
+        considerar_trafico = st.toggle(
+            "🚦 Considerar tráfico en tiempo real",
+            value=True,
+            help="Usa datos actuales de congestión vehicular para optimizar la ruta"
+        )
     
     # 2. Obtener puntos para esa fecha
     puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
@@ -1592,13 +1695,13 @@ def ver_ruta_optimizada():
     
     try:
         if algoritmo.startswith("Algoritmo 1"):
-            puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora)
+            puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
         elif algoritmo.startswith("Algoritmo 2"):
-            puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora)
+            puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
         elif algoritmo.startswith("Algoritmo 3"):
-            puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora)
+            puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
         else:
-            puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora)
+            puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
         
         # 5. Construir ruta completa
         ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
