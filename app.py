@@ -1662,9 +1662,20 @@ def ver_ruta_optimizada():
     # 1. Selección de fecha y activar tráfico
     fecha_seleccionada = st.date_input("Seleccionar fecha de ruta", value=datetime.now().date())
     
+    # 2. Controles en columnas (selector de algoritmo y tráfico)
     col1, col2 = st.columns(2)
     with col1:
-        algoritmo = st.selectbox(...)  # Selector de algoritmo existente
+        # Selector de algoritmo (ÚNICA DECLARACIÓN)
+        algoritmo = st.selectbox(
+            "Seleccionar algoritmo de optimización",
+            options=[  # Lista de opciones
+                "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
+                "Algoritmo 2: Google OR-Tools (LNS + GLS)",
+                "Algoritmo 3: Constraint Programming (CP-SAT)",
+                "Algoritmo 4: Large Neighborhood Search (LNS)"
+            ],
+            index=0
+        )
     with col2:
         considerar_trafico = st.toggle(
             "🚦 Considerar tráfico en tiempo real",
@@ -1672,23 +1683,11 @@ def ver_ruta_optimizada():
             help="Usa datos actuales de congestión vehicular para optimizar la ruta"
         )
     
-    # 2. Obtener puntos para esa fecha
+    # 3. Obtener puntos para esa fecha
     puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
     if not puntos_dia:
         st.warning(f"No hay puntos programados para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
         return
-    
-    # 3. Selección de algoritmo
-    algoritmo = st.selectbox(
-        "Seleccionar algoritmo de optimización",
-        [
-            "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
-            "Algoritmo 2: Savings + Tabu Search",
-            "Algoritmo 3: Parallel Cheapest Insertion + Simulated Annealing",
-            "Algoritmo 4: Christofides + Genetic Algorithm"
-        ],
-        index=0
-    )
     
     # 4. Optimizar según algoritmo seleccionado
     puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
