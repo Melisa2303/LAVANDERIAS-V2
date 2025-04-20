@@ -1237,7 +1237,6 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
 
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Versión con Large Neighborhood Search"""
     try:
         time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1249,10 +1248,10 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_tr
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
         # Restricción de tiempo
-        horizon = 9 * 3600
+        horizon = 9 * 3600  # 9 horas en segundos
         routing.AddDimension(
             transit_callback_index,
-            3600,
+            3600,  # Slack máximo
             horizon,
             False,
             'Time'
@@ -1264,16 +1263,18 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_tr
             if punto.get('hora'):
                 hh, mm = map(int, punto['hora'].split(':'))
                 time_min = (hh - 8) * 3600 + mm * 60
-                time_max = time_min + 1800
+                time_max = time_min + 1800  # 30 minutos de ventana
                 index = manager.NodeToIndex(idx)
                 time_dimension.CumulVar(index).SetRange(time_min, time_max)
         
-        # Configuración LNS + GLS
+        # Configuración LNS + GLS CORREGIDA
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
+        
+        # Configuración LNS correcta
         search_parameters.local_search_operators.use_path_lns = True
         search_parameters.local_search_operators.use_inactive_lns = True
         search_parameters.time_limit.seconds = 15
@@ -1287,9 +1288,21 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_tr
                 route_order.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
             
+            # Verificar que la solución es diferente a la original
+            if route_order == list(range(len(puntos_intermedios))):
+                st.warning("El algoritmo no mejoró el orden original. Probando con más tiempo...")
+                search_parameters.time_limit.seconds = 30
+                solution = routing.SolveWithParameters(search_parameters)
+                if solution:
+                    index = routing.Start(0)
+                    route_order = []
+                    while not routing.IsEnd(index):
+                        route_order.append(manager.IndexToNode(index))
+                        index = solution.Value(routing.NextVar(index))
+            
             return [puntos_intermedios[i] for i in route_order]
         else:
-            st.warning("No se encontró solución con LNS+GLS")
+            st.warning("No se encontró solución con LNS+GLS, usando orden original")
             return puntos_intermedios
             
     except Exception as e:
@@ -1363,7 +1376,6 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, considerar_tr
 
 # Algoritmo 4: Large Neighborhood Search (LNS)
 def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Versión pura de LNS"""
     try:
         time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1394,15 +1406,15 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, considerar_tr
                 index = manager.NodeToIndex(idx)
                 time_dimension.CumulVar(index).SetRange(time_min, time_max)
         
-        # Configuración LNS puro
+        # Configuración LNS puro CORREGIDA
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-        search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
+        
+        # Usar solamente operadores LNS (sin GLS)
         search_parameters.local_search_operators.use_path_lns = True
         search_parameters.local_search_operators.use_inactive_lns = True
-        search_parameters.local_search_operators.use_lns = True
+        search_parameters.local_search_operators.use_lns = True  # Solo para versiones recientes de OR-Tools
         search_parameters.time_limit.seconds = 20
         
         solution = routing.SolveWithParameters(search_parameters)
@@ -1416,7 +1428,7 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, considerar_tr
             
             return [puntos_intermedios[i] for i in route_order]
         else:
-            st.warning("No se encontró solución con LNS")
+            st.warning("No se encontró solución con LNS puro, usando orden original")
             return puntos_intermedios
             
     except Exception as e:
@@ -1508,87 +1520,66 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     return inicio + puntos_intermedios_optimizados + fin
     
 def mostrar_ruta_en_mapa(ruta_completa):
-    """Versión mejorada para el chofer"""
+    """Versión mejorada con visualización clara"""
     try:
-        # Validar coordenadas
-        if not all('lat' in p and 'lon' in p for p in ruta_completa):
-            st.warning("Algunos puntos no tienen coordenadas válidas")
+        # Validar puntos
+        puntos_validos = [p for p in ruta_completa if 'lat' in p and 'lon' in p]
+        if not puntos_validos:
+            st.error("No hay puntos válidos para mostrar")
             return None
-            
-        # Obtener geometría de ruta
-        route_data = obtener_geometria_ruta(ruta_completa)
         
-        # Crear mapa centrado
+        # Crear mapa centrado en el primer punto
         m = folium.Map(
-            location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], 
+            location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
             zoom_start=13,
-            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-            attr='Mapa para chofer'
+            tiles='CartoDB positron'
         )
         
-        # Añadir ruta optimizada
-        if route_data and 'routes' in route_data:
-            points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
-            folium.PolyLine(
-                points, 
-                color='blue', 
-                weight=5,
-                opacity=0.7,
-                tooltip="Ruta optimizada"
-            ).add_to(m)
+        # Añadir línea de ruta
+        puntos_coordenadas = [(p['lat'], p['lon']) for p in puntos_validos]
+        folium.PolyLine(
+            puntos_coordenadas,
+            color='#0066cc',
+            weight=5,
+            opacity=0.7,
+            tooltip="Ruta optimizada"
+        ).add_to(m)
         
-        # Añadir marcadores con información útil
-        for i, punto in enumerate(ruta_completa):
-            # Determinar ícono y color según tipo
-            icono = 'home' if punto.get('orden') is not None else 'shopping-cart'
+        # Añadir marcadores numerados
+        for i, punto in enumerate(puntos_validos):
+            # Color diferente para puntos fijos
             color = 'red' if punto.get('orden') is not None else 'blue'
             
-            # Texto para el popup
+            # Popup con información
             popup_text = f"""
-                <b>Punto {i+1}</b><br>
-                <b>Tipo:</b> {punto.get('tipo', 'N/A')}<br>
-                <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
-                <b>Hora estimada:</b> {punto.get('hora', 'Flexible')}
+                <div style='font-size:14px'>
+                    <b>Punto {i+1}</b><br>
+                    <b>Tipo:</b> {punto.get('tipo', 'N/A')}<br>
+                    <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
+                    <b>Hora estimada:</b> {punto.get('hora', 'Flexible')}
+                </div>
             """
             
+            # Marcador principal
             folium.Marker(
-                [punto['lat'], punto['lon']],
+                location=[punto['lat'], punto['lon']],
                 popup=folium.Popup(popup_text, max_width=300),
-                icon=folium.Icon(
-                    color=color,
-                    icon=icono,
-                    prefix='fa'
-                ),
+                icon=folium.Icon(color=color, icon='info-sign'),
                 tooltip=f"{i+1}. {punto.get('nombre', 'Punto')}"
             ).add_to(m)
             
-            # Añadir número de secuencia claramente visible
+            # Círculo numerado
             folium.CircleMarker(
-                [punto['lat'], punto['lon']],
-                radius=8,
+                location=[punto['lat'], punto['lon']],
+                radius=10,
                 fill=True,
                 color='white',
-                fill_color='black',
-                fill_opacity=1.0,
-                weight=1
+                fill_color=color,
+                weight=1,
+                fill_opacity=1.0
             ).add_child(folium.DivIcon(
-                html=f'<div style="font-size: 12pt; color: white; text-align: center; font-weight: bold;">{i+1}</div>'
+                html=f'<div style="font-weight:bold;color:white;text-align:center">{i+1}</div>'
             )).add_to(m)
-        
-        # Añadir leyenda
-        legend_html = '''
-            <div style="position: fixed; 
-                        bottom: 50px; left: 50px; width: 180px; height: 100px; 
-                        border:2px solid grey; z-index:9999; font-size:14px;
-                        background-color:white;
-                        padding: 10px;">
-                <b>Leyenda</b><br>
-                <i class="fa fa-home" style="color:red"></i> Punto fijo<br>
-                <i class="fa fa-shopping-cart" style="color:blue"></i> Entrega/Recojo<br>
-                <i class="fa fa-road" style="color:blue"></i> Ruta
-            </div>
-        '''
-        m.get_root().html.add_child(folium.Element(legend_html))
         
         return m
         
@@ -1704,6 +1695,16 @@ def ver_ruta_optimizada():
         
         # 5. Construir ruta completa
         ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
+
+        # En ver_ruta_optimizada(), después de obtener la ruta:
+        if puntos_optimizados == puntos_dia:
+            st.warning("⚠️ El algoritmo no cambió el orden original. Posibles causas:")
+            st.write("- Pocos puntos de entrega")
+            st.write("- Restricciones horarias muy estrictas")
+            st.write("- Matriz de tiempos simétrica")
+        else:
+            st.success("¡Ruta optimizada correctamente!")
+            st.write(f"Se reordenaron {len(puntos_dia)} puntos")
         
         # Mostrar itinerario
         with st.expander("📋 Itinerario de Ruta", expanded=True):
