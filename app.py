@@ -1520,69 +1520,78 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     return inicio + puntos_intermedios_optimizados + fin
     
 def mostrar_ruta_en_mapa(ruta_completa):
-    """Versión mejorada con visualización clara"""
+    """Versión que muestra la ruta real por calles usando Google Maps"""
     try:
-        # Validar puntos
-        puntos_validos = [p for p in ruta_completa if 'lat' in p and 'lon' in p]
-        if not puntos_validos:
-            st.error("No hay puntos válidos para mostrar")
+        if not ruta_completa or len(ruta_completa) < 2:
+            st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
             return None
-        
-        # Crear mapa centrado en el primer punto
+
+        # Validar puntos con coordenadas
+        puntos_validos = [p for p in ruta_completa if 'lat' in p and 'lon' in p]
+        if len(puntos_validos) < 2:
+            st.error("No hay suficientes puntos con coordenadas válidas")
+            return None
+
+        # Obtener geometría de la ruta real desde Google Maps
+        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]])
+        url = f"https://maps.googleapis.com/maps/api/directions/json?" \
+              f"origin={puntos_validos[0]['lat']},{puntos_validos[0]['lon']}" \
+              f"&destination={puntos_validos[-1]['lat']},{puntos_validos[-1]['lon']}" \
+              f"&waypoints=optimize:true|{waypoints}" \
+              f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
+
+        response = requests.get(url)
+        route_data = response.json()
+
+        if route_data['status'] != 'OK':
+            st.error("Error al obtener ruta de Google Maps")
+            return None
+
+        # Crear mapa centrado
         m = folium.Map(
             location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
-            zoom_start=13,
-            tiles='CartoDB positron'
+            zoom_start=14,
+            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            attr='OpenStreetMap'
         )
-        
-        # Añadir línea de ruta
-        puntos_coordenadas = [(p['lat'], p['lon']) for p in puntos_validos]
-        folium.PolyLine(
-            puntos_coordenadas,
-            color='#0066cc',
-            weight=5,
-            opacity=0.7,
-            tooltip="Ruta optimizada"
-        ).add_to(m)
-        
+
+        # Añadir ruta real
+        if 'routes' in route_data and route_data['routes']:
+            points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
+            folium.PolyLine(
+                points,
+                color='#0066cc',
+                weight=6,
+                opacity=0.8,
+                tooltip="Ruta vehicular"
+            ).add_to(m)
+
         # Añadir marcadores numerados
         for i, punto in enumerate(puntos_validos):
-            # Color diferente para puntos fijos
-            color = 'red' if punto.get('orden') is not None else 'blue'
-            
-            # Popup con información
-            popup_text = f"""
-                <div style='font-size:14px'>
-                    <b>Punto {i+1}</b><br>
-                    <b>Tipo:</b> {punto.get('tipo', 'N/A')}<br>
-                    <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
-                    <b>Hora estimada:</b> {punto.get('hora', 'Flexible')}
-                </div>
-            """
-            
-            # Marcador principal
             folium.Marker(
-                location=[punto['lat'], punto['lon']],
-                popup=folium.Popup(popup_text, max_width=300),
-                icon=folium.Icon(color=color, icon='info-sign'),
-                tooltip=f"{i+1}. {punto.get('nombre', 'Punto')}"
+                [punto['lat'], punto['lon']],
+                popup=f"<b>Punto {i+1}</b><br>{punto.get('nombre', '')}",
+                icon=folium.Icon(
+                    color='red' if i == 0 or i == len(puntos_validos)-1 else 'blue',
+                    icon='flag' if i == 0 else ('home' if i == len(puntos_validos)-1 else 'star'),
+                    prefix='fa'
+                )
             ).add_to(m)
-            
-            # Círculo numerado
+
+            # Número de secuencia
             folium.CircleMarker(
-                location=[punto['lat'], punto['lon']],
+                [punto['lat'], punto['lon']],
                 radius=10,
-                fill=True,
                 color='white',
-                fill_color=color,
-                weight=1,
-                fill_opacity=1.0
+                fill_color='black',
+                fill_opacity=1.0,
+                weight=1
             ).add_child(folium.DivIcon(
-                html=f'<div style="font-weight:bold;color:white;text-align:center">{i+1}</div>'
+                html=f'<div style="color:white;font-weight:bold;text-align:center">{i+1}</div>'
             )).add_to(m)
-        
+
         return m
-        
+
     except Exception as e:
         st.error(f"Error al generar mapa: {str(e)}")
         return None
