@@ -1742,7 +1742,6 @@ def ver_ruta_optimizada():
     
     except Exception as e:
         st.error(f"Error al optimizar la ruta: {str(e)}")
-```
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
