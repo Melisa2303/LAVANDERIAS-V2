@@ -1167,73 +1167,61 @@ def obtener_geometria_ruta(puntos):
 
 # Algoritmo 1: Path Cheapest Arc + GLS 
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Algoritmo original corregido y optimizado"""
+    """Optimización con Path Cheapest Arc + Guided Local Search"""
     try:
-        # 1. Obtener matriz de tiempos real con/sin tráfico
+        # Obtener matriz de tiempos
         time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
-        st.write("Matriz de tiempos generada (Algoritmo 1):", time_matrix)  # Validar matriz generada
-        
-        # 2. Configurar modelo OR-Tools
+        st.write("Matriz de tiempos generada (Algoritmo 1):", time_matrix)
+
+        # Configuración del modelo de OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
-        
-        # 3. Definir función de coste
+
         def time_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             return time_matrix[from_node][to_node]
-        
+
         transit_callback_index = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-        
-        # 4. Restricción de tiempo total (8:00-17:00)
+
+        # Dimensión de tiempo (sin restricciones en esta prueba)
         horizon = 9 * 3600  # 9 horas en segundos
         routing.AddDimension(
             transit_callback_index,
-            3600,  # slack máximo (1 hora)
+            3600,  # Slack máximo (1 hora)
             horizon,
             False,
             'Time'
         )
-        time_dimension = routing.GetDimensionOrDie('Time')
-        
-        # 5. Añadir restricciones de ventanas temporales
-        for idx, punto in enumerate(puntos_con_hora):
-            if punto.get('hora'):
-                try:
-                    hh, mm = map(int, punto['hora'].split(':'))
-                    time_min = (hh - 8) * 3600 + mm * 60  # Segundos desde 8:00
-                    time_max = time_min + 1800  # Ventana de 30 minutos
-                    index = manager.NodeToIndex(idx)
-                    time_dimension.CumulVar(index).SetRange(time_min, time_max)
-                except Exception as e:
-                    st.warning(f"Error procesando restricción horaria para punto {punto}: {e}")
-                    continue
-        
-        # 6. Configuración específica del algoritmo
+
+        # Configuración del algoritmo
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+            routing_enums_pb2.FirstSolutionStrategy.ALL_UNPERFORMED  # Cambiar estrategia inicial
+        )
         search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-        search_parameters.time_limit.seconds = 60  # Incrementar tiempo límite
-        
-        # 7. Resolver
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        )
+        search_parameters.time_limit.seconds = 120  # Incrementar tiempo a 2 minutos
+
+        # Resolver el modelo
         solution = routing.SolveWithParameters(search_parameters)
-        
+
         if solution:
-            # Extraer ruta optimizada
+            # Extraer la ruta optimizada
             index = routing.Start(0)
             route_order = []
             while not routing.IsEnd(index):
                 route_order.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
-            st.write("Orden optimizado (Algoritmo 1):", route_order)  # Depuración
+            st.write("Orden inicial:", list(range(len(puntos_intermedios))))
+            st.write("Orden optimizado (Algoritmo 1):", route_order)
             return [puntos_intermedios[i] for i in route_order]
-        
-        st.warning("No se encontró solución (Algoritmo 1). Usando orden original.")
+
+        st.warning("⚠️ No se encontró solución (Algoritmo 1). Usando orden original.")
         return puntos_intermedios
-        
+
     except Exception as e:
         st.error(f"Error en algoritmo 1: {str(e)}")
         return puntos_intermedios
