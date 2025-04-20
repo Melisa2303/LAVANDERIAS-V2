@@ -1171,6 +1171,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
     try:
         # 1. Obtener matriz de tiempos real con/sin tráfico
         time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
+        st.write("Matriz de tiempos generada (Algoritmo 1):", time_matrix)  # Validar matriz generada
         
         # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
@@ -1205,7 +1206,8 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                     time_max = time_min + 1800  # Ventana de 30 minutos
                     index = manager.NodeToIndex(idx)
                     time_dimension.CumulVar(index).SetRange(time_min, time_max)
-                except:
+                except Exception as e:
+                    st.warning(f"Error procesando restricción horaria para punto {punto}: {e}")
                     continue
         
         # 6. Configuración específica del algoritmo
@@ -1214,7 +1216,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-        search_parameters.time_limit.seconds = 10
+        search_parameters.time_limit.seconds = 60  # Incrementar tiempo límite
         
         # 7. Resolver
         solution = routing.SolveWithParameters(search_parameters)
@@ -1226,9 +1228,10 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             while not routing.IsEnd(index):
                 route_order.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
-            
+            st.write("Orden optimizado (Algoritmo 1):", route_order)  # Depuración
             return [puntos_intermedios[i] for i in route_order]
         
+        st.warning("No se encontró solución (Algoritmo 1). Usando orden original.")
         return puntos_intermedios
         
     except Exception as e:
@@ -1665,10 +1668,9 @@ def ver_ruta_optimizada():
     # 2. Controles en columnas (selector de algoritmo y tráfico)
     col1, col2 = st.columns(2)
     with col1:
-        # Selector de algoritmo (ÚNICA DECLARACIÓN)
         algoritmo = st.selectbox(
             "Seleccionar algoritmo de optimización",
-            options=[  # Lista de opciones
+            options=[
                 "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
                 "Algoritmo 2: Google OR-Tools (LNS + GLS)",
                 "Algoritmo 3: Constraint Programming (CP-SAT)",
@@ -1689,6 +1691,8 @@ def ver_ruta_optimizada():
         st.warning(f"No hay puntos programados para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
         return
     
+    st.write("Puntos del día:", puntos_dia)  # Depuración
+    
     # 4. Optimizar según algoritmo seleccionado
     puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
     
@@ -1702,10 +1706,12 @@ def ver_ruta_optimizada():
         else:
             puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
         
+        st.write("Puntos optimizados:", puntos_optimizados)  # Depuración
+        
         # 5. Construir ruta completa
         ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
+        st.write("Ruta completa:", ruta_completa)  # Depuración
 
-        # En ver_ruta_optimizada(), después de obtener la ruta:
         if puntos_optimizados == puntos_dia:
             st.warning("⚠️ El algoritmo no cambió el orden original. Posibles causas:")
             st.write("- Pocos puntos de entrega")
@@ -1713,7 +1719,6 @@ def ver_ruta_optimizada():
             st.write("- Matriz de tiempos simétrica")
         else:
             st.success("¡Ruta optimizada correctamente!")
-            st.write(f"Se reordenaron {len(puntos_dia)} puntos")
         
         # Mostrar itinerario
         with st.expander("📋 Itinerario de Ruta", expanded=True):
@@ -1731,20 +1736,13 @@ def ver_ruta_optimizada():
             st.dataframe(df_ruta)
         
         # Mostrar mapa
-        # st.subheader("🗺️ Mapa de Ruta")
         mapa = mostrar_ruta_en_mapa(ruta_completa)
         if mapa:
             st_folium(mapa, width=700, height=500)
     
     except Exception as e:
-        st.error(f"Error: {str(e)}")
-        
-        # 8. Mostrar métricas
-        st.subheader("📊 Métricas de Rendimiento")
-        mostrar_metricas(ruta_completa)
-        
-    except Exception as e:
         st.error(f"Error al optimizar la ruta: {str(e)}")
+```
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
