@@ -1167,74 +1167,74 @@ def obtener_geometria_ruta(puntos):
 
 # Algoritmo 1: Path Cheapest Arc + GLS 
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Versión mejorada con validación de restricciones"""
+    """Algoritmo original corregido y optimizado"""
     try:
+        # 1. Obtener matriz de tiempos real con/sin tráfico
         time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
+        
+        # 2. Configurar modelo OR-Tools
         manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
         
-        transit_callback_index = routing.RegisterTransitCallback(
-            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
-        )
+        # 3. Definir función de coste
+        def time_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return time_matrix[from_node][to_node]
+        
+        transit_callback_index = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
         
-        # Restricción de tiempo total (9 horas)
-        horizon = 9 * 3600
+        # 4. Restricción de tiempo total (8:00-17:00)
+        horizon = 9 * 3600  # 9 horas en segundos
         routing.AddDimension(
             transit_callback_index,
-            3600,  # Slack máximo (1 hora)
+            3600,  # slack máximo (1 hora)
             horizon,
             False,
             'Time'
         )
         time_dimension = routing.GetDimensionOrDie('Time')
         
-        # Aplicar ventanas temporales
+        # 5. Añadir restricciones de ventanas temporales
         for idx, punto in enumerate(puntos_con_hora):
             if punto.get('hora'):
                 try:
                     hh, mm = map(int, punto['hora'].split(':'))
-                    time_min = (hh - 8) * 3600 + mm * 60  # Convertir a segundos desde 8:00
+                    time_min = (hh - 8) * 3600 + mm * 60  # Segundos desde 8:00
                     time_max = time_min + 1800  # Ventana de 30 minutos
                     index = manager.NodeToIndex(idx)
                     time_dimension.CumulVar(index).SetRange(time_min, time_max)
                 except:
                     continue
         
-        # Configuración del algoritmo
+        # 6. Configuración específica del algoritmo
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_parameters.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
         search_parameters.time_limit.seconds = 10
-        search_parameters.log_search = True  # Para depuración
         
+        # 7. Resolver
         solution = routing.SolveWithParameters(search_parameters)
         
         if solution:
-            route_order = []
+            # Extraer ruta optimizada
             index = routing.Start(0)
+            route_order = []
             while not routing.IsEnd(index):
                 route_order.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
             
-            # Verificar restricciones
-            for idx in route_order:
-                if puntos_intermedios[idx].get('hora'):
-                    time_var = time_dimension.CumulVar(manager.NodeToIndex(idx))
-                    if not solution.Min(time_var) <= solution.Max(time_var):
-                        st.warning(f"Restricción horaria no cumplida para punto {idx}")
-            
             return [puntos_intermedios[i] for i in route_order]
-        else:
-            st.warning("No se encontró solución óptima")
-            return puntos_intermedios
-            
+        
+        return puntos_intermedios
+        
     except Exception as e:
         st.error(f"Error en algoritmo 1: {str(e)}")
         return puntos_intermedios
-
+        
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     try:
