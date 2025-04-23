@@ -1511,34 +1511,37 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     return inicio + puntos_intermedios_optimizados + fin
     
 def mostrar_ruta_en_mapa(ruta_completa):
-    """Versión que muestra la ruta real por calles usando Google Maps"""
+    """Muestra la ruta real por calles usando Google Maps, incluyendo todos los puntos."""
     try:
         if not ruta_completa or len(ruta_completa) < 2:
             st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
             return None
 
-        # Validar puntos con coordenadas
-        puntos_validos = [p for p in ruta_completa if 'lat' in p and 'lon' in p]
+        # Filtrar puntos con coordenadas válidas
+        puntos_validos = [
+            p for p in ruta_completa 
+            if 'lat' in p and 'lon' in p and isinstance(p['lat'], (int, float)) and isinstance(p['lon'], (int, float))
+        ]
         if len(puntos_validos) < 2:
             st.error("No hay suficientes puntos con coordenadas válidas")
             return None
 
         # Obtener geometría de la ruta real desde Google Maps
-        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]])
+        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]]) if len(puntos_validos) > 2 else ""
         url = f"https://maps.googleapis.com/maps/api/directions/json?" \
               f"origin={puntos_validos[0]['lat']},{puntos_validos[0]['lon']}" \
               f"&destination={puntos_validos[-1]['lat']},{puntos_validos[-1]['lon']}" \
-              f"&waypoints=optimize:true|{waypoints}" \
+              f"{'&waypoints=optimize:false|' + waypoints if waypoints else ''}" \
               f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
 
         response = requests.get(url)
         route_data = response.json()
 
         if route_data['status'] != 'OK':
-            st.error("Error al obtener ruta de Google Maps")
+            st.error(f"Error al obtener ruta de Google Maps: {route_data.get('error_message', 'Código: ' + route_data['status'])}")
             return None
 
-        # Crear mapa centrado
+        # Crear mapa centrado en el primer punto válido
         m = folium.Map(
             location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
             zoom_start=14,
@@ -1557,11 +1560,18 @@ def mostrar_ruta_en_mapa(ruta_completa):
                 tooltip="Ruta vehicular"
             ).add_to(m)
 
-        # Añadir marcadores numerados
+        # Añadir marcadores numerados para TODOS los puntos
         for i, punto in enumerate(puntos_validos):
+            # Determinar el nombre para el popup
+            nombre = punto.get('nombre', punto.get('direccion', 'Sin nombre'))
+            popup_text = f"<b>Punto {i+1}</b><br>{nombre}<br>Tipo: {punto.get('tipo', 'Desconocido').capitalize()}"
+            if punto.get('hora'):
+                popup_text += f"<br>Hora: {punto['hora']}"
+
+            # Añadir marcador
             folium.Marker(
                 [punto['lat'], punto['lon']],
-                popup=f"<b>Punto {i+1}</b><br>{punto.get('nombre', '')}",
+                popup=popup_text,
                 icon=folium.Icon(
                     color='red' if i == 0 or i == len(puntos_validos)-1 else 'blue',
                     icon='flag' if i == 0 else ('home' if i == len(puntos_validos)-1 else 'star'),
@@ -1569,7 +1579,7 @@ def mostrar_ruta_en_mapa(ruta_completa):
                 )
             ).add_to(m)
 
-            # Número de secuencia
+            # Añadir número de secuencia
             folium.CircleMarker(
                 [punto['lat'], punto['lon']],
                 radius=10,
