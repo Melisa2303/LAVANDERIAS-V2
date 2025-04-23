@@ -487,6 +487,30 @@ def ingresar_sucursal():
         except Exception as e:
             st.error(f"Error al guardar: {e}")
               
+def initialize_session_state():
+    """Inicializa variables de estado para evitar errores de acceso."""
+    if "delivery_lat" not in st.session_state:
+        st.session_state.delivery_lat = -16.409047
+    if "delivery_lon" not in st.session_state:
+        st.session_state.delivery_lon = -71.537451
+    if "delivery_direccion" not in st.session_state:
+        st.session_state.delivery_direccion = "Arequipa, Perú"
+    if "delivery_mapa" not in st.session_state:
+        st.session_state.delivery_mapa = folium.Map(
+            location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+            zoom_start=15
+        )
+    if "delivery_marker" not in st.session_state:
+        st.session_state.delivery_marker = folium.Marker(
+            [st.session_state.delivery_lat, st.session_state.delivery_lon],
+            tooltip="Punto seleccionado"
+        ).add_to(st.session_state.delivery_mapa)
+
+# Llamar a la inicialización al inicio
+initialize_session_state()
+
+# ... (resto de las importaciones y definiciones de funciones) ...
+
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -528,16 +552,12 @@ def solicitar_recogida():
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "sucursal": nombre_sucursal,
-                # Campos para recogida
                 "direccion_recojo": direccion,
                 "coordenadas_recojo": {"lat": lat, "lon": lon},
-                # Campos para entrega (iguales por defecto)
                 "direccion_entrega": direccion,
                 "coordenadas_entrega": {"lat": lat, "lon": lon},
-                # Fechas
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
-                # Hora dejada en blanco intencionalmente
             }
             
             try:
@@ -547,21 +567,6 @@ def solicitar_recogida():
                 st.error(f"Error al guardar: {e}")
 
     elif tipo_solicitud == "Cliente Delivery":
-        # Configuración inicial del mapa
-        # Inicialización independiente
-        if "delivery_lat" not in st.session_state:
-            st.session_state.delivery_lat = -16.409047
-            st.session_state.delivery_lon = -71.537451
-            st.session_state.delivery_direccion = "Arequipa, Perú"
-            st.session_state.delivery_mapa = folium.Map(
-                location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
-                zoom_start=15
-            )
-            st.session_state.delivery_marker = folium.Marker(
-                [st.session_state.delivery_lat, st.session_state.delivery_lon],
-                tooltip="Punto seleccionado"
-            ).add_to(st.session_state.delivery_mapa)
-
         # Widgets de entrada
         col1, col2 = st.columns(2)
         with col1:
@@ -657,27 +662,28 @@ def solicitar_recogida():
                 "tipo_solicitud": tipo_solicitud,
                 "nombre_cliente": nombre_cliente,
                 "telefono": telefono,
-                # Campos para recogida
-                "direccion_recojo": st.session_state.delivery_data["direccion"],
+                "direccion_recojo": st.session_state.delivery_direccion,
                 "coordenadas_recojo": {
-                    "lat": st.session_state.delivery_data["lat"],
-                    "lon": st.session_state.delivery_data["lon"]
+                    "lat": st.session_state.delivery_lat,
+                    "lon": st.session_state.delivery_lon
                 },
-                # Campos para entrega (iguales por defecto)
-                "direccion_entrega": st.session_state.delivery_data["direccion"],
+                "direccion_entrega": st.session_state.delivery_direccion,
                 "coordenadas_entrega": {
-                    "lat": st.session_state.delivery_data["lat"],
-                    "lon": st.session_state.delivery_data["lon"]
+                    "lat": st.session_state.delivery_lat,
+                    "lon": st.session_state.delivery_lon
                 },
-                # Fechas
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
-                # Hora dejada en blanco intencionalmente
             }
 
             try:
                 db.collection('recogidas').add(solicitud)
                 st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
+                # Limpiar estado después de guardar
+                st.session_state.delivery_lat = -16.409047
+                st.session_state.delivery_lon = -71.537451
+                st.session_state.delivery_direccion = "Arequipa, Perú"
+                st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
