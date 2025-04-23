@@ -1519,18 +1519,38 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
 def mostrar_ruta_en_mapa(ruta_completa):
     """Muestra la ruta real por calles usando Google Maps, incluyendo todos los puntos."""
     try:
+        # Depuración: Mostrar la ruta completa recibida
+        st.write("Ruta completa recibida:", ruta_completa)
+
         if not ruta_completa or len(ruta_completa) < 2:
             st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
             return None
 
         # Filtrar puntos con coordenadas válidas
-        puntos_validos = [
-            p for p in ruta_completa 
-            if 'lat' in p and 'lon' in p and isinstance(p['lat'], (int, float)) and isinstance(p['lon'], (int, float))
-        ]
+        puntos_validos = []
+        for p in ruta_completa:
+            if ('lat' in p and 'lon' in p and 
+                isinstance(p.get('lat'), (int, float)) and 
+                isinstance(p.get('lon'), (int, float)) and
+                p.get('lat') is not None and p.get('lon') is not None):
+                puntos_validos.append(p)
+            else:
+                st.warning(f"Punto inválido descartado: {p.get('direccion', 'Sin dirección')} (lat: {p.get('lat')}, lon: {p.get('lon')})")
+
+        # Depuración: Mostrar puntos válidos
+        st.write("Puntos válidos:", puntos_validos)
+
         if len(puntos_validos) < 2:
-            st.error("No hay suficientes puntos con coordenadas válidas")
+            st.error(f"No hay suficientes puntos válidos para generar la ruta. Puntos encontrados: {len(puntos_validos)}")
             return None
+
+        # Crear mapa centrado en el primer punto válido
+        m = folium.Map(
+            location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
+            zoom_start=13,  # Reducido para mostrar más puntos
+            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            attr='OpenStreetMap'
+        )
 
         # Obtener geometría de la ruta real desde Google Maps
         waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]]) if len(puntos_validos) > 2 else ""
@@ -1540,31 +1560,28 @@ def mostrar_ruta_en_mapa(ruta_completa):
               f"{'&waypoints=optimize:false|' + waypoints if waypoints else ''}" \
               f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
 
+        # Depuración: Mostrar URL de la solicitud
+        st.write("URL de Google Maps API:", url)
+
         response = requests.get(url)
         route_data = response.json()
 
-        if route_data['status'] != 'OK':
+        if route_data.get('status') != 'OK':
             st.error(f"Error al obtener ruta de Google Maps: {route_data.get('error_message', 'Código: ' + route_data['status'])}")
-            return None
-
-        # Crear mapa centrado en el primer punto válido
-        m = folium.Map(
-            location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
-            zoom_start=14,
-            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-            attr='OpenStreetMap'
-        )
-
-        # Añadir ruta real
-        if 'routes' in route_data and route_data['routes']:
-            points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
-            folium.PolyLine(
-                points,
-                color='#0066cc',
-                weight=6,
-                opacity=0.8,
-                tooltip="Ruta vehicular"
-            ).add_to(m)
+            # Continuar mostrando los marcadores aunque la ruta falle
+        else:
+            # Añadir ruta real
+            if 'routes' in route_data and route_data['routes']:
+                points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
+                folium.PolyLine(
+                    points,
+                    color='#0066cc',
+                    weight=6,
+                    opacity=0.8,
+                    tooltip="Ruta vehicular"
+                ).add_to(m)
+            else:
+                st.warning("No se encontraron rutas en los datos de Google Maps")
 
         # Añadir marcadores numerados para TODOS los puntos
         for i, punto in enumerate(puntos_validos):
@@ -1573,6 +1590,8 @@ def mostrar_ruta_en_mapa(ruta_completa):
             popup_text = f"<b>Punto {i+1}</b><br>{nombre}<br>Tipo: {punto.get('tipo', 'Desconocido').capitalize()}"
             if punto.get('hora'):
                 popup_text += f"<br>Hora: {punto['hora']}"
+            if punto.get('id'):
+                popup_text += f"<br>ID: {punto['id']}"
 
             # Añadir marcador
             folium.Marker(
@@ -1596,6 +1615,11 @@ def mostrar_ruta_en_mapa(ruta_completa):
             ).add_child(folium.DivIcon(
                 html=f'<div style="color:white;font-weight:bold;text-align:center">{i+1}</div>'
             )).add_to(m)
+
+        # Ajustar el mapa para mostrar todos los puntos
+        if puntos_validos:
+            bounds = [[p['lat'], p['lon']] for p in puntos_validos]
+            m.fit_bounds(bounds)
 
         return m
 
@@ -1716,6 +1740,10 @@ def ver_ruta_optimizada():
         ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
         st.write("Ruta completa:", ruta_completa)  # Depuración
 
+        # 6. Validar orden optimizado
+        orden_optimizado = [p.get('id', p.get('direccion')) for p in puntos_optimizados]
+        st.write("Orden optimizado:", orden_optimizado)  # Depuración adicional
+
         if puntos_optimizados == puntos_dia:
             st.warning("⚠️ El algoritmo no cambió el orden original. Posibles causas:")
             st.write("- Pocos puntos de entrega")
@@ -1724,7 +1752,27 @@ def ver_ruta_optimizada():
         else:
             st.success("¡Ruta optimizada correctamente!")
         
-        # Mostrar itinerario
+        # 7. Calcular distancia y tiempo total
+        total_distance = 0
+        total_time = 0
+        for i in range(len(ruta_completa) - 1):
+            p1 = ruta_completa[i]
+            p2 = ruta_completa[i + 1]
+            url = f"https://maps.googleapis.com/maps/api/directions/json?" \
+                  f"origin={p1['lat']},{p1['lon']}" \
+                  f"&destination={p2['lat']},{p2['lon']}" \
+                  f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
+            response = requests.get(url)
+            data = response.json()
+            if data.get('status') == 'OK' and data['routes']:
+                leg = data['routes'][0]['legs'][0]
+                total_distance += leg['distance']['value']  # Metros
+                total_time += leg['duration']['value']  # Segundos
+        
+        st.write(f"Distancia total: {total_distance / 1000:.2f} km")
+        st.write(f"Tiempo total estimado: {total_time / 60:.2f} minutos")
+
+        # 8. Mostrar itinerario
         with st.expander("📋 Itinerario de Ruta", expanded=True):
             df_ruta = pd.DataFrame([
                 {
@@ -1739,7 +1787,7 @@ def ver_ruta_optimizada():
             ])
             st.dataframe(df_ruta)
         
-        # Mostrar mapa
+        # 9. Mostrar mapa
         mapa = mostrar_ruta_en_mapa(ruta_completa)
         if mapa:
             st_folium(mapa, width=700, height=500)
