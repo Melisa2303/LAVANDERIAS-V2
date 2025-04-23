@@ -1699,92 +1699,148 @@ def ver_ruta_optimizada():
     # Configuración de la página
     col1, col2 = st.columns([1, 3])
     with col1:
+        # Asegúrate de que la URL de la imagen es correcta
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    
+
     st.title("🚐 Ver Ruta Optimizada")
-    
-    # 1. Selección de fecha y activar tráfico
+
+    # 1. Selección de fecha
     fecha_seleccionada = st.date_input("Seleccionar fecha de ruta", value=datetime.now().date())
-    
+
     # 2. Controles en columnas (selector de algoritmo y tráfico)
-    col1, col2 = st.columns(2)
-    with col1:
+    col1_ctrl, col2_ctrl = st.columns(2)
+    with col1_ctrl:
         algoritmo = st.selectbox(
             "Seleccionar algoritmo de optimización",
             options=[
-                "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
+                # Asegúrate que los nombres coincidan con las condiciones if/elif abajo
+                "Algoritmo 1: Google Maps Optimize Route", # Modificado para reflejar el cambio
                 "Algoritmo 2: Google OR-Tools (LNS + GLS)",
                 "Algoritmo 3: Constraint Programming (CP-SAT)",
                 "Algoritmo 4: Large Neighborhood Search (LNS)"
             ],
-            index=0
+            index=0, # Por defecto selecciona el primero
+            key="select_algoritmo_opt" # Añadir una clave única
         )
-    with col2:
+    with col2_ctrl:
         considerar_trafico = st.toggle(
             "🚦 Considerar tráfico en tiempo real",
-            value=True,
-            help="Usa datos actuales de congestión vehicular para optimizar la ruta"
+            value=True, # Por defecto activado
+            help="Usa datos actuales de congestión vehicular para optimizar la ruta (requiere API Key)",
+            key="toggle_trafico_opt" # Añadir una clave única
         )
-    
-    # 3. Obtener puntos para esa fecha
-    puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
-    if not puntos_dia:
-        st.warning(f"No hay puntos programados para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
-        return
-    
-    st.write("Puntos del día:", puntos_dia)  # Depuración
-    
-    # 4. Optimizar según algoritmo seleccionado
-    puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
-    
-    try:
-        if algoritmo.startswith("Algoritmo 1"):
-            puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
-        elif algoritmo.startswith("Algoritmo 2"):
-            puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
-        elif algoritmo.startswith("Algoritmo 3"):
-            puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
-        else:
-            puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
-        
-        st.write("Puntos optimizados:", puntos_optimizados)  # Depuración
-        
-        # 5. Construir ruta completa
-        ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
-        st.write("Ruta completa:", ruta_completa)  # Depuración
 
-        if puntos_optimizados == puntos_dia:
-            st.warning("⚠️ El algoritmo no cambió el orden original. Posibles causas:")
-            st.write("- Pocos puntos de entrega")
-            st.write("- Restricciones horarias muy estrictas")
-            st.write("- Matriz de tiempos simétrica")
-        else:
-            st.success("¡Ruta optimizada correctamente!")
-        
-        # Mostrar itinerario
-        with st.expander("📋 Itinerario de Ruta", expanded=True):
-            df_ruta = pd.DataFrame([
-                {
-                    "Orden": i+1,
-                    "Tipo": p['tipo'].capitalize(),
-                    "Nombre/Lugar": p.get('nombre', p.get('direccion', 'Sin nombre')),
-                    "Dirección": p.get('direccion', ''),
-                    "Hora": p.get('hora', 'Flexible'),
-                    "Tipo Punto": "Fijo" if 'orden' in p else "Programado"
-                }
-                for i, p in enumerate(ruta_completa)
-            ])
-            st.dataframe(df_ruta)
-        
-        # Mostrar mapa
-        mapa = mostrar_ruta_en_mapa(ruta_completa)
-        if mapa:
-            st_folium(mapa, width=700, height=500)
-    
-    except Exception as e:
-        st.error(f"Error al optimizar la ruta: {str(e)}")
+    # Botón para iniciar la optimización (opcional, pero puede mejorar UX)
+    if st.button("🔄 Generar Ruta Optimizada", key="btn_generar_ruta"):
+
+        # 3. Obtener puntos para esa fecha
+        # Usamos un spinner para indicar que se está trabajando
+        with st.spinner(f"Obteniendo puntos para {fecha_seleccionada.strftime('%d/%m/%Y')}..."):
+            puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
+
+        if not puntos_dia:
+            st.warning(f"No hay puntos programados (recogidas/entregas) para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
+            st.stop() # Detiene la ejecución si no hay puntos
+
+        # st.write("Puntos del día (antes de optimizar):", puntos_dia) # Descomentar para depuración
+
+        # Separar puntos con hora fija (necesario para algunos algoritmos OR-Tools)
+        puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
+
+        # 4. Optimizar según algoritmo seleccionado
+        puntos_optimizados = []
+        try:
+            with st.spinner(f"Optimizando ruta con {algoritmo.split(':')[0]}... (puede tardar unos segundos)"):
+                # --- Llamada condicional al algoritmo ---
+                if algoritmo.startswith("Algoritmo 1"):
+                    # Llama a la versión que usa Google Maps API
+                    puntos_optimizados = optimizar_ruta_algoritmo1(
+                        puntos_intermedios=puntos_dia,
+                        puntos_con_hora=puntos_con_hora, # Aunque no la use, la pasamos por consistencia
+                        considerar_trafico=considerar_trafico
+                    )
+                elif algoritmo.startswith("Algoritmo 2"):
+                    # Llama a la versión OR-Tools LNS + GLS
+                    puntos_optimizados = optimizar_ruta_algoritmo2(
+                        puntos_intermedios=puntos_dia,
+                        puntos_con_hora=puntos_con_hora,
+                        considerar_trafico=considerar_trafico
+                    )
+                elif algoritmo.startswith("Algoritmo 3"):
+                    # Llama a la versión OR-Tools CP-SAT
+                    puntos_optimizados = optimizar_ruta_algoritmo3(
+                        puntos_intermedios=puntos_dia,
+                        puntos_con_hora=puntos_con_hora,
+                        considerar_trafico=considerar_trafico
+                    )
+                elif algoritmo.startswith("Algoritmo 4"):
+                     # Llama a la versión OR-Tools LNS puro
+                    puntos_optimizados = optimizar_ruta_algoritmo4(
+                        puntos_intermedios=puntos_dia,
+                        puntos_con_hora=puntos_con_hora,
+                        considerar_trafico=considerar_trafico
+                    )
+                else:
+                    # Caso por defecto o error en selección
+                    st.error("Algoritmo seleccionado no reconocido.")
+                    puntos_optimizados = puntos_dia # Usar orden original como fallback
+
+            # st.write("Puntos intermedios optimizados:", puntos_optimizados) # Descomentar para depuración
+
+            # 5. Construir ruta completa (añadiendo puntos fijos)
+            if puntos_optimizados: # Asegurarse que la optimización devolvió algo
+                 ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
+                 # st.write("Ruta completa (con puntos fijos):", ruta_completa) # Descomentar para depuración
+            else:
+                 st.error("La optimización no devolvió una ruta válida. Mostrando puntos originales.")
+                 # Como fallback, construimos la ruta con los puntos originales sin optimizar
+                 # Esto es importante si un algoritmo falla completamente
+                 ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_dia)
+
+
+            # Verificar si el orden cambió (comparando solo los puntos intermedios)
+            if puntos_optimizados == puntos_dia and len(puntos_dia) > 1: # Solo tiene sentido si había puntos que optimizar
+                st.warning("⚠️ El algoritmo seleccionado no cambió el orden original de los puntos. Posibles causas: pocos puntos, restricciones estrictas, o el orden inicial ya era óptimo.")
+            elif puntos_optimizados:
+                 st.success("✅ ¡Ruta optimizada generada!")
+
+            # 6. Mostrar Itinerario
+            if ruta_completa:
+                with st.expander("📋 Itinerario Detallado de la Ruta", expanded=True):
+                    df_ruta = pd.DataFrame([
+                        {
+                            "Orden": i + 1,
+                            "Tipo Operación": p.get('tipo', 'Fijo').capitalize(),
+                            "Nombre/Lugar": p.get('nombre', p.get('direccion', 'Punto Fijo')),
+                            "Dirección": p.get('direccion', 'N/A'),
+                            "Hora Estimada/Fija": p.get('hora', 'Flexible'),
+                            "Tipo Punto": "Fijo" if p.get('tipo') == 'fijo' else p.get('tipo', 'Programado').capitalize()
+                        }
+                        for i, p in enumerate(ruta_completa)
+                        # Filtrar puntos sin coordenadas válidas si es necesario (aunque mostrar_ruta_en_mapa ya lo hace)
+                        if p.get('lat') is not None and p.get('lon') is not None
+                    ])
+                    # Usar st.dataframe para mejor formato y scroll
+                    st.dataframe(df_ruta, use_container_width=True, hide_index=True)
+
+                # 7. Mostrar Mapa
+                with st.spinner("Generando mapa con la ruta..."):
+                    mapa = mostrar_ruta_en_mapa(ruta_completa)
+
+                if mapa:
+                    st.subheader("🗺️ Visualización de la Ruta Optimizada")
+                    st_folium(mapa, width=700, height=550, key="mapa_optimizado")
+                else:
+                    st.warning("No se pudo generar el mapa de la ruta.")
+            else:
+                 st.error("No se pudo construir la ruta completa para mostrar.")
+
+        # Captura de excepciones generales durante la optimización o visualización
+        except Exception as e:
+            st.error(f"🚨 Ocurrió un error inesperado al generar la ruta optimizada: {str(e)}")
+            st.exception(e) # Muestra el traceback completo para depuración
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
