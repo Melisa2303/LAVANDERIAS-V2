@@ -1754,7 +1754,7 @@ def ver_ruta_optimizada():
         try:
             with st.spinner(f"Optimizando ruta con {algoritmo.split(':')[0]}... (puede tardar unos segundos)"):
                 # --- Llamada condicional al algoritmo ---
-                if algoritmo.startswith("Algoritmo 1"):
+                if algoritmo.startswith("Algoritmo 1: Google Maps Optimize Route"):
                     # Llama a la versión que usa Google Maps API
                     puntos_optimizados = optimizar_ruta_algoritmo1(
                         puntos_intermedios=puntos_dia,
