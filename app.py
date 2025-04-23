@@ -752,11 +752,25 @@ def datos_ruta():
 
     # --- Mostrar Tabla ---
     if datos:
+        # Optimizar los puntos para la tabla
+        puntos_validos = [
+            item for item in datos
+            if item.get("coordenadas") and isinstance(item["coordenadas"], dict)
+            and "lat" in item["coordenadas"] and "lon" in item["coordenadas"]
+        ]
+        puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
+        puntos_optimizados = optimizar_ruta_algoritmo1(
+            puntos_validos,
+            puntos_con_hora,
+            considerar_trafico=True
+        ) if puntos_validos else []
+
+        # Crear datos para la tabla usando el orden optimizado
         tabla_data = []
-        for item in datos:
+        for idx, item in enumerate(puntos_optimizados if puntos_optimizados else datos):
             nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-            
             tabla_data.append({
+                "Orden": idx + 1,
                 "Operación": item["operacion"],
                 "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
                 "Dirección": item["direccion"],
@@ -766,81 +780,6 @@ def datos_ruta():
 
         df_tabla = pd.DataFrame(tabla_data)
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
-
-        # --- Mapa de Ruta ---
-        puntos_validos = [
-            item["coordenadas"] for item in datos
-            if item.get("coordenadas") and isinstance(item["coordenadas"], dict)
-            and "lat" in item["coordenadas"] and "lon" in item["coordenadas"]
-        ]
-        if puntos_validos:
-            # Calcular el centro del mapa
-            centro = {
-                "lat": sum(p["lat"] for p in puntos_validos) / len(puntos_validos),
-                "lon": sum(p["lon"] for p in puntos_validos) / len(puntos_validos)
-            }
-            
-            # Crear el mapa base
-            m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
-
-            # Añadir marcadores para cada punto
-            for item in datos:
-                if item.get("coordenadas") and isinstance(item["coordenadas"], dict):
-                    nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-                    folium.Marker(
-                        [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
-                        popup=f"{nombre} - {item['operacion']}",
-                        icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
-                    ).add_to(m)
-
-            # Trazar la ruta entre los puntos usando Google Maps Directions API
-            if len(puntos_validos) >= 2 and GOOGLE_MAPS_API_KEY:
-                try:
-                    # Preparar la solicitud a la API de Directions
-                    origin = f"{puntos_validos[0]['lat']},{puntos_validos[0]['lon']}"
-                    destination = f"{puntos_validos[-1]['lat']},{puntos_validos[-1]['lon']}"
-                    waypoints = "|".join(
-                        [f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]]
-                    ) if len(puntos_validos) > 2 else ""
-                    
-                    url = (
-                        f"https://maps.googleapis.com/maps/api/directions/json?"
-                        f"origin={origin}&destination={destination}"
-                        f"&waypoints={waypoints}"
-                        f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-                    )
-                    
-                    response = requests.get(url)
-                    route_data = response.json()
-
-                    if route_data.get("status") == "OK" and route_data.get("routes"):
-                        # Decodificar la polilínea de la ruta
-                        polyline_points = decode_polyline(
-                            route_data["routes"][0]["overview_polyline"]["points"]
-                        )
-                        # Convertir a formato para Folium
-                        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
-                        
-                        # Añadir la polilínea al mapa
-                        folium.PolyLine(
-                            route_coords,
-                            color="#0066cc",
-                            weight=6,
-                            opacity=0.8,
-                            tooltip="Ruta vehicular"
-                        ).add_to(m)
-                    else:
-                        st.warning("No se pudo obtener la ruta de Google Maps. Mostrando solo los puntos.")
-                except Exception as e:
-                    st.error(f"Error al obtener la ruta: {e}")
-                    st.warning("Mostrando solo los puntos sin ruta.")
-            elif not GOOGLE_MAPS_API_KEY:
-                st.warning("API Key de Google Maps no configurada. No se puede trazar la ruta.")
-
-            # Mostrar el mapa en Streamlit
-            st_folium(m, width=700, height=500)
-        else:
-            st.info("No hay puntos válidos para mostrar en el mapa.")
 
         # --- Gestión de Deliveries ---
         deliveries = [item for item in datos if item["tipo_solicitud"] == "Cliente Delivery"]
@@ -1696,151 +1635,199 @@ def mostrar_metricas(ruta, time_matrix):
                 st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
 def ver_ruta_optimizada():
-    # Configuración de la página
-    col1, col2 = st.columns([1, 3])
+    # --- Configuración inicial ---
+    st.title("🚚 Ruta Optimizada")
+    
+    # --- Filtros ---
+    col1, col2, col3 = st.columns(3)
     with col1:
-        # Asegúrate de que la URL de la imagen es correcta
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+        fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
     with col2:
-        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+        tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
+    with col3:
+        algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3"])
 
-    st.title("🚐 Ver Ruta Optimizada")
-
-    # 1. Selección de fecha
-    fecha_seleccionada = st.date_input("Seleccionar fecha de ruta", value=datetime.now().date())
-
-    # 2. Controles en columnas (selector de algoritmo y tráfico)
-    col1_ctrl, col2_ctrl = st.columns(2)
-    with col1_ctrl:
-        algoritmo = st.selectbox(
-            "Seleccionar algoritmo de optimización",
-            options=[
-                # Asegúrate que los nombres coincidan con las condiciones if/elif abajo
-                "Algoritmo 1: Google Maps Optimize Route", # Modificado para reflejar el cambio
-                "Algoritmo 2: Google OR-Tools (LNS + GLS)",
-                "Algoritmo 3: Constraint Programming (CP-SAT)",
-                "Algoritmo 4: Large Neighborhood Search (LNS)"
-            ],
-            index=0, # Por defecto selecciona el primero
-            key="select_algoritmo_opt" # Añadir una clave única
-        )
-    with col2_ctrl:
-        considerar_trafico = st.toggle(
-            "🚦 Considerar tráfico en tiempo real",
-            value=True, # Por defecto activado
-            help="Usa datos actuales de congestión vehicular para optimizar la ruta (requiere API Key)",
-            key="toggle_trafico_opt" # Añadir una clave única
-        )
-
-    # Botón para iniciar la optimización (opcional, pero puede mejorar UX)
-    if st.button("🔄 Generar Ruta Optimizada", key="btn_generar_ruta"):
-
-        # 3. Obtener puntos para esa fecha
-        # Usamos un spinner para indicar que se está trabajando
-        with st.spinner(f"Obteniendo puntos para {fecha_seleccionada.strftime('%d/%m/%Y')}..."):
-            puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
-
-        if not puntos_dia:
-            st.warning(f"No hay puntos programados (recogidas/entregas) para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
-            st.stop() # Detiene la ejecución si no hay puntos
-
-        # st.write("Puntos del día (antes de optimizar):", puntos_dia) # Descomentar para depuración
-
-        # Separar puntos con hora fija (necesario para algunos algoritmos OR-Tools)
-        puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
-
-        # 4. Optimizar según algoritmo seleccionado
-        puntos_optimizados = []
+    # --- Obtener datos (mismo código que en datos_ruta) ---
+    @st.cache_data(ttl=300)
+    def cargar_ruta(fecha, tipo):
         try:
-            with st.spinner(f"Optimizando ruta con {algoritmo.split(':')[0]}... (puede tardar unos segundos)"):
-                # --- Llamada condicional al algoritmo ---
-                if algoritmo.startswith("Algoritmo 1: Google Maps Optimize Route"):
-                    # Llama a la versión que usa Google Maps API
-                    puntos_optimizados = optimizar_ruta_algoritmo1(
-                        puntos_intermedios=puntos_dia,
-                        puntos_con_hora=puntos_con_hora, # Aunque no la use, la pasamos por consistencia
-                        considerar_trafico=considerar_trafico
-                    )
-                elif algoritmo.startswith("Algoritmo 2"):
-                    # Llama a la versión OR-Tools LNS + GLS
-                    puntos_optimizados = optimizar_ruta_algoritmo2(
-                        puntos_intermedios=puntos_dia,
-                        puntos_con_hora=puntos_con_hora,
-                        considerar_trafico=considerar_trafico
-                    )
-                elif algoritmo.startswith("Algoritmo 3"):
-                    # Llama a la versión OR-Tools CP-SAT
-                    puntos_optimizados = optimizar_ruta_algoritmo3(
-                        puntos_intermedios=puntos_dia,
-                        puntos_con_hora=puntos_con_hora,
-                        considerar_trafico=considerar_trafico
-                    )
-                elif algoritmo.startswith("Algoritmo 4"):
-                     # Llama a la versión OR-Tools LNS puro
-                    puntos_optimizados = optimizar_ruta_algoritmo4(
-                        puntos_intermedios=puntos_dia,
-                        puntos_con_hora=puntos_con_hora,
-                        considerar_trafico=considerar_trafico
-                    )
-                else:
-                    # Caso por defecto o error en selección
-                    st.error("Algoritmo seleccionado no reconocido.")
-                    puntos_optimizados = puntos_dia # Usar orden original como fallback
+            query = db.collection('recogidas')
+            docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
+                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
 
-            # st.write("Puntos intermedios optimizados:", puntos_optimizados) # Descomentar para depuración
+            if tipo != "Todos":
+                tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
+                docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
 
-            # 5. Construir ruta completa (añadiendo puntos fijos)
-            if puntos_optimizados: # Asegurarse que la optimización devolvió algo
-                 ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
-                 # st.write("Ruta completa (con puntos fijos):", ruta_completa) # Descomentar para depuración
-            else:
-                 st.error("La optimización no devolvió una ruta válida. Mostrando puntos originales.")
-                 # Como fallback, construimos la ruta con los puntos originales sin optimizar
-                 # Esto es importante si un algoritmo falla completamente
-                 ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_dia)
-
-
-            # Verificar si el orden cambió (comparando solo los puntos intermedios)
-            if puntos_optimizados == puntos_dia and len(puntos_dia) > 1: # Solo tiene sentido si había puntos que optimizar
-                st.warning("⚠️ El algoritmo seleccionado no cambió el orden original de los puntos. Posibles causas: pocos puntos, restricciones estrictas, o el orden inicial ya era óptimo.")
-            elif puntos_optimizados:
-                 st.success("✅ ¡Ruta optimizada generada!")
-
-            # 6. Mostrar Itinerario
-            if ruta_completa:
-                with st.expander("📋 Itinerario Detallado de la Ruta", expanded=True):
-                    df_ruta = pd.DataFrame([
-                        {
-                            "Orden": i + 1,
-                            "Tipo Operación": p.get('tipo', 'Fijo').capitalize(),
-                            "Nombre/Lugar": p.get('nombre', p.get('direccion', 'Punto Fijo')),
-                            "Dirección": p.get('direccion', 'N/A'),
-                            "Hora Estimada/Fija": p.get('hora', 'Flexible'),
-                            "Tipo Punto": "Fijo" if p.get('tipo') == 'fijo' else p.get('tipo', 'Programado').capitalize()
-                        }
-                        for i, p in enumerate(ruta_completa)
-                        # Filtrar puntos sin coordenadas válidas si es necesario (aunque mostrar_ruta_en_mapa ya lo hace)
-                        if p.get('lat') is not None and p.get('lon') is not None
-                    ])
-                    # Usar st.dataframe para mejor formato y scroll
-                    st.dataframe(df_ruta, use_container_width=True, hide_index=True)
-
-                # 7. Mostrar Mapa
-                with st.spinner("Generando mapa con la ruta..."):
-                    mapa = mostrar_ruta_en_mapa(ruta_completa)
-
-                if mapa:
-                    st.subheader("🗺️ Visualización de la Ruta Optimizada")
-                    st_folium(mapa, width=700, height=550, key="mapa_optimizado")
-                else:
-                    st.warning("No se pudo generar el mapa de la ruta.")
-            else:
-                 st.error("No se pudo construir la ruta completa para mostrar.")
-
-        # Captura de excepciones generales durante la optimización o visualización
+            datos = []
+            for doc in docs:
+                data = doc.to_dict()
+                doc_id = doc.id
+                
+                if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
+                    datos.append({
+                        "id": doc_id,
+                        "operacion": "Recojo",
+                        "nombre_cliente": data.get("nombre_cliente"),
+                        "sucursal": data.get("sucursal"),
+                        "direccion": data.get("direccion_recojo", "N/A"),
+                        "telefono": data.get("telefono", "N/A"),
+                        "hora": data.get("hora_recojo", ""),
+                        "tipo_solicitud": data.get("tipo_solicitud"),
+                        "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
+                        "fecha": data.get("fecha_recojo"),
+                    })
+                
+                if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
+                    datos.append({
+                        "id": doc_id,
+                        "operacion": "Entrega",
+                        "nombre_cliente": data.get("nombre_cliente"),
+                        "sucursal": data.get("sucursal"),
+                        "direccion": data.get("direccion_entrega", "N/A"),
+                        "telefono": data.get("telefono", "N/A"),
+                        "hora": data.get("hora_entrega", ""),
+                        "tipo_solicitud": data.get("tipo_solicitud"),
+                        "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
+                        "fecha": data.get("fecha_entrega"),
+                    })
+            
+            return datos
         except Exception as e:
-            st.error(f"🚨 Ocurrió un error inesperado al generar la ruta optimizada: {str(e)}")
-            st.exception(e) # Muestra el traceback completo para depuración
+            st.error(f"Error al cargar datos: {e}")
+            return []
+
+    datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
+
+    if datos:
+        # --- Optimizar Ruta ---
+        puntos_validos = [
+            item for item in datos
+            if item.get("coordenadas") and isinstance(item["coordenadas"], dict)
+            and "lat" in item["coordenadas"] and "lon" in item["coordenadas"]
+        ]
+        puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
+
+        # Seleccionar algoritmo
+        if algoritmo == "Algoritmo 1":
+            puntos_optimizados = optimizar_ruta_algoritmo1(
+                puntos_validos,
+                puntos_con_hora,
+                considerar_trafico=True
+            )
+        elif algoritmo == "Algoritmo 2":
+            puntos_optimizados = optimizar_ruta_algoritmo2(
+                puntos_validos,
+                puntos_con_hora,
+                considerar_trafico=True
+            )
+        else:
+            puntos_optimizados = optimizar_ruta_algoritmo3(
+                puntos_validos,
+                puntos_con_hora,
+                considerar_trafico=True
+            )
+
+        # --- Mostrar Tabla Optimizada ---
+        tabla_data = []
+        for idx, item in enumerate(puntos_optimizados):
+            nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+            tabla_data.append({
+                "Orden": idx + 1,
+                "Operación": item["operacion"],
+                "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
+                "Dirección": item["direccion"],
+                "Teléfono": item["telefono"],
+                "Hora": item["hora"] if item["hora"] else "Sin hora",
+            })
+
+        df_tabla = pd.DataFrame(tabla_data)
+        st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
+
+        # --- Mapa de Ruta Optimizada ---
+        if puntos_optimizados:
+            # Calcular el centro del mapa
+            coords_optimizadas = [item["coordenadas"] for item in puntos_optimizados]
+            centro = {
+                "lat": sum(p["lat"] for p in coords_optimizadas) / len(coords_optimizadas),
+                "lon": sum(p["lon"] for p in coords_optimizadas) / len(coords_optimizadas)
+            }
+            
+            # Crear el mapa base
+            m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
+
+            # Añadir marcadores para cada punto en el orden optimizado
+            for idx, item in enumerate(puntos_optimizados):
+                if item.get("coordenadas") and isinstance(item["coordenadas"], dict):
+                    nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+                    folium.Marker(
+                        [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
+                        popup=f"{nombre} - {item['operacion']} (Orden: {idx+1})",
+                        icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
+                    ).add_to(m)
+
+            # Trazar la ruta entre los puntos optimizados usando Google Maps Directions API
+            if len(puntos_optimizados) >= 2 and GOOGLE_MAPS_API_KEY:
+                try:
+                    # Preparar la solicitud a la API de Directions
+                    origin = f"{coords_optimizadas[0]['lat']},{coords_optimizadas[0]['lon']}"
+                    destination = f"{coords_optimizadas[-1]['lat']},{coords_optimizadas[-1]['lon']}"
+                    waypoints = "|".join(
+                        [f"{p['lat']},{p['lon']}" for p in coords_optimizadas[1:-1]]
+                    ) if len(coords_optimizadas) > 2 else ""
+                    
+                    url = (
+                        f"https://maps.googleapis.com/maps/api/directions/json?"
+                        f"origin={origin}&destination={destination}"
+                        f"&waypoints={waypoints}"
+                        f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
+                    )
+                    
+                    response = requests.get(url)
+                    route_data = response.json()
+
+                    if route_data.get("status") == "OK" and route_data.get("routes"):
+                        # Decodificar la polilínea de la ruta
+                        polyline_points = decode_polyline(
+                            route_data["routes"][0]["overview_polyline"]["points"]
+                        )
+                        # Convertir a formato para Folium
+                        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
+                        
+                        # Añadir la polilínea al mapa
+                        folium.PolyLine(
+                            route_coords,
+                            color="#0066cc",
+                            weight=6,
+                            opacity=0.8,
+                            tooltip="Ruta vehicular optimizada"
+                        ).add_to(m)
+                    else:
+                        st.warning("No se pudo obtener la ruta de Google Maps. Mostrando solo los puntos.")
+                except Exception as e:
+                    st.error(f"Error al obtener la ruta: {e}")
+                    st.warning("Mostrando solo los puntos sin ruta.")
+            elif not GOOGLE_MAPS_API_KEY:
+                st.warning("API Key de Google Maps no configurada. No se puede trazar la ruta.")
+
+            # Mostrar el mapa en Streamlit
+            st_folium(m, width=700, height=500)
+        else:
+            st.info("No hay puntos válidos para mostrar en el mapa.")
+
+        # --- Botón de Descarga ---
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_tabla.to_excel(writer, index=False)
+        
+        st.download_button(
+            label="Descargar Excel",
+            data=excel_buffer.getvalue(),
+            file_name=f"ruta_optimizada_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
