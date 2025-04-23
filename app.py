@@ -841,113 +841,32 @@ def datos_ruta():
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-            # --- Sección de Dirección y Mapa ---
+            # --- Sección de Reprogramación (sin mapa) ---
             st.markdown(f"### 📅 Reprogramación de {delivery_data['operacion']}")
-            with st.expander("Cambiar fecha y ubicación", expanded=True):
-                # Inicialización independiente
-                if "reprogramar_lat" not in st.session_state:
-                    st.session_state.reprogramar_lat = delivery_data["coordenadas"]["lat"]
-                    st.session_state.reprogramar_lon = delivery_data["coordenadas"]["lon"]
-                    st.session_state.reprogramar_direccion = delivery_data["direccion"]
-                    st.session_state.reprogramar_mapa = folium.Map(
-                        location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                        zoom_start=15
-                    )
-                    st.session_state.reprogramar_marker = folium.Marker(
-                        [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                        tooltip="Punto seleccionado"        
-                    ).add_to(st.session_state.reprogramar_mapa)
-
-                # Campo de dirección
-                direccion_input = st.text_input(
-                    "Dirección",
-                    value=st.session_state.reprogramar_direccion,
+            with st.expander("Cambiar fecha y dirección", expanded=True):
+                # Campo de dirección (solo texto, sin mapa)
+                nueva_direccion = st.text_input(
+                    "Nueva Dirección",
+                    value=delivery_data["direccion"],
                     key=f"reprogramar_direccion_input_{delivery_data['id']}"
                 )
-
-                # Buscar sugerencias
-                sugerencias = []
-                if direccion_input and direccion_input != st.session_state.reprogramar_direccion:
-                    sugerencias = obtener_sugerencias_direccion(direccion_input)
-    
-                direccion_seleccionada = st.selectbox(
-                    "Sugerencias de Direcciones:",
-                    ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
-                    key=f"reprogramar_sugerencias_{delivery_data['id']}"
-                )
-
-                # Actualizar al seleccionar sugerencia
-                if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
-                    for sug in sugerencias:
-                        if direccion_seleccionada == sug["display_name"]:
-                            st.session_state.reprogramar_lat = float(sug["lat"])
-                            st.session_state.reprogramar_lon = float(sug["lon"])
-                            st.session_state.reprogramar_direccion = direccion_seleccionada
-                
-                            # Actualizar mapa y marcador
-                            st.session_state.reprogramar_mapa = folium.Map(
-                                location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                                zoom_start=15
-                            )
-                            st.session_state.reprogramar_marker = folium.Marker(
-                                [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                                tooltip="Punto seleccionado"
-                            ).add_to(st.session_state.reprogramar_mapa)
-                            break
-
-                # Renderizar mapa
-                mapa = st_folium(
-                    st.session_state.reprogramar_mapa,
-                    width=700,
-                    height=500,
-                    key=f"reprogramar_mapa_{delivery_data['id']}"
-                )
-
-                # Actualizar al hacer clic
-                if mapa.get("last_clicked"):
-                    st.session_state.reprogramar_lat = mapa["last_clicked"]["lat"]
-                    st.session_state.reprogramar_lon = mapa["last_clicked"]["lng"]
-                    st.session_state.reprogramar_direccion = obtener_direccion_desde_coordenadas(
-                        st.session_state.reprogramar_lat, st.session_state.reprogramar_lon
-                    )
-        
-                    # Actualizar mapa y marcador
-                    st.session_state.reprogramar_mapa = folium.Map(
-                        location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                        zoom_start=15
-                    )
-                    st.session_state.reprogramar_marker = folium.Marker(
-                        [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                        tooltip="Punto seleccionado"
-                    ).add_to(st.session_state.reprogramar_mapa)
-                    st.rerun()
-
-                # Mostrar dirección final
-                st.markdown(f"""
-                    <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
-                        <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-                        <p style='color: #555; font-size: 16px;'>{st.session_state.reprogramar_direccion}</p>
-                    </div>
-                """, unsafe_allow_html=True)
 
                 # Selector de fecha
                 min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
                 nueva_fecha = st.date_input(
                     "Nueva fecha:",
                     value=min_date + timedelta(days=1),
-                    min_value=min_date
+                    min_value=min_date,
+                    key=f"reprogramar_fecha_{delivery_data['id']}"
                 )
 
                 # Botón para guardar cambios
-                if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}"):
+                if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}", key=f"guardar_cambios_{delivery_data['id']}"):
                     try:
                         updates = {
                             "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
-                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": st.session_state.reprogramar_direccion,
-                            "coordenadas_recojo" if delivery_data["operacion"] == "Recojo" else "coordenadas_entrega": {
-                                "lat": st.session_state.reprogramar_lat,
-                                "lon": st.session_state.reprogramar_lon
-                            }
+                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": nueva_direccion,
+                            # No actualizamos coordenadas, ya que no usamos mapa
                         }
             
                         db.collection('recogidas').document(delivery_data["id"]).update(updates)
