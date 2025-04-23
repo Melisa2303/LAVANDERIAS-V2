@@ -768,24 +768,79 @@ def datos_ruta():
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
 
         # --- Mapa de Ruta ---
-        puntos_validos = [item["coordenadas"] for item in datos if item.get("coordenadas")]
+        puntos_validos = [
+            item["coordenadas"] for item in datos
+            if item.get("coordenadas") and isinstance(item["coordenadas"], dict)
+            and "lat" in item["coordenadas"] and "lon" in item["coordenadas"]
+        ]
         if puntos_validos:
+            # Calcular el centro del mapa
             centro = {
                 "lat": sum(p["lat"] for p in puntos_validos) / len(puntos_validos),
                 "lon": sum(p["lon"] for p in puntos_validos) / len(puntos_validos)
             }
             
+            # Crear el mapa base
             m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
+
+            # Añadir marcadores para cada punto
             for item in datos:
-                if item.get("coordenadas"):
+                if item.get("coordenadas") and isinstance(item["coordenadas"], dict):
                     nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
                     folium.Marker(
                         [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
                         popup=f"{nombre} - {item['operacion']}",
                         icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
                     ).add_to(m)
-            
+
+            # Trazar la ruta entre los puntos usando Google Maps Directions API
+            if len(puntos_validos) >= 2 and GOOGLE_MAPS_API_KEY:
+                try:
+                    # Preparar la solicitud a la API de Directions
+                    origin = f"{puntos_validos[0]['lat']},{puntos_validos[0]['lon']}"
+                    destination = f"{puntos_validos[-1]['lat']},{puntos_validos[-1]['lon']}"
+                    waypoints = "|".join(
+                        [f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]]
+                    ) if len(puntos_validos) > 2 else ""
+                    
+                    url = (
+                        f"https://maps.googleapis.com/maps/api/directions/json?"
+                        f"origin={origin}&destination={destination}"
+                        f"&waypoints={waypoints}"
+                        f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
+                    )
+                    
+                    response = requests.get(url)
+                    route_data = response.json()
+
+                    if route_data.get("status") == "OK" and route_data.get("routes"):
+                        # Decodificar la polilínea de la ruta
+                        polyline_points = decode_polyline(
+                            route_data["routes"][0]["overview_polyline"]["points"]
+                        )
+                        # Convertir a formato para Folium
+                        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
+                        
+                        # Añadir la polilínea al mapa
+                        folium.PolyLine(
+                            route_coords,
+                            color="#0066cc",
+                            weight=6,
+                            opacity=0.8,
+                            tooltip="Ruta vehicular"
+                        ).add_to(m)
+                    else:
+                        st.warning("No se pudo obtener la ruta de Google Maps. Mostrando solo los puntos.")
+                except Exception as e:
+                    st.error(f"Error al obtener la ruta: {e}")
+                    st.warning("Mostrando solo los puntos sin ruta.")
+            elif not GOOGLE_MAPS_API_KEY:
+                st.warning("API Key de Google Maps no configurada. No se puede trazar la ruta.")
+
+            # Mostrar el mapa en Streamlit
             st_folium(m, width=700, height=500)
+        else:
+            st.info("No hay puntos válidos para mostrar en el mapa.")
 
         # --- Gestión de Deliveries ---
         deliveries = [item for item in datos if item["tipo_solicitud"] == "Cliente Delivery"]
@@ -847,10 +902,10 @@ def datos_ruta():
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-            # --- Sección de Dirección y Mapa (Versión idéntica a Solicitar Recogida) ---
+            # --- Sección de Dirección y Mapa ---
             st.markdown(f"### 📅 Reprogramación de {delivery_data['operacion']}")
             with st.expander("Cambiar fecha y ubicación", expanded=True):
-                # Inicialización independiente (usando prefijo "reprogramar_" en lugar de "delivery_")
+                # Inicialización independiente
                 if "reprogramar_lat" not in st.session_state:
                     st.session_state.reprogramar_lat = delivery_data["coordenadas"]["lat"]
                     st.session_state.reprogramar_lon = delivery_data["coordenadas"]["lon"]
@@ -936,7 +991,7 @@ def datos_ruta():
                     </div>
                 """, unsafe_allow_html=True)
 
-                # Selector de fecha (manteniendo tu lógica original)
+                # Selector de fecha
                 min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
                 nueva_fecha = st.date_input(
                     "Nueva fecha:",
