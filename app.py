@@ -487,30 +487,6 @@ def ingresar_sucursal():
         except Exception as e:
             st.error(f"Error al guardar: {e}")
               
-def initialize_session_state():
-    """Inicializa variables de estado para evitar errores de acceso."""
-    if "delivery_lat" not in st.session_state:
-        st.session_state.delivery_lat = -16.409047
-    if "delivery_lon" not in st.session_state:
-        st.session_state.delivery_lon = -71.537451
-    if "delivery_direccion" not in st.session_state:
-        st.session_state.delivery_direccion = "Arequipa, Perú"
-    if "delivery_mapa" not in st.session_state:
-        st.session_state.delivery_mapa = folium.Map(
-            location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
-            zoom_start=15
-        )
-    if "delivery_marker" not in st.session_state:
-        st.session_state.delivery_marker = folium.Marker(
-            [st.session_state.delivery_lat, st.session_state.delivery_lon],
-            tooltip="Punto seleccionado"
-        ).add_to(st.session_state.delivery_mapa)
-
-# Llamar a la inicialización al inicio
-initialize_session_state()
-
-# ... (resto de las importaciones y definiciones de funciones) ...
-
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -552,12 +528,16 @@ def solicitar_recogida():
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "sucursal": nombre_sucursal,
+                # Campos para recogida
                 "direccion_recojo": direccion,
                 "coordenadas_recojo": {"lat": lat, "lon": lon},
+                # Campos para entrega (iguales por defecto)
                 "direccion_entrega": direccion,
                 "coordenadas_entrega": {"lat": lat, "lon": lon},
+                # Fechas
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+                # Hora dejada en blanco intencionalmente
             }
             
             try:
@@ -567,6 +547,21 @@ def solicitar_recogida():
                 st.error(f"Error al guardar: {e}")
 
     elif tipo_solicitud == "Cliente Delivery":
+        # Configuración inicial del mapa
+        # Inicialización independiente
+        if "delivery_lat" not in st.session_state:
+            st.session_state.delivery_lat = -16.409047
+            st.session_state.delivery_lon = -71.537451
+            st.session_state.delivery_direccion = "Arequipa, Perú"
+            st.session_state.delivery_mapa = folium.Map(
+                location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+                zoom_start=15
+            )
+            st.session_state.delivery_marker = folium.Marker(
+                [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                tooltip="Punto seleccionado"
+            ).add_to(st.session_state.delivery_mapa)
+
         # Widgets de entrada
         col1, col2 = st.columns(2)
         with col1:
@@ -662,28 +657,27 @@ def solicitar_recogida():
                 "tipo_solicitud": tipo_solicitud,
                 "nombre_cliente": nombre_cliente,
                 "telefono": telefono,
-                "direccion_recojo": st.session_state.delivery_direccion,
+                # Campos para recogida
+                "direccion_recojo": st.session_state.delivery_data["direccion"],
                 "coordenadas_recojo": {
-                    "lat": st.session_state.delivery_lat,
-                    "lon": st.session_state.delivery_lon
+                    "lat": st.session_state.delivery_data["lat"],
+                    "lon": st.session_state.delivery_data["lon"]
                 },
-                "direccion_entrega": st.session_state.delivery_direccion,
+                # Campos para entrega (iguales por defecto)
+                "direccion_entrega": st.session_state.delivery_data["direccion"],
                 "coordenadas_entrega": {
-                    "lat": st.session_state.delivery_lat,
-                    "lon": st.session_state.delivery_lon
+                    "lat": st.session_state.delivery_data["lat"],
+                    "lon": st.session_state.delivery_data["lon"]
                 },
+                # Fechas
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+                # Hora dejada en blanco intencionalmente
             }
 
             try:
                 db.collection('recogidas').add(solicitud)
                 st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
-                # Limpiar estado después de guardar
-                st.session_state.delivery_lat = -16.409047
-                st.session_state.delivery_lon = -71.537451
-                st.session_state.delivery_direccion = "Arequipa, Perú"
-                st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
@@ -1517,86 +1511,57 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     return inicio + puntos_intermedios_optimizados + fin
     
 def mostrar_ruta_en_mapa(ruta_completa):
-    """Muestra la ruta real por calles usando Google Maps, incluyendo todos los puntos."""
+    """Versión que muestra la ruta real por calles usando Google Maps"""
     try:
-        # Depuración: Mostrar la ruta completa recibida
-        st.write("Ruta completa recibida:", ruta_completa)
-
         if not ruta_completa or len(ruta_completa) < 2:
             st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
             return None
 
-        # Filtrar puntos con coordenadas válidas
-        puntos_validos = []
-        for p in ruta_completa:
-            if ('lat' in p and 'lon' in p and 
-                isinstance(p.get('lat'), (int, float)) and 
-                isinstance(p.get('lon'), (int, float)) and
-                p.get('lat') is not None and p.get('lon') is not None):
-                puntos_validos.append(p)
-            else:
-                st.warning(f"Punto inválido descartado: {p.get('direccion', 'Sin dirección')} (lat: {p.get('lat')}, lon: {p.get('lon')})")
-
-        # Depuración: Mostrar puntos válidos
-        st.write("Puntos válidos:", puntos_validos)
-
+        # Validar puntos con coordenadas
+        puntos_validos = [p for p in ruta_completa if 'lat' in p and 'lon' in p]
         if len(puntos_validos) < 2:
-            st.error(f"No hay suficientes puntos válidos para generar la ruta. Puntos encontrados: {len(puntos_validos)}")
+            st.error("No hay suficientes puntos con coordenadas válidas")
             return None
 
-        # Crear mapa centrado en el primer punto válido
-        m = folium.Map(
-            location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
-            zoom_start=13,  # Reducido para mostrar más puntos
-            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-            attr='OpenStreetMap'
-        )
-
         # Obtener geometría de la ruta real desde Google Maps
-        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]]) if len(puntos_validos) > 2 else ""
+        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos_validos[1:-1]])
         url = f"https://maps.googleapis.com/maps/api/directions/json?" \
               f"origin={puntos_validos[0]['lat']},{puntos_validos[0]['lon']}" \
               f"&destination={puntos_validos[-1]['lat']},{puntos_validos[-1]['lon']}" \
-              f"{'&waypoints=optimize:false|' + waypoints if waypoints else ''}" \
+              f"&waypoints=optimize:true|{waypoints}" \
               f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-
-        # Depuración: Mostrar URL de la solicitud
-        st.write("URL de Google Maps API:", url)
 
         response = requests.get(url)
         route_data = response.json()
 
-        if route_data.get('status') != 'OK':
-            st.error(f"Error al obtener ruta de Google Maps: {route_data.get('error_message', 'Código: ' + route_data['status'])}")
-            # Continuar mostrando los marcadores aunque la ruta falle
-        else:
-            # Añadir ruta real
-            if 'routes' in route_data and route_data['routes']:
-                points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
-                folium.PolyLine(
-                    points,
-                    color='#0066cc',
-                    weight=6,
-                    opacity=0.8,
-                    tooltip="Ruta vehicular"
-                ).add_to(m)
-            else:
-                st.warning("No se encontraron rutas en los datos de Google Maps")
+        if route_data['status'] != 'OK':
+            st.error("Error al obtener ruta de Google Maps")
+            return None
 
-        # Añadir marcadores numerados para TODOS los puntos
+        # Crear mapa centrado
+        m = folium.Map(
+            location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
+            zoom_start=14,
+            tiles='https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            attr='OpenStreetMap'
+        )
+
+        # Añadir ruta real
+        if 'routes' in route_data and route_data['routes']:
+            points = [(p['lat'], p['lng']) for p in decode_polyline(route_data['routes'][0]['overview_polyline']['points'])]
+            folium.PolyLine(
+                points,
+                color='#0066cc',
+                weight=6,
+                opacity=0.8,
+                tooltip="Ruta vehicular"
+            ).add_to(m)
+
+        # Añadir marcadores numerados
         for i, punto in enumerate(puntos_validos):
-            # Determinar el nombre para el popup
-            nombre = punto.get('nombre', punto.get('direccion', 'Sin nombre'))
-            popup_text = f"<b>Punto {i+1}</b><br>{nombre}<br>Tipo: {punto.get('tipo', 'Desconocido').capitalize()}"
-            if punto.get('hora'):
-                popup_text += f"<br>Hora: {punto['hora']}"
-            if punto.get('id'):
-                popup_text += f"<br>ID: {punto['id']}"
-
-            # Añadir marcador
             folium.Marker(
                 [punto['lat'], punto['lon']],
-                popup=popup_text,
+                popup=f"<b>Punto {i+1}</b><br>{punto.get('nombre', '')}",
                 icon=folium.Icon(
                     color='red' if i == 0 or i == len(puntos_validos)-1 else 'blue',
                     icon='flag' if i == 0 else ('home' if i == len(puntos_validos)-1 else 'star'),
@@ -1604,7 +1569,7 @@ def mostrar_ruta_en_mapa(ruta_completa):
                 )
             ).add_to(m)
 
-            # Añadir número de secuencia
+            # Número de secuencia
             folium.CircleMarker(
                 [punto['lat'], punto['lon']],
                 radius=10,
@@ -1615,11 +1580,6 @@ def mostrar_ruta_en_mapa(ruta_completa):
             ).add_child(folium.DivIcon(
                 html=f'<div style="color:white;font-weight:bold;text-align:center">{i+1}</div>'
             )).add_to(m)
-
-        # Ajustar el mapa para mostrar todos los puntos
-        if puntos_validos:
-            bounds = [[p['lat'], p['lon']] for p in puntos_validos]
-            m.fit_bounds(bounds)
 
         return m
 
@@ -1740,10 +1700,6 @@ def ver_ruta_optimizada():
         ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
         st.write("Ruta completa:", ruta_completa)  # Depuración
 
-        # 6. Validar orden optimizado
-        orden_optimizado = [p.get('id', p.get('direccion')) for p in puntos_optimizados]
-        st.write("Orden optimizado:", orden_optimizado)  # Depuración adicional
-
         if puntos_optimizados == puntos_dia:
             st.warning("⚠️ El algoritmo no cambió el orden original. Posibles causas:")
             st.write("- Pocos puntos de entrega")
@@ -1752,27 +1708,7 @@ def ver_ruta_optimizada():
         else:
             st.success("¡Ruta optimizada correctamente!")
         
-        # 7. Calcular distancia y tiempo total
-        total_distance = 0
-        total_time = 0
-        for i in range(len(ruta_completa) - 1):
-            p1 = ruta_completa[i]
-            p2 = ruta_completa[i + 1]
-            url = f"https://maps.googleapis.com/maps/api/directions/json?" \
-                  f"origin={p1['lat']},{p1['lon']}" \
-                  f"&destination={p2['lat']},{p2['lon']}" \
-                  f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-            response = requests.get(url)
-            data = response.json()
-            if data.get('status') == 'OK' and data['routes']:
-                leg = data['routes'][0]['legs'][0]
-                total_distance += leg['distance']['value']  # Metros
-                total_time += leg['duration']['value']  # Segundos
-        
-        st.write(f"Distancia total: {total_distance / 1000:.2f} km")
-        st.write(f"Tiempo total estimado: {total_time / 60:.2f} minutos")
-
-        # 8. Mostrar itinerario
+        # Mostrar itinerario
         with st.expander("📋 Itinerario de Ruta", expanded=True):
             df_ruta = pd.DataFrame([
                 {
@@ -1787,7 +1723,7 @@ def ver_ruta_optimizada():
             ])
             st.dataframe(df_ruta)
         
-        # 9. Mostrar mapa
+        # Mostrar mapa
         mapa = mostrar_ruta_en_mapa(ruta_completa)
         if mapa:
             st_folium(mapa, width=700, height=500)
