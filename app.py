@@ -1566,7 +1566,7 @@ def ver_ruta_optimizada():
     with col3:
         algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3"])
 
-    # --- Obtener datos (mismo código que en datos_ruta) ---
+    # --- Obtener datos ---
     @st.cache_data(ttl=300)
     def cargar_ruta(fecha, tipo):
         try:
@@ -1619,33 +1619,68 @@ def ver_ruta_optimizada():
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
     if datos:
-        # --- Optimizar Ruta ---
-        puntos_validos = [
-            item for item in datos
-            if item.get("coordenadas") and isinstance(item["coordenadas"], dict)
-            and "lat" in item["coordenadas"] and "lon" in item["coordenadas"]
-        ]
+        # --- Validar puntos con coordenadas ---
+        puntos_validos = []
+        for item in datos:
+            coords = item.get("coordenadas")
+            try:
+                # Verificar que coordenadas sea un diccionario con lat y lon válidos
+                if isinstance(coords, dict) and "lat" in coords and "lon" in coords:
+                    # Convertir a float y validar rangos
+                    lat = float(coords["lat"])
+                    lon = float(coords["lon"])
+                    if -90 <= lat <= 90 and -180 <= lon <= 180:
+                        puntos_validos.append(item)
+                    else:
+                        st.warning(f"Punto descartado (coordenadas fuera de rango): {item.get('direccion', 'N/A')}")
+                else:
+                    st.warning(f"Punto descartado (coordenadas inválidas): {item.get('direccion', 'N/A')}")
+            except (ValueError, TypeError) as e:
+                st.warning(f"Punto descartado (error en coordenadas): {item.get('direccion', 'N/A')} - Error: {e}")
+
         puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
 
-        # Seleccionar algoritmo
-        if algoritmo == "Algoritmo 1":
-            puntos_optimizados = optimizar_ruta_algoritmo1(
-                puntos_validos,
-                puntos_con_hora,
-                considerar_trafico=True
-            )
-        elif algoritmo == "Algoritmo 2":
-            puntos_optimizados = optimizar_ruta_algoritmo2(
-                puntos_validos,
-                puntos_con_hora,
-                considerar_trafico=True
-            )
-        else:
-            puntos_optimizados = optimizar_ruta_algoritmo3(
-                puntos_validos,
-                puntos_con_hora,
-                considerar_trafico=True
-            )
+        if not puntos_validos:
+            st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
+            # Mostrar tabla con datos originales
+            tabla_data = []
+            for idx, item in enumerate(datos):
+                nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+                tabla_data.append({
+                    "Orden": idx + 1,
+                    "Operación": item["operacion"],
+                    "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
+                    "Dirección": item["direccion"],
+                    "Teléfono": item["telefono"],
+                    "Hora": item["hora"] if item["hora"] else "Sin hora",
+                })
+            df_tabla = pd.DataFrame(tabla_data)
+            st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
+            return
+
+        # --- Optimizar Ruta ---
+        try:
+            if algoritmo == "Algoritmo 1":
+                puntos_optimizados = optimizar_ruta_algoritmo1(
+                    puntos_validos,
+                    puntos_con_hora,
+                    considerar_trafico=True
+                )
+            elif algoritmo == "Algoritmo 2":
+                puntos_optimizados = optimizar_ruta_algoritmo2(
+                    puntos_validos,
+                    puntos_con_hora,
+                    considerar_trafico=True
+                )
+            else:
+                puntos_optimizados = optimizar_ruta_algoritmo3(
+                    puntos_validos,
+                    puntos_con_hora,
+                    considerar_trafico=True
+                )
+        except Exception as e:
+            st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
+            puntos_optimizados = puntos_validos  # Usar orden original como respaldo
 
         # --- Mostrar Tabla Optimizada ---
         tabla_data = []
