@@ -487,30 +487,6 @@ def ingresar_sucursal():
         except Exception as e:
             st.error(f"Error al guardar: {e}")
               
-def initialize_session_state():
-    """Inicializa variables de estado para evitar errores de acceso."""
-    if "delivery_lat" not in st.session_state:
-        st.session_state.delivery_lat = -16.409047
-    if "delivery_lon" not in st.session_state:
-        st.session_state.delivery_lon = -71.537451
-    if "delivery_direccion" not in st.session_state:
-        st.session_state.delivery_direccion = "Arequipa, Perú"
-    if "delivery_mapa" not in st.session_state:
-        st.session_state.delivery_mapa = folium.Map(
-            location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
-            zoom_start=15
-        )
-    if "delivery_marker" not in st.session_state:
-        st.session_state.delivery_marker = folium.Marker(
-            [st.session_state.delivery_lat, st.session_state.delivery_lon],
-            tooltip="Punto seleccionado"
-        ).add_to(st.session_state.delivery_mapa)
-
-# Llamar a la inicialización al inicio
-initialize_session_state()
-
-# ... (resto de las importaciones y definiciones de funciones) ...
-
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -552,12 +528,16 @@ def solicitar_recogida():
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
                 "sucursal": nombre_sucursal,
+                # Campos para recogida
                 "direccion_recojo": direccion,
                 "coordenadas_recojo": {"lat": lat, "lon": lon},
+                # Campos para entrega (iguales por defecto)
                 "direccion_entrega": direccion,
                 "coordenadas_entrega": {"lat": lat, "lon": lon},
+                # Fechas
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+                # Hora dejada en blanco intencionalmente
             }
             
             try:
@@ -567,6 +547,21 @@ def solicitar_recogida():
                 st.error(f"Error al guardar: {e}")
 
     elif tipo_solicitud == "Cliente Delivery":
+        # Configuración inicial del mapa
+        # Inicialización independiente
+        if "delivery_lat" not in st.session_state:
+            st.session_state.delivery_lat = -16.409047
+            st.session_state.delivery_lon = -71.537451
+            st.session_state.delivery_direccion = "Arequipa, Perú"
+            st.session_state.delivery_mapa = folium.Map(
+                location=[st.session_state.delivery_lat, st.session_state.delivery_lon],
+                zoom_start=15
+            )
+            st.session_state.delivery_marker = folium.Marker(
+                [st.session_state.delivery_lat, st.session_state.delivery_lon],
+                tooltip="Punto seleccionado"
+            ).add_to(st.session_state.delivery_mapa)
+
         # Widgets de entrada
         col1, col2 = st.columns(2)
         with col1:
@@ -662,28 +657,27 @@ def solicitar_recogida():
                 "tipo_solicitud": tipo_solicitud,
                 "nombre_cliente": nombre_cliente,
                 "telefono": telefono,
-                "direccion_recojo": st.session_state.delivery_direccion,
+                # Campos para recogida
+                "direccion_recojo": st.session_state.delivery_data["direccion"],
                 "coordenadas_recojo": {
-                    "lat": st.session_state.delivery_lat,
-                    "lon": st.session_state.delivery_lon
+                    "lat": st.session_state.delivery_data["lat"],
+                    "lon": st.session_state.delivery_data["lon"]
                 },
-                "direccion_entrega": st.session_state.delivery_direccion,
+                # Campos para entrega (iguales por defecto)
+                "direccion_entrega": st.session_state.delivery_data["direccion"],
                 "coordenadas_entrega": {
-                    "lat": st.session_state.delivery_lat,
-                    "lon": st.session_state.delivery_lon
+                    "lat": st.session_state.delivery_data["lat"],
+                    "lon": st.session_state.delivery_data["lon"]
                 },
+                # Fechas
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d"),
+                # Hora dejada en blanco intencionalmente
             }
 
             try:
                 db.collection('recogidas').add(solicitud)
                 st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
-                # Limpiar estado después de guardar
-                st.session_state.delivery_lat = -16.409047
-                st.session_state.delivery_lon = -71.537451
-                st.session_state.delivery_direccion = "Arequipa, Perú"
-                st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
@@ -758,25 +752,11 @@ def datos_ruta():
 
     # --- Mostrar Tabla ---
     if datos:
-        # Optimizar los puntos para la tabla
-        puntos_validos = [
-            item for item in datos
-            if item.get("coordenadas") and isinstance(item["coordenadas"], dict)
-            and "lat" in item["coordenadas"] and "lon" in item["coordenadas"]
-        ]
-        puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
-        puntos_optimizados = optimizar_ruta_algoritmo1(
-            puntos_validos,
-            puntos_con_hora,
-            considerar_trafico=True
-        ) if puntos_validos else []
-
-        # Crear datos para la tabla usando el orden optimizado
         tabla_data = []
-        for idx, item in enumerate(puntos_optimizados if puntos_optimizados else datos):
+        for item in datos:
             nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+            
             tabla_data.append({
-                "Orden": idx + 1,
                 "Operación": item["operacion"],
                 "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
                 "Dirección": item["direccion"],
@@ -786,6 +766,26 @@ def datos_ruta():
 
         df_tabla = pd.DataFrame(tabla_data)
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
+
+        # --- Mapa de Ruta ---
+        puntos_validos = [item["coordenadas"] for item in datos if item.get("coordenadas")]
+        if puntos_validos:
+            centro = {
+                "lat": sum(p["lat"] for p in puntos_validos) / len(puntos_validos),
+                "lon": sum(p["lon"] for p in puntos_validos) / len(puntos_validos)
+            }
+            
+            m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
+            for item in datos:
+                if item.get("coordenadas"):
+                    nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+                    folium.Marker(
+                        [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
+                        popup=f"{nombre} - {item['operacion']}",
+                        icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
+                    ).add_to(m)
+            
+            st_folium(m, width=700, height=500)
 
         # --- Gestión de Deliveries ---
         deliveries = [item for item in datos if item["tipo_solicitud"] == "Cliente Delivery"]
@@ -847,32 +847,113 @@ def datos_ruta():
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-            # --- Sección de Reprogramación (sin mapa) ---
+            # --- Sección de Dirección y Mapa (Versión idéntica a Solicitar Recogida) ---
             st.markdown(f"### 📅 Reprogramación de {delivery_data['operacion']}")
-            with st.expander("Cambiar fecha y dirección", expanded=True):
-                # Campo de dirección (solo texto, sin mapa)
-                nueva_direccion = st.text_input(
-                    "Nueva Dirección",
-                    value=delivery_data["direccion"],
+            with st.expander("Cambiar fecha y ubicación", expanded=True):
+                # Inicialización independiente (usando prefijo "reprogramar_" en lugar de "delivery_")
+                if "reprogramar_lat" not in st.session_state:
+                    st.session_state.reprogramar_lat = delivery_data["coordenadas"]["lat"]
+                    st.session_state.reprogramar_lon = delivery_data["coordenadas"]["lon"]
+                    st.session_state.reprogramar_direccion = delivery_data["direccion"]
+                    st.session_state.reprogramar_mapa = folium.Map(
+                        location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                        zoom_start=15
+                    )
+                    st.session_state.reprogramar_marker = folium.Marker(
+                        [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                        tooltip="Punto seleccionado"        
+                    ).add_to(st.session_state.reprogramar_mapa)
+
+                # Campo de dirección
+                direccion_input = st.text_input(
+                    "Dirección",
+                    value=st.session_state.reprogramar_direccion,
                     key=f"reprogramar_direccion_input_{delivery_data['id']}"
                 )
 
-                # Selector de fecha
+                # Buscar sugerencias
+                sugerencias = []
+                if direccion_input and direccion_input != st.session_state.reprogramar_direccion:
+                    sugerencias = obtener_sugerencias_direccion(direccion_input)
+    
+                direccion_seleccionada = st.selectbox(
+                    "Sugerencias de Direcciones:",
+                    ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
+                    key=f"reprogramar_sugerencias_{delivery_data['id']}"
+                )
+
+                # Actualizar al seleccionar sugerencia
+                if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
+                    for sug in sugerencias:
+                        if direccion_seleccionada == sug["display_name"]:
+                            st.session_state.reprogramar_lat = float(sug["lat"])
+                            st.session_state.reprogramar_lon = float(sug["lon"])
+                            st.session_state.reprogramar_direccion = direccion_seleccionada
+                
+                            # Actualizar mapa y marcador
+                            st.session_state.reprogramar_mapa = folium.Map(
+                                location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                                zoom_start=15
+                            )
+                            st.session_state.reprogramar_marker = folium.Marker(
+                                [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                                tooltip="Punto seleccionado"
+                            ).add_to(st.session_state.reprogramar_mapa)
+                            break
+
+                # Renderizar mapa
+                mapa = st_folium(
+                    st.session_state.reprogramar_mapa,
+                    width=700,
+                    height=500,
+                    key=f"reprogramar_mapa_{delivery_data['id']}"
+                )
+
+                # Actualizar al hacer clic
+                if mapa.get("last_clicked"):
+                    st.session_state.reprogramar_lat = mapa["last_clicked"]["lat"]
+                    st.session_state.reprogramar_lon = mapa["last_clicked"]["lng"]
+                    st.session_state.reprogramar_direccion = obtener_direccion_desde_coordenadas(
+                        st.session_state.reprogramar_lat, st.session_state.reprogramar_lon
+                    )
+        
+                    # Actualizar mapa y marcador
+                    st.session_state.reprogramar_mapa = folium.Map(
+                        location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                        zoom_start=15
+                    )
+                    st.session_state.reprogramar_marker = folium.Marker(
+                        [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                        tooltip="Punto seleccionado"
+                    ).add_to(st.session_state.reprogramar_mapa)
+                    st.rerun()
+
+                # Mostrar dirección final
+                st.markdown(f"""
+                    <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
+                        <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
+                        <p style='color: #555; font-size: 16px;'>{st.session_state.reprogramar_direccion}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                # Selector de fecha (manteniendo tu lógica original)
                 min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
                 nueva_fecha = st.date_input(
                     "Nueva fecha:",
                     value=min_date + timedelta(days=1),
-                    min_value=min_date,
-                    key=f"reprogramar_fecha_{delivery_data['id']}"
+                    min_value=min_date
                 )
 
                 # Botón para guardar cambios
-                if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}", key=f"guardar_cambios_{delivery_data['id']}"):
+                if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}"):
                     try:
                         updates = {
                             "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
-                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": nueva_direccion,
-                            # No actualizamos coordenadas, ya que no usamos mapa
+                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": st.session_state.reprogramar_direccion,
+                            "coordenadas_recojo" if delivery_data["operacion"] == "Recojo" else "coordenadas_entrega": {
+                                "lat": st.session_state.reprogramar_lat,
+                                "lon": st.session_state.reprogramar_lon
+                            }
                         }
             
                         db.collection('recogidas').document(delivery_data["id"]).update(updates)
@@ -1560,234 +1641,95 @@ def mostrar_metricas(ruta, time_matrix):
                 st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
 def ver_ruta_optimizada():
-    # --- Configuración inicial ---
-    st.title("🚚 Ruta Optimizada")
-    
-    # --- Filtros ---
-    col1, col2, col3 = st.columns(3)
+    # Configuración de la página
+    col1, col2 = st.columns([1, 3])
     with col1:
-        fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
-        tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
-    with col3:
-        algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3"])
-
-    # --- Obtener datos ---
-    @st.cache_data(ttl=300)
-    def cargar_ruta(fecha, tipo):
-        try:
-            query = db.collection('recogidas')
-            docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
-
-            if tipo != "Todos":
-                tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-                docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
-
-            datos = []
-            for doc in docs:
-                data = doc.to_dict()
-                doc_id = doc.id
-                
-                if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
-                    datos.append({
-                        "id": doc_id,
-                        "operacion": "Recojo",
-                        "nombre_cliente": data.get("nombre_cliente"),
-                        "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_recojo", "N/A"),
-                        "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_recojo", ""),
-                        "tipo_solicitud": data.get("tipo_solicitud"),
-                        "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
-                        "fecha": data.get("fecha_recojo"),
-                    })
-                
-                if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
-                    datos.append({
-                        "id": doc_id,
-                        "operacion": "Entrega",
-                        "nombre_cliente": data.get("nombre_cliente"),
-                        "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_entrega", "N/A"),
-                        "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_entrega", ""),
-                        "tipo_solicitud": data.get("tipo_solicitud"),
-                        "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
-                        "fecha": data.get("fecha_entrega"),
-                    })
-            
-            return datos
-        except Exception as e:
-            st.error(f"Error al cargar datos: {e}")
-            return []
-
-    datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
-
-    if datos:
-        # --- Validar puntos con coordenadas ---
-        puntos_validos = []
-        for item in datos:
-            coords = item.get("coordenadas")
-            try:
-                # Verificar que coordenadas sea un diccionario con lat y lon válidos
-                if isinstance(coords, dict) and "lat" in coords and "lon" in coords:
-                    # Convertir a float y validar rangos
-                    lat = float(coords["lat"])
-                    lon = float(coords["lon"])
-                    if -90 <= lat <= 90 and -180 <= lon <= 180:
-                        puntos_validos.append(item)
-                    else:
-                        st.warning(f"Punto descartado (coordenadas fuera de rango): {item.get('direccion', 'N/A')}")
-                else:
-                    st.warning(f"Punto descartado (coordenadas inválidas): {item.get('direccion', 'N/A')}")
-            except (ValueError, TypeError) as e:
-                st.warning(f"Punto descartado (error en coordenadas): {item.get('direccion', 'N/A')} - Error: {e}")
-
-        puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
-
-        if not puntos_validos:
-            st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
-            # Mostrar tabla con datos originales
-            tabla_data = []
-            for idx, item in enumerate(datos):
-                nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-                tabla_data.append({
-                    "Orden": idx + 1,
-                    "Operación": item["operacion"],
-                    "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
-                    "Dirección": item["direccion"],
-                    "Teléfono": item["telefono"],
-                    "Hora": item["hora"] if item["hora"] else "Sin hora",
-                })
-            df_tabla = pd.DataFrame(tabla_data)
-            st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
-            return
-
-        # --- Optimizar Ruta ---
-        try:
-            if algoritmo == "Algoritmo 1":
-                puntos_optimizados = optimizar_ruta_algoritmo1(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            elif algoritmo == "Algoritmo 2":
-                puntos_optimizados = optimizar_ruta_algoritmo2(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            else:
-                puntos_optimizados = optimizar_ruta_algoritmo3(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-        except Exception as e:
-            st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
-            puntos_optimizados = puntos_validos  # Usar orden original como respaldo
-
-        # --- Mostrar Tabla Optimizada ---
-        tabla_data = []
-        for idx, item in enumerate(puntos_optimizados):
-            nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-            tabla_data.append({
-                "Orden": idx + 1,
-                "Operación": item["operacion"],
-                "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
-                "Dirección": item["direccion"],
-                "Teléfono": item["telefono"],
-                "Hora": item["hora"] if item["hora"] else "Sin hora",
-            })
-
-        df_tabla = pd.DataFrame(tabla_data)
-        st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
-
-        # --- Mapa de Ruta Optimizada ---
-        if puntos_optimizados:
-            # Calcular el centro del mapa
-            coords_optimizadas = [item["coordenadas"] for item in puntos_optimizados]
-            centro = {
-                "lat": sum(p["lat"] for p in coords_optimizadas) / len(coords_optimizadas),
-                "lon": sum(p["lon"] for p in coords_optimizadas) / len(coords_optimizadas)
-            }
-            
-            # Crear el mapa base
-            m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
-
-            # Añadir marcadores para cada punto en el orden optimizado
-            for idx, item in enumerate(puntos_optimizados):
-                if item.get("coordenadas") and isinstance(item["coordenadas"], dict):
-                    nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-                    folium.Marker(
-                        [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
-                        popup=f"{nombre} - {item['operacion']} (Orden: {idx+1})",
-                        icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
-                    ).add_to(m)
-
-            # Trazar la ruta entre los puntos optimizados usando Google Maps Directions API
-            if len(puntos_optimizados) >= 2 and GOOGLE_MAPS_API_KEY:
-                try:
-                    # Preparar la solicitud a la API de Directions
-                    origin = f"{coords_optimizadas[0]['lat']},{coords_optimizadas[0]['lon']}"
-                    destination = f"{coords_optimizadas[-1]['lat']},{coords_optimizadas[-1]['lon']}"
-                    waypoints = "|".join(
-                        [f"{p['lat']},{p['lon']}" for p in coords_optimizadas[1:-1]]
-                    ) if len(coords_optimizadas) > 2 else ""
-                    
-                    url = (
-                        f"https://maps.googleapis.com/maps/api/directions/json?"
-                        f"origin={origin}&destination={destination}"
-                        f"&waypoints={waypoints}"
-                        f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-                    )
-                    
-                    response = requests.get(url)
-                    route_data = response.json()
-
-                    if route_data.get("status") == "OK" and route_data.get("routes"):
-                        # Decodificar la polilínea de la ruta
-                        polyline_points = decode_polyline(
-                            route_data["routes"][0]["overview_polyline"]["points"]
-                        )
-                        # Convertir a formato para Folium
-                        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
-                        
-                        # Añadir la polilínea al mapa
-                        folium.PolyLine(
-                            route_coords,
-                            color="#0066cc",
-                            weight=6,
-                            opacity=0.8,
-                            tooltip="Ruta vehicular optimizada"
-                        ).add_to(m)
-                    else:
-                        st.warning("No se pudo obtener la ruta de Google Maps. Mostrando solo los puntos.")
-                except Exception as e:
-                    st.error(f"Error al obtener la ruta: {e}")
-                    st.warning("Mostrando solo los puntos sin ruta.")
-            elif not GOOGLE_MAPS_API_KEY:
-                st.warning("API Key de Google Maps no configurada. No se puede trazar la ruta.")
-
-            # Mostrar el mapa en Streamlit
-            st_folium(m, width=700, height=500)
-        else:
-            st.info("No hay puntos válidos para mostrar en el mapa.")
-
-        # --- Botón de Descarga ---
-        excel_buffer = BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df_tabla.to_excel(writer, index=False)
-        
-        st.download_button(
-            label="Descargar Excel",
-            data=excel_buffer.getvalue(),
-            file_name=f"ruta_optimizada_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+    
+    st.title("🚐 Ver Ruta Optimizada")
+    
+    # 1. Selección de fecha y activar tráfico
+    fecha_seleccionada = st.date_input("Seleccionar fecha de ruta", value=datetime.now().date())
+    
+    # 2. Controles en columnas (selector de algoritmo y tráfico)
+    col1, col2 = st.columns(2)
+    with col1:
+        algoritmo = st.selectbox(
+            "Seleccionar algoritmo de optimización",
+            options=[
+                "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
+                "Algoritmo 2: Google OR-Tools (LNS + GLS)",
+                "Algoritmo 3: Constraint Programming (CP-SAT)",
+                "Algoritmo 4: Large Neighborhood Search (LNS)"
+            ],
+            index=0
         )
-    else:
-        st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
+    with col2:
+        considerar_trafico = st.toggle(
+            "🚦 Considerar tráfico en tiempo real",
+            value=True,
+            help="Usa datos actuales de congestión vehicular para optimizar la ruta"
+        )
+    
+    # 3. Obtener puntos para esa fecha
+    puntos_dia = obtener_puntos_del_dia(fecha_seleccionada)
+    if not puntos_dia:
+        st.warning(f"No hay puntos programados para la fecha {fecha_seleccionada.strftime('%d/%m/%Y')}")
+        return
+    
+    st.write("Puntos del día:", puntos_dia)  # Depuración
+    
+    # 4. Optimizar según algoritmo seleccionado
+    puntos_con_hora = [p for p in puntos_dia if p.get('hora')]
+    
+    try:
+        if algoritmo.startswith("Algoritmo 1"):
+            puntos_optimizados = optimizar_ruta_algoritmo1(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
+        elif algoritmo.startswith("Algoritmo 2"):
+            puntos_optimizados = optimizar_ruta_algoritmo2(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
+        elif algoritmo.startswith("Algoritmo 3"):
+            puntos_optimizados = optimizar_ruta_algoritmo3(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
+        else:
+            puntos_optimizados = optimizar_ruta_algoritmo4(puntos_dia, puntos_con_hora, considerar_trafico=considerar_trafico)
+        
+        st.write("Puntos optimizados:", puntos_optimizados)  # Depuración
+        
+        # 5. Construir ruta completa
+        ruta_completa = construir_ruta_completa(PUNTOS_FIJOS, puntos_optimizados)
+        st.write("Ruta completa:", ruta_completa)  # Depuración
+
+        if puntos_optimizados == puntos_dia:
+            st.warning("⚠️ El algoritmo no cambió el orden original. Posibles causas:")
+            st.write("- Pocos puntos de entrega")
+            st.write("- Restricciones horarias muy estrictas")
+            st.write("- Matriz de tiempos simétrica")
+        else:
+            st.success("¡Ruta optimizada correctamente!")
+        
+        # Mostrar itinerario
+        with st.expander("📋 Itinerario de Ruta", expanded=True):
+            df_ruta = pd.DataFrame([
+                {
+                    "Orden": i+1,
+                    "Tipo": p['tipo'].capitalize(),
+                    "Nombre/Lugar": p.get('nombre', p.get('direccion', 'Sin nombre')),
+                    "Dirección": p.get('direccion', ''),
+                    "Hora": p.get('hora', 'Flexible'),
+                    "Tipo Punto": "Fijo" if 'orden' in p else "Programado"
+                }
+                for i, p in enumerate(ruta_completa)
+            ])
+            st.dataframe(df_ruta)
+        
+        # Mostrar mapa
+        mapa = mostrar_ruta_en_mapa(ruta_completa)
+        if mapa:
+            st_folium(mapa, width=700, height=500)
+    
+    except Exception as e:
+        st.error(f"Error al optimizar la ruta: {str(e)}")
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
