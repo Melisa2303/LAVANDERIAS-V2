@@ -1654,7 +1654,7 @@ def ver_ruta_optimizada():
         algoritmo = st.selectbox(
             "Seleccionar algoritmo de optimización",
             options=[
-                "Algoritmo 1: Path Cheapest Arc + Guided Local Search",
+                "Algoritmo 1: Google Maps Directions API",
                 "Algoritmo 2: Google OR-Tools (LNS + GLS)",
                 "Algoritmo 3: Constraint Programming (CP-SAT)",
                 "Algoritmo 4: Large Neighborhood Search (LNS)"
