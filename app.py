@@ -1291,7 +1291,6 @@ def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_tr
             return puntos_intermedios
             
     except Exception as e:
-        st.error(f"Error en algoritmo 2: {str(e)}")
         return puntos_intermedios
 
 # Algoritmo 3: CP-SAT
@@ -1356,7 +1355,6 @@ def optimizar_ruta_algoritmo3(puntos_intermedios, puntos_con_hora, considerar_tr
             return puntos_intermedios
             
     except Exception as e:
-        st.error(f"Error en algoritmo 3: {str(e)}")
         return puntos_intermedios
 
 # Algoritmo 4: Large Neighborhood Search (LNS)
@@ -1417,7 +1415,6 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, considerar_tr
             return puntos_intermedios
             
     except Exception as e:
-        st.error(f"Error en algoritmo 4: {str(e)}")
         return puntos_intermedios
 
 def obtener_puntos_del_dia(fecha):
