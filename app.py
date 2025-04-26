@@ -767,25 +767,26 @@ def datos_ruta():
         df_tabla = pd.DataFrame(tabla_data)
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
 
-        # --- Mapa de Ruta ---
-        puntos_validos = [item["coordenadas"] for item in datos if item.get("coordenadas")]
-        if puntos_validos:
-            centro = {
-                "lat": sum(p["lat"] for p in puntos_validos) / len(puntos_validos),
-                "lon": sum(p["lon"] for p in puntos_validos) / len(puntos_validos)
-            }
-            
-            m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
-            for item in datos:
-                if item.get("coordenadas"):
-                    nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-                    folium.Marker(
-                        [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
-                        popup=f"{nombre} - {item['operacion']}",
-                        icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
-                    ).add_to(m)
-            
-            st_folium(m, width=700, height=500)
+        # --- Mapa de Ruta ELIMINADO ---
+        # El código del mapa que estaba aquí ha sido eliminado para cumplir con la solicitud
+        # puntos_validos = [item["coordenadas"] for item in datos if item.get("coordenadas")]
+        # if puntos_validos:
+        #     centro = {
+        #         "lat": sum(p["lat"] for p in puntos_validos) / len(puntos_validos),
+        #         "lon": sum(p["lon"] for p in puntos_validos) / len(puntos_validos)
+        #     }
+        #     
+        #     m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
+        #     for item in datos:
+        #         if item.get("coordenadas"):
+        #             nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+        #             folium.Marker(
+        #                 [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
+        #                 popup=f"{nombre} - {item['operacion']}",
+        #                 icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
+        #             ).add_to(m)
+        #     
+        #     st_folium(m, width=700, height=500)
 
         # --- Gestión de Deliveries ---
         deliveries = [item for item in datos if item["tipo_solicitud"] == "Cliente Delivery"]
