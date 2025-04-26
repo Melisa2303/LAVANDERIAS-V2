@@ -1168,64 +1168,58 @@ def obtener_geometria_ruta(puntos):
 
 # Algoritmo 1: Path Cheapest Arc + GLS 
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Optimización con Path Cheapest Arc + Guided Local Search"""
+    """Optimización de ruta usando Google Maps Directions API con waypoints optimizados."""
     try:
-        # Obtener matriz de tiempos
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
-        st.write("Matriz de tiempos generada (Algoritmo 1):", time_matrix)
+        if not GOOGLE_MAPS_API_KEY:
+            st.error("API key de Google Maps no configurada")
+            return puntos_intermedios
 
-        # Configuración del modelo de OR-Tools
-        manager = pywrapcp.RoutingIndexManager(len(time_matrix), 1, 0)
-        routing = pywrapcp.RoutingModel(manager)
+        if not puntos_intermedios:
+            st.warning("No hay puntos intermedios para optimizar")
+            return puntos_intermedios
 
-        def time_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
+        # Preparar los puntos para la API
+        origin = f"{PUNTOS_FIJOS[0]['lat']},{PUNTOS_FIJOS[0]['lon']}"  # Cochera (inicio)
+        destination = f"{PUNTOS_FIJOS[-1]['lat']},{PUNTOS_FIJOS[-1]['lon']}"  # Cochera (fin)
+        waypoints = [f"{p['lat']},{p['lon']}" for p in puntos_intermedios]
 
-        transit_callback_index = routing.RegisterTransitCallback(time_callback)
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+        # Construir la URL de la Directions API
+        waypoints_str = "|".join(waypoints)
+        url = f"https://maps.googleapis.com/maps/api/directions/json?" \
+              f"origin={origin}&destination={destination}" \
+              f"&waypoints=optimize:true|{waypoints_str}" \
+              f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
 
-        # Dimensión de tiempo (sin restricciones en esta prueba)
-        horizon = 9 * 3600  # 9 horas en segundos
-        routing.AddDimension(
-            transit_callback_index,
-            3600,  # Slack máximo (1 hora)
-            horizon,
-            False,
-            'Time'
-        )
+        if considerar_trafico:
+            url += "&departure_time=now&traffic_model=best_guess"
 
-        # Configuración del algoritmo
-        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.ALL_UNPERFORMED  # Cambiar estrategia inicial
-        )
-        search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        )
-        search_parameters.time_limit.seconds = 120  # Incrementar tiempo a 2 minutos
+        # Hacer la solicitud a la API
+        response = requests.get(url)
+        route_data = response.json()
 
-        # Resolver el modelo
-        solution = routing.SolveWithParameters(search_parameters)
+        if route_data['status'] != 'OK':
+            st.error(f"Error en Google Maps API: {route_data.get('error_message', 'Código: ' + route_data['status'])}")
+            return puntos_intermedios
 
-        if solution:
-            # Extraer la ruta optimizada
-            index = routing.Start(0)
-            route_order = []
-            while not routing.IsEnd(index):
-                route_order.append(manager.IndexToNode(index))
-                index = solution.Value(routing.NextVar(index))
-            st.write("Orden inicial:", list(range(len(puntos_intermedios))))
-            st.write("Orden optimizado (Algoritmo 1):", route_order)
-            return [puntos_intermedios[i] for i in route_order]
+        # Obtener el orden optimizado de los waypoints
+        if 'routes' in route_data and route_data['routes']:
+            waypoint_order = route_data['routes'][0].get('waypoint_order', [])
+            if waypoint_order:
+                # Reordenar puntos_intermedios según el orden devuelto por Google
+                puntos_optimizados = [puntos_intermedios[i] for i in waypoint_order]
+                st.write("Orden optimizado (Algoritmo 1 - Google Maps):", waypoint_order)
+                return puntos_optimizados
+            else:
+                st.warning("Google Maps no proporcionó un orden optimizado. Usando orden original.")
+                return puntos_intermedios
 
-        st.warning("⚠️ No se encontró solución (Algoritmo 1). Usando orden original.")
+        st.warning("No se encontraron rutas válidas. Usando orden original.")
         return puntos_intermedios
 
     except Exception as e:
-        st.error(f"Error en algoritmo 1: {str(e)}")
+        st.error(f"Error en Algoritmo 1: {str(e)}")
         return puntos_intermedios
+
         
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
