@@ -1217,7 +1217,6 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
         return puntos_intermedios
 
     except Exception as e:
-        st.error(f"Error en Algoritmo 1: {str(e)}")
         return puntos_intermedios
 
         
