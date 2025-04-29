@@ -1194,7 +1194,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                 pass  # Ya está en formato correcto
             
             else:
-                st.warning(f"⚠️ Punto omitido - Sin coordenadas válidas: {p.get('direccion', 'ID '+str(p.get('id', '?'))}")
+                st.warning(f"⚠️ Punto omitido - Sin coordenadas válidas: {p.get('direccion', 'ID '+str(p.get('id', '?')))}")
                 continue
             
             puntos_estandarizados.append(punto)
