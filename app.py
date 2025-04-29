@@ -1179,13 +1179,38 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
         Lista de puntos ordenados óptimamente.
     """
     try:
-        if not puntos_intermedios:
-            st.warning("No hay puntos intermedios para optimizar")
-            return puntos_intermedios
+        # --- 0. Estandarizar coordenadas ---
+        puntos_estandarizados = []
+        for p in puntos_intermedios:
+            punto = p.copy()
+            
+            # Caso 1: Coordenadas son GeoPoint (Firestore)
+            if hasattr(p.get('coordenadas', None), 'latitude'):
+                punto['lat'] = p['coordenadas'].latitude
+                punto['lon'] = p['coordenadas'].longitude
+            
+            # Caso 2: Coordenadas son diccionario
+            elif isinstance(p.get('coordenadas', None), dict):
+                punto['lat'] = p['coordenadas']['lat']
+                punto['lon'] = p['coordenadas']['lon']
+            
+            # Caso 3: Lat/Lon directos (puntos fijos)
+            elif 'lat' in p and 'lon' in p:
+                pass  # Ya está correcto
+            
+            else:
+                st.warning(f"Punto omitido - Sin coordenadas válidas: {p.get('direccion', '?')}")
+                continue
+            
+            puntos_estandarizados.append(punto)
 
+        if not puntos_estandarizados:
+            st.warning("No hay puntos con coordenadas válidas para optimizar")
+            return puntos_intermedios
+            
         # --- 1. Preparar matriz de tiempos ---
-        time_matrix = obtener_matriz_tiempos(puntos_intermedios, considerar_trafico)
-        num_puntos = len(puntos_intermedios)
+        time_matrix = obtener_matriz_tiempos(puntos_estandarizados, considerar_trafico)
+        num_puntos = len(puntos_validos)
 
         # --- 2. Configurar modelo de OR-Tools ---
         manager = pywrapcp.RoutingIndexManager(num_puntos, 1, 0)  # 1 vehículo, depósito index 0
@@ -1214,12 +1239,17 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
         # --- 5. Ventanas temporales para puntos críticos ---
         for idx, punto in enumerate(puntos_con_hora):
             if punto.get('hora'):
-                hh, mm = map(int, punto['hora'].split(':'))
-                # Convertir a segundos desde 9:00 (inicio de ruteo)
-                tiempo_min = (hh - 9) * 3600 + mm * 60
-                tiempo_max = tiempo_min + 600  # +10 minutos de tolerancia
-                index = manager.NodeToIndex(idx)
-                time_dimension.CumulVar(index).SetRange(tiempo_min, tiempo_max)
+                try:
+                    hh, mm = map(int, punto['hora'].split(':'))
+                    # Convertir a segundos desde medianoche (como lo hace Google)
+                    tiempo_objetivo = hh * 3600 + mm * 60
+                    tiempo_min = tiempo_objetivo - 600  # 10 mins antes (en segundos)
+                    tiempo_max = tiempo_objetivo + 600  # 10 mins después
+            
+                    index = manager.NodeToIndex(idx)
+                    time_dimension.CumulVar(index).SetRange(tiempo_min, tiempo_max)
+                except:
+                    st.warning(f"Formato de hora inválido en punto: {punto['direccion']}")
 
         # --- 6. Configurar ALNS ---
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -1262,7 +1292,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                 return puntos_intermedios
         else:
             st.warning("No se encontró solución con ALNS. Usando orden original.")
-            return puntos_intermedios
+            return puntos_estandarizados if solution else puntos_intermedios
 
     except Exception as e:
         st.error(f"Error en ALNS: {str(e)}")
