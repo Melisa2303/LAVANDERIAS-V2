@@ -1168,119 +1168,95 @@ def obtener_geometria_ruta(puntos):
 
 # Algoritmo 1: ALNS (Adaptive Large Neighborhood Search) + Path Cheapest Arc (Inicio)
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Versión mejorada con:
-    - Mensajes descriptivos de cada etapa
-    - Configuración estable de OR-Tools
-    - Manejo robusto de todos los casos
+    """Versión optimizada con:
+    - Mensajes mínimos esenciales
+    - Cache de Google Maps validado
+    - Control explícito de tráfico
+    - Visualización de matrices
     """
     try:
-        st.write("🔍 Iniciando optimización ALNS...")
+        st.write("⚡ Ejecutando optimización ALNS...")
 
-        # --- 1. Validación y estandarización de puntos ---
+        # --- 1. Validación silenciosa de puntos ---
         puntos_estandarizados = []
-        puntos_invalidos = 0
-        
         for p in puntos_intermedios:
             punto = p.copy()
-            if hasattr(p.get('coordenadas', None), 'latitude'):  # GeoPoint
-                punto['lat'] = p['coordenadas'].latitude
-                punto['lon'] = p['coordenadas'].longitude
-                st.write(f"✓ Punto {p.get('direccion')} - Convertido de GeoPoint")
-            elif isinstance(p.get('coordenadas', None), dict):  # Diccionario
-                punto['lat'] = p['coordenadas']['lat']
-                punto['lon'] = p['coordenadas']['lon']
-                st.write(f"✓ Punto {p.get('direccion')} - Coordenadas en diccionario")
-            elif 'lat' in p and 'lon' in p:  # Formato directo
-                st.write(f"✓ Punto {p.get('direccion')} - Coordenadas directas")
-            else:
-                st.warning(f"✗ Punto omitido: {p.get('direccion', 'ID desconocido')} - Sin coordenadas válidas")
-                puntos_invalidos += 1
+            if hasattr(p.get('coordenadas', None), 'latitude'):
+                punto.update(lat=p['coordenadas'].latitude, lon=p['coordenadas'].longitude)
+            elif isinstance(p.get('coordenadas', None), dict):
+                punto.update(lat=p['coordenadas']['lat'], lon=p['coordenadas']['lon'])
+            elif 'lat' not in p or 'lon' not in p:
                 continue
             puntos_estandarizados.append(punto)
 
         if len(puntos_estandarizados) <= 1:
-            st.warning("⚠️ No hay suficientes puntos válidos para optimizar (mínimo 2 requeridos)")
             return puntos_intermedios
 
-        # --- 2. Matriz de tiempos ---
-        st.write("📊 Calculando matriz de tiempos con tráfico..." if considerar_trafico else "📊 Calculando matriz de tiempos sin tráfico...")
+        # --- 2. Matriz de tiempos con tráfico ---
         time_matrix = obtener_matriz_tiempos(puntos_estandarizados, considerar_trafico)
         
+        # Debug: Mostrar matrices
+        with st.expander("🔍 Ver matriz de tiempos"):
+            st.write("Matriz original (segundos):", time_matrix)
+
         # --- 3. Configuración del modelo ---
-        st.write("⚙️ Configurando modelo de optimización...")
         manager = pywrapcp.RoutingIndexManager(len(puntos_estandarizados), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
-        # --- 4. Función de costos ---
-        def time_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
-
-        transit_callback_index = routing.RegisterTransitCallback(time_callback)
+        transit_callback_index = routing.RegisterTransitCallback(
+            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+        )
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-        # --- 5. Restricciones temporales ---
-        puntos_con_restriccion = sum(1 for p in puntos_con_hora if p.get('hora'))
-        if puntos_con_restriccion > 0:
-            st.write(f"⏰ Aplicando {puntos_con_restriccion} restricciones horarias...")
+        # --- 4. Restricciones horarias ---
+        if any(p.get('hora') for p in puntos_con_hora):
             routing.AddDimension(
                 transit_callback_index,
-                600,  # 10 mins de slack
+                600,  # 10 mins tolerancia
                 7 * 3600,  # 7 horas máximo
                 False,
                 'Time'
             )
-            time_dimension = routing.GetDimensionOrDie('Time')
-            for idx, punto in enumerate(puntos_con_hora):
-                if punto.get('hora'):
+            time_dim = routing.GetDimensionOrDie('Time')
+            for idx, p in enumerate(puntos_con_hora):
+                if p.get('hora'):
                     try:
-                        hh, mm = map(int, punto['hora'].split(':'))
-                        segundos = hh * 3600 + mm * 60
-                        time_dimension.CumulVar(manager.NodeToIndex(idx)).SetRange(
-                            segundos - 600, segundos + 600)
-                        st.write(f"   → {punto.get('direccion')}: {hh}:{mm:02d} (±10 mins)")
+                        h, m = map(int, p['hora'].split(':'))
+                        t = h * 3600 + m * 60
+                        time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(t-600, t+600)
                     except:
-                        st.warning(f"Formato de hora inválido en {punto.get('direccion')}")
-        else:
-            st.write("⏰ No hay puntos con restricciones horarias")
+                        pass
 
-        # --- 6. Búsqueda optimizada ---
-        st.write("🔎 Ejecutando optimización ALNS...")
-        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)  # Estrategia inicial rápida
-        search_parameters.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)  # Algoritmo principal
-        search_parameters.time_limit.seconds = 15  # 15 segundos máximo
+        # --- 5. Búsqueda optimizada ---
+        search_params = pywrapcp.DefaultRoutingSearchParameters()
+        search_params.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+        search_params.local_search_metaheuristic = (
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
+        search_params.time_limit.seconds = 10
 
-        solution = routing.SolveWithParameters(search_parameters)
+        solution = routing.SolveWithParameters(search_params)
 
-        # --- 7. Resultados ---
+        # --- 6. Resultados ---
         if solution:
-            index = routing.Start(0)
-            route_order = []
-            while not routing.IsEnd(index):
-                route_order.append(manager.IndexToNode(index))
-                index = solution.Value(routing.NextVar(index))
+            route_order = [
+                manager.IndexToNode(index)
+                for index in range(routing.Size())
+                if not routing.IsStart(index) and not routing.IsEnd(index)
+            ]
             
             if route_order != list(range(len(puntos_estandarizados))):
-                st.success("🎉 ¡Ruta optimizada con éxito!")
-                st.write("Orden original:", list(range(len(puntos_estandarizados))))
-                st.write("Orden optimizado:", route_order)
+                with st.expander("✅ Ruta optimizada"):
+                    st.write("Orden original:", list(range(len(puntos_estandarizados))))
+                    st.write("Orden optimizado:", route_order)
+                    st.write("Matriz optimizada (segundos):", 
+                            [[time_matrix[i][j] for j in route_order] for i in route_order])
                 return [puntos_estandarizados[i] for i in route_order]
-            else:
-                st.warning("ℹ️ El orden optimizado es IDÉNTICO al original. Posibles causas:")
-                st.write("- Los puntos ya estaban en orden óptimo")
-                st.write("- No hay suficiente flexibilidad en las restricciones")
-                st.write("- Los tiempos de viaje son muy similares entre puntos")
-        else:
-            st.error("❌ No se encontró solución válida")
 
         return puntos_intermedios
 
     except Exception as e:
-        st.error(f"🚨 Error crítico: {str(e)}")
+        st.error(f"Error: {str(e)}")
         return puntos_intermedios
         
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
