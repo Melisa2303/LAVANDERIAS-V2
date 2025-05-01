@@ -1168,52 +1168,53 @@ def obtener_geometria_ruta(puntos):
 
 # Algoritmo 1: ALNS (Adaptive Large Neighborhood Search) + Path Cheapest Arc (Inicio)
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Versión optimizada con:
-    - Mensajes mínimos esenciales
-    - Cache de Google Maps validado
-    - Control explícito de tráfico
-    - Visualización de matrices
+    """Versión definitiva que:
+    - Considera TODOS los puntos del día
+    - Maneja tráfico en tiempo real
+    - Muestra solo rutas original vs optimizada
+    - Sin matrices confusas
     """
     try:
-        st.write("⚡ Ejecutando optimización ALNS...")
-
-        # --- 1. Validación silenciosa de puntos ---
-        puntos_estandarizados = []
-        for p in puntos_intermedios:
-            punto = p.copy()
-            if hasattr(p.get('coordenadas', None), 'latitude'):
-                punto.update(lat=p['coordenadas'].latitude, lon=p['coordenadas'].longitude)
-            elif isinstance(p.get('coordenadas', None), dict):
-                punto.update(lat=p['coordenadas']['lat'], lon=p['coordenadas']['lon'])
-            elif 'lat' not in p or 'lon' not in p:
+        # --- 1. Procesamiento seguro de todos los puntos ---
+        puntos_validos = []
+        for punto in puntos_intermedios:
+            p = punto.copy()
+            # Conversión universal de coordenadas
+            if hasattr(p.get('coordenadas', None), 'latitude'):  # GeoPoint
+                p['lat'] = p['coordenadas'].latitude
+                p['lon'] = p['coordenadas'].longitude
+            elif isinstance(p.get('coordenadas', None), dict):  # Diccionario
+                p['lat'] = p['coordenadas']['lat']
+                p['lon'] = p['coordenadas']['lon']
+            elif 'lat' not in p or 'lon' not in p:  # Punto inválido
                 continue
-            puntos_estandarizados.append(punto)
+            
+            puntos_validos.append(p)
 
-        if len(puntos_estandarizados) <= 1:
+        if len(puntos_validos) <= 1:
             return puntos_intermedios
 
-        # --- 2. Matriz de tiempos con tráfico ---
-        time_matrix = obtener_matriz_tiempos(puntos_estandarizados, considerar_trafico)
-        
-        # Debug: Mostrar matrices
-        with st.expander("🔍 Ver matriz de tiempos"):
-            st.write("Matriz original (segundos):", time_matrix)
+        # --- 2. Obtención de tiempos CON tráfico ---
+        time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
 
-        # --- 3. Configuración del modelo ---
-        manager = pywrapcp.RoutingIndexManager(len(puntos_estandarizados), 1, 0)
+        # --- 3. Configuración del optimizador ---
+        manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
-        transit_callback_index = routing.RegisterTransitCallback(
-            lambda from_idx, to_idx: time_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
-        )
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+        def time_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return time_matrix[from_node][to_node]
 
-        # --- 4. Restricciones horarias ---
+        transit_idx = routing.RegisterTransitCallback(time_callback)
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+
+        # --- 4. Restricciones horarias (exactamente como lo necesitas) ---
         if any(p.get('hora') for p in puntos_con_hora):
             routing.AddDimension(
-                transit_callback_index,
+                transit_idx,
                 600,  # 10 mins tolerancia
-                7 * 3600,  # 7 horas máximo
+                7 * 3600,  # Máximo 7 horas
                 False,
                 'Time'
             )
@@ -1221,9 +1222,10 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             for idx, p in enumerate(puntos_con_hora):
                 if p.get('hora'):
                     try:
-                        h, m = map(int, p['hora'].split(':'))
-                        t = h * 3600 + m * 60
-                        time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(t-600, t+600)
+                        hh, mm = map(int, p['hora'].split(':'))
+                        segundos = hh * 3600 + mm * 60
+                        time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(
+                            segundos - 600, segundos + 600)
                     except:
                         pass
 
@@ -1233,30 +1235,29 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
         search_params.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-        search_params.time_limit.seconds = 10
+        search_params.time_limit.seconds = 15
 
         solution = routing.SolveWithParameters(search_params)
 
-        # --- 6. Resultados ---
+        # --- 6. Resultados claros ---
         if solution:
-            route_order = [
-                manager.IndexToNode(index)
-                for index in range(routing.Size())
-                if not routing.IsStart(index) and not routing.IsEnd(index)
-            ]
+            index = routing.Start(0)
+            ruta_optimizada = []
+            while not routing.IsEnd(index):
+                node_idx = manager.IndexToNode(index)
+                ruta_optimizada.append(node_idx)
+                index = solution.Value(routing.NextVar(index))
             
-            if route_order != list(range(len(puntos_estandarizados))):
-                with st.expander("✅ Ruta optimizada"):
-                    st.write("Orden original:", list(range(len(puntos_estandarizados))))
-                    st.write("Orden optimizado:", route_order)
-                    st.write("Matriz optimizada (segundos):", 
-                            [[time_matrix[i][j] for j in route_order] for i in route_order])
-                return [puntos_estandarizados[i] for i in route_order]
+            if ruta_optimizada != list(range(len(puntos_validos))):
+                with st.expander("🔍 Comparación de rutas"):
+                    st.write("**Original:**", [p['direccion'] for p in puntos_validos])
+                    st.write("**Optimizada:**", [puntos_validos[i]['direccion'] for i in ruta_optimizada])
+                return [puntos_validos[i] for i in ruta_optimizada]
 
         return puntos_intermedios
 
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error durante la optimización: {str(e)}")
         return puntos_intermedios
         
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
