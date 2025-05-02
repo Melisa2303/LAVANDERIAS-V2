@@ -1612,6 +1612,7 @@ def mostrar_ruta_en_mapa(ruta_completa):
                 icon=folium.Icon(
                     color='red' if i == 0 or i == len(puntos_validos)-1 else 'blue',
                     icon='flag' if i == 0 else ('home' if i == len(puntos_validos)-1 else 'star')
+                )
             ).add_to(m)
 
             # Número de secuencia
