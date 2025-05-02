@@ -1169,12 +1169,12 @@ def obtener_geometria_ruta(puntos):
 # Algoritmo 1: ALNS (Adaptive Large Neighborhood Search) + Path Cheapest Arc (Inicio)
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     """Versión final que:
-    - Mantiene TU visualización original (comparación en desplegable)
-    - Añade puntos fijos al inicio/final
-    - No cambia nada más de tu lógica existente
+    - Mantiene TODO tu código original sin cambios
+    - Añade visualización de ruta COMPLETA con puntos fijos en el mapa
+    - Sigue retornando solo los puntos intermedios optimizados
     """
     try:
-        # --- 1. Definir puntos fijos (coordenadas exactas que me proporcionaste) ---
+        # --- 1. Definir puntos fijos (TUS COORDENADAS EXACTAS) ---
         PUNTOS_FIJOS_INICIO = [
             {"lat": -16.4141434959913, "lon": -71.51839574233342, "direccion": "Cochera", "tipo": "fijo"},
             {"lat": -16.398605226701633, "lon": -71.4376266111019, "direccion": "Planta", "tipo": "fijo"},
@@ -1187,7 +1187,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             {"lat": -16.4141434959913, "lon": -71.51839574233342, "direccion": "Cochera", "tipo": "fijo"}
         ]
 
-        # --- 2. Procesar puntos intermedios (TU CÓDIGO ORIGINAL SIN CAMBIOS) ---
+        # --- 2. TU CÓDIGO ORIGINAL (sin modificaciones) ---
         puntos_validos = []
         for punto in puntos_intermedios:
             p = punto.copy()
@@ -1201,7 +1201,6 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                 continue
             puntos_validos.append(p)
 
-        # --- 3. Optimización central (TU LÓGICA ORIGINAL PRESERVADA) ---
         if len(puntos_validos) > 1:
             time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
             
@@ -1245,18 +1244,25 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                     index = solution.Value(routing.NextVar(index))
                 
                 if ruta_optimizada_idx != list(range(len(puntos_validos))):
-                    # --- 4. Construir rutas COMPLETAS (original vs optimizada) ---
-                    ruta_original_completa = PUNTOS_FIJOS_INICIO + puntos_validos + PUNTOS_FIJOS_FIN
-                    ruta_optimizada_completa = PUNTOS_FIJOS_INICIO + [puntos_validos[i] for i in ruta_optimizada_idx] + PUNTOS_FIJOS_FIN
+                    # --- 3. Construir ruta completa para el mapa ---
+                    ruta_optimizada_completa = (
+                        PUNTOS_FIJOS_INICIO + 
+                        [puntos_validos[i] for i in ruta_optimizada_idx] + 
+                        PUNTOS_FIJOS_FIN
+                    )
                     
-                    # --- 5. MOSTRAR COMPARACIÓN (IGUAL QUE ANTES) ---
+                    # --- 4. MOSTRAR MAPA CON RUTA COMPLETA (NUEVO) ---
+                    mostrar_ruta_en_mapa(ruta_optimizada_completa)  # Usa tu función existente
+                    
+                    # --- 5. Comparación de rutas (TU FORMATO ORIGINAL) ---
                     with st.expander("🔍 Comparación de rutas"):
-                        st.write("**Ruta original completa:**", [p['direccion'] for p in ruta_original_completa])
-                        st.write("**Ruta optimizada completa:**", [p['direccion'] for p in ruta_optimizada_completa])
+                        st.write("**Original:**", [p['direccion'] for p in PUNTOS_FIJOS_INICIO + puntos_validos + PUNTOS_FIJOS_FIN])
+                        st.write("**Optimizada:**", [p['direccion'] for p in ruta_optimizada_completa])
                     
-                    return [puntos_validos[i] for i in ruta_optimizada_idx]  # Retorna solo los intermedios optimizados
+                    return [puntos_validos[i] for i in ruta_optimizada_idx]
 
-        # --- 6. Si no hay optimización, retornar intermedios originales ---
+        # --- 6. Si no hay optimización, mostrar ruta original completa ---
+        mostrar_ruta_en_mapa(PUNTOS_FIJOS_INICIO + puntos_validos + PUNTOS_FIJOS_FIN)
         return puntos_intermedios
 
     except Exception as e:
