@@ -1178,127 +1178,139 @@ def obtener_puntos_fijos_fin():
 # Algoritmo 1: ALNS (Adaptive Large Neighborhood Search) + Path Cheapest Arc (Inicio)
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     """
-    Optimiza la ruta usando ALNS + Path Cheapest Arc de OR-Tools.
+    Versión final corregida del Algoritmo 1 (ALNS + Path Cheapest Arc)
+    que muestra correctamente la ruta completa con puntos fijos.
     
     Args:
-        puntos_intermedios: Lista de puntos a visitar entre 9am y 4pm
+        puntos_intermedios: Lista de puntos a visitar entre 9am-4pm
         puntos_con_hora: Puntos con restricciones horarias específicas
-        considerar_trafico: Si True, usa datos de tráfico en tiempo real
-        
+        considerar_trafico: Booleano para usar datos de tráfico en tiempo real
+    
     Returns:
         Lista de puntos intermedios optimizados (sin incluir puntos fijos)
     """
     try:
-        # 1. Obtener puntos fijos
-        puntos_fijos_inicio = obtener_puntos_fijos_inicio()
-        puntos_fijos_fin = obtener_puntos_fijos_fin()
+        # 1. OBTENER PUNTOS FIJOS (usando las funciones auxiliares)
+        puntos_fijos_inicio = obtener_puntos_fijos_inicio()  # Mañana: Cochera -> Planta -> Dolores
+        puntos_fijos_fin = obtener_puntos_fijos_fin()        # Tarde: Dolores -> Planta -> Cochera
 
-        # 2. Preparar puntos intermedios para optimización
+        # 2. PREPARAR PUNTOS INTERMEDIOS (validar coordenadas)
         puntos_validos = []
         for punto in puntos_intermedios:
             p = punto.copy()
             # Convertir coordenadas a formato consistente
-            if hasattr(p.get('coordenadas', None), 'latitude'):  # GeoPoint de Firebase
+            if hasattr(p.get('coordenadas', None), 'latitude'):
                 p['lat'] = p['coordenadas'].latitude
                 p['lon'] = p['coordenadas'].longitude
-            elif isinstance(p.get('coordenadas', None), dict):  # Diccionario
+            elif isinstance(p.get('coordenadas', None), dict):
                 p['lat'] = p['coordenadas']['lat']
                 p['lon'] = p['coordenadas']['lon']
-            elif 'lat' not in p or 'lon' not in p:  # Sin coordenadas válidas
-                continue
+            elif 'lat' not in p or 'lon' not in p:
+                continue  # Saltar puntos sin coordenadas válidas
+            
+            # Asegurar que todos los puntos tengan 'tipo' para el mapa
+            p.setdefault('tipo', 'intermedio')
             puntos_validos.append(p)
 
-        # 3. Solo optimizar si hay suficientes puntos
-        if len(puntos_validos) > 1:
-            # Obtener matriz de tiempos entre puntos
-            time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
+        # Si hay menos de 2 puntos válidos, mostrar ruta directa
+        if len(puntos_validos) < 1:
+            st.warning("No hay suficientes puntos para optimizar. Mostrando ruta básica.")
+            ruta_completa = puntos_fijos_inicio + puntos_fijos_fin
+            mostrar_ruta_en_mapa(ruta_completa)
+            return puntos_intermedios
+
+        # 3. OBTENER MATRIZ DE TIEMPOS (con Google Maps API)
+        time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
+        
+        # 4. CONFIGURAR EL MODELO DE OPTIMIZACIÓN (OR-Tools)
+        manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
+        routing = pywrapcp.RoutingModel(manager)
+
+        # Función para obtener tiempos entre puntos
+        def time_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return time_matrix[from_node][to_node]
+
+        transit_idx = routing.RegisterTransitCallback(time_callback)
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+
+        # 5. AGREGAR RESTRICCIONES DE TIEMPO (para puntos con hora específica)
+        if any(p.get('hora') for p in puntos_con_hora):
+            routing.AddDimension(
+                transit_idx,
+                600,       # Slack máximo (10 minutos)
+                7*3600,    # Horizonte temporal (7 horas)
+                False,     # No acumular tiempos al inicio
+                'Time'
+            )
+            time_dim = routing.GetDimensionOrDie('Time')
             
-            # Configurar el modelo de ruteo de OR-Tools
-            manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
-            routing = pywrapcp.RoutingModel(manager)
+            for idx, p in enumerate(puntos_con_hora):
+                if p.get('hora'):
+                    try:
+                        # Convertir hora HH:MM a segundos desde medianoche
+                        hh, mm = map(int, p['hora'].split(':'))
+                        segundos = hh*3600 + mm*60
+                        # Establecer ventana de tiempo (±10 minutos)
+                        time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(
+                            segundos - 600,  # 10 minutos antes
+                            segundos + 600   # 10 minutos después
+                        )
+                    except:
+                        st.warning(f"Formato de hora inválido en punto: {p.get('direccion')}")
 
-            # Función callback para obtener tiempos entre puntos
-            def time_callback(from_index, to_index):
-                from_node = manager.IndexToNode(from_index)
-                to_node = manager.IndexToNode(to_index)
-                return time_matrix[from_node][to_node]
+        # 6. CONFIGURAR PARÁMETROS DE BÚSQUEDA
+        search_params = pywrapcp.DefaultRoutingSearchParameters()
+        search_params.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+        search_params.local_search_metaheuristic = (
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
+        search_params.time_limit.seconds = 15  # Límite de tiempo para optimización
 
-            transit_idx = routing.RegisterTransitCallback(time_callback)
-            routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
+        # 7. RESOLVER EL PROBLEMA
+        solution = routing.SolveWithParameters(search_params)
 
-            # 4. Manejar restricciones horarias si existen
-            if any(p.get('hora') for p in puntos_con_hora):
-                routing.AddDimension(
-                    transit_idx,
-                    600,       # Slack máximo (10 minutos)
-                    7*3600,    # Horizonte temporal (7 horas)
-                    False,      # No empezar acumulando desde cero
-                    'Time'
-                )
-                time_dim = routing.GetDimensionOrDie('Time')
-                
-                for idx, p in enumerate(puntos_con_hora):
-                    if p.get('hora'):
-                        try:
-                            # Convertir hora HH:MM a segundos desde inicio del día
-                            hh, mm = map(int, p['hora'].split(':'))
-                            segundos = hh*3600 + mm*60
-                            # Permitir ±10 minutos de flexibilidad
-                            time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(
-                                segundos - 600,  # 10 minutos antes
-                                segundos + 600   # 10 minutos después
-                            )
-                        except:
-                            pass  # Ignorar si hay error en formato de hora
+        if solution:
+            # Obtener el orden optimizado de puntos
+            index = routing.Start(0)
+            ruta_optimizada_idx = []
+            while not routing.IsEnd(index):
+                ruta_optimizada_idx.append(manager.IndexToNode(index))
+                index = solution.Value(routing.NextVar(index)))
+            
+            # 8. CONSTRUIR RUTA COMPLETA (fijos + optimizados)
+            ruta_completa = (
+                puntos_fijos_inicio +
+                [puntos_validos[i] for i in ruta_optimizada_idx] +
+                puntos_fijos_fin
+            )
+            
+            # 9. MOSTRAR RESULTADOS
+            # Mapa con ruta completa (solo se llama UNA vez)
+            mostrar_ruta_en_mapa(ruta_completa)
+            
+            # Comparación de rutas (opcional)
+            with st.expander("🔍 Comparación de rutas"):
+                st.write("**Original:**", [p['direccion'] for p in puntos_fijos_inicio + puntos_validos + puntos_fijos_fin])
+                st.write("**Optimizada:**", [p['direccion'] for p in ruta_completa])
+            
+            # Retornar solo los puntos intermedios optimizados
+            return [puntos_validos[i] for i in ruta_optimizada_idx]
 
-            # 5. Configurar parámetros de búsqueda
-            search_params = pywrapcp.DefaultRoutingSearchParameters()
-            search_params.first_solution_strategy = (
-                routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-            search_params.local_search_metaheuristic = (
-                routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-            search_params.time_limit.seconds = 15  # Límite de tiempo para optimización
-
-            # 6. Resolver el problema
-            solution = routing.SolveWithParameters(search_params)
-
-            if solution:
-                # Obtener el orden optimizado de los puntos
-                index = routing.Start(0)
-                ruta_optimizada_idx = []
-                while not routing.IsEnd(index):
-                    ruta_optimizada_idx.append(manager.IndexToNode(index))
-                    index = solution.Value(routing.NextVar(index))
-                
-                # 7. Mostrar resultados solo si la solución es diferente al orden original
-                if ruta_optimizada_idx != list(range(len(puntos_validos))):
-                    # Construir ruta completa con puntos fijos
-                    ruta_optimizada_completa = (
-                        puntos_fijos_inicio +
-                        [puntos_validos[i] for i in ruta_optimizada_idx] +
-                        puntos_fijos_fin
-                    )
-                    
-                    # Mostrar UN solo mapa con la ruta completa
-                    mostrar_ruta_en_mapa(ruta_optimizada_completa)
-                    
-                    # Mostrar comparación de rutas
-                    with st.expander("🔍 Comparación de rutas"):
-                        st.write("**Original:**", [p.get('direccion', 'N/A') for p in puntos_fijos_inicio + puntos_validos + puntos_fijos_fin])
-                        st.write("**Optimizada:**", [p.get('direccion', 'N/A') for p in ruta_optimizada_completa])
-                    
-                    # Retornar solo los puntos intermedios optimizados
-                    return [puntos_validos[i] for i in ruta_optimizada_idx]
-
-        # 8. Si no hay optimización o no hay suficientes puntos
-        # Mostrar ruta original completa (puntos fijos + intermedios en orden original)
-        mostrar_ruta_en_mapa(puntos_fijos_inicio + puntos_validos + puntos_fijos_fin)
+        # Si no hay solución, mostrar ruta original
+        st.warning("No se encontró solución optimizada. Mostrando ruta original.")
+        ruta_completa = puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
+        mostrar_ruta_en_mapa(ruta_completa)
         return puntos_intermedios
 
     except Exception as e:
         st.error(f"Error durante la optimización: {str(e)}")
+        # Mostrar ruta básica (solo puntos fijos) en caso de error
+        ruta_completa = obtener_puntos_fijos_inicio() + obtener_puntos_fijos_fin()
+        mostrar_ruta_en_mapa(ruta_completa)
         return puntos_intermedios
-        
+
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     try:
@@ -1584,9 +1596,7 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
 def mostrar_ruta_en_mapa(ruta_completa):
     """
     Muestra la ruta completa en un mapa interactivo con todos los puntos marcados.
-    
-    Args:
-        ruta_completa: Lista ordenada de puntos (fijos + optimizados)
+    Versión corregida que maneja puntos sin propiedad 'tipo'.
     """
     try:
         # Validación básica
@@ -1594,54 +1604,63 @@ def mostrar_ruta_en_mapa(ruta_completa):
             st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
             return None
 
-        # Filtrar solo puntos con coordenadas válidas
-        puntos_validos = [p for p in ruta_completa if 'lat' in p and 'lon' in p]
+        # Filtrar solo puntos con coordenadas válidas y añadir 'tipo' por defecto si no existe
+        puntos_validos = []
+        for p in ruta_completa:
+            if 'lat' in p and 'lon' in p:
+                punto = p.copy()
+                punto.setdefault('tipo', 'intermedio')  # Valor por defecto
+                puntos_validos.append(punto)
+        
         if len(puntos_validos) < 2:
             st.error("No hay suficientes puntos con coordenadas válidas")
             return None
 
-        # 1. Crear mapa centrado en el primer punto
+        # 1. Crear mapa centrado en el punto de inicio
         m = folium.Map(
             location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
             zoom_start=13,
             control_scale=True
         )
 
-        # 2. Preparar coordenadas para la ruta
-        coordenadas_ruta = [[p['lat'], p['lon']] for p in puntos_validos]
-
-        # 3. Añadir la línea de ruta (polyline)
+        # 2. Añadir la línea de ruta (polyline)
         folium.PolyLine(
-            locations=coordenadas_ruta,
+            locations=[[p['lat'], p['lon']] for p in puntos_validos],
             color='#0066cc',
             weight=6,
             opacity=0.7,
             tooltip="Ruta completa"
         ).add_to(m)
 
-        # 4. Añadir marcadores para TODOS los puntos
+        # 3. Añadir marcadores para TODOS los puntos
         for i, punto in enumerate(puntos_validos):
-            # Determinar tipo de marcador según posición
-            if i == 0:  # Primer punto (Inicio - Cochera)
+            # Determinar tipo de marcador
+            if i == 0:  # Primer punto (Inicio)
                 icono = folium.Icon(color='red', icon='flag', prefix='fa')
-            elif i == len(puntos_validos) - 1:  # Último punto (Fin - Cochera)
+                tipo = "Inicio"
+            elif i == len(puntos_validos) - 1:  # Último punto (Fin)
                 icono = folium.Icon(color='black', icon='flag-checkered', prefix='fa')
-            elif punto['tipo'] == 'fijo':  # Puntos fijos intermedios
+                tipo = "Fin"
+            elif punto.get('tipo') == 'fijo':  # Puntos fijos
                 icono = folium.Icon(color='green', icon='building', prefix='fa')
-            else:  # Puntos intermedios normales
+                tipo = "Punto fijo"
+            else:  # Puntos intermedios
                 icono = folium.Icon(color='blue', icon='map-pin', prefix='fa')
+                tipo = "Punto de entrega/recojo"
+
+            # Texto para el popup
+            popup_text = f"""
+            <b>Punto {i+1}</b><br>
+            <b>Tipo:</b> {tipo}<br>
+            <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
+            <b>Hora:</b> {punto.get('hora', 'Sin hora específica')}
+            """
 
             # Crear marcador
             folium.Marker(
                 location=[punto['lat'], punto['lon']],
-                popup=f"""
-                <b>Punto {i+1}</b><br>
-                <b>Tipo:</b> {'Fijo' if punto.get('tipo') == 'fijo' else 'Intermedio'}<br>
-                <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
-                <b>Hora:</b> {punto.get('hora', 'Sin hora específica')}
-                """,
-                icon=icono,
-                tooltip=f"Punto {i+1}: {punto.get('direccion', '')}"
+                popup=folium.Popup(popup_text, max_width=300),
+                icon=icono
             ).add_to(m)
 
             # Añadir número de secuencia
@@ -1650,14 +1669,13 @@ def mostrar_ruta_en_mapa(ruta_completa):
                 radius=10,
                 color='white',
                 fill_color='black',
-                fill_opacity=1.0,
-                fill=True
+                fill_opacity=1.0
             ).add_child(folium.DivIcon(
                 html=f'<div style="color:white;font-weight:bold;text-align:center">{i+1}</div>'
             )).add_to(m)
 
-        # 5. Mostrar solo UN mapa en Streamlit
-        st_folium(m, width=700, height=500, returned_objects=[])
+        # 4. Mostrar el mapa en Streamlit (asegurarse de que solo se llama una vez)
+        st_data = st_folium(m, width=700, height=500, returned_objects=[])
         return m
 
     except Exception as e:
