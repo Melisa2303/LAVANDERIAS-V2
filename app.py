@@ -1177,30 +1177,40 @@ def obtener_puntos_fijos_fin():
 
 # Algoritmo 1: ALNS (Adaptive Large Neighborhood Search) + Path Cheapest Arc (Inicio)
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """Versión optimizada que usa los puntos fijos globales"""
+    """
+    Optimiza la ruta usando ALNS + Path Cheapest Arc de OR-Tools.
+    
+    Args:
+        puntos_intermedios: Lista de puntos a visitar entre 9am y 4pm
+        puntos_con_hora: Puntos con restricciones horarias específicas
+        considerar_trafico: Si True, usa datos de tráfico en tiempo real
+        
+    Returns:
+        Lista de puntos intermedios optimizados (sin incluir puntos fijos)
+    """
     try:
-        # Usar las funciones auxiliares para obtener puntos fijos
-        PUNTOS_FIJOS_INICIO = obtener_puntos_fijos_inicio()
-        PUNTOS_FIJOS_FIN = obtener_puntos_fijos_fin()
+        # 1. Obtener puntos fijos
+        puntos_fijos_inicio = obtener_puntos_fijos_inicio()
+        puntos_fijos_fin = obtener_puntos_fijos_fin()
 
-        # --- 2. Preparar puntos intermedios para optimización ---
+        # 2. Preparar puntos intermedios para optimización
         puntos_validos = []
         for punto in puntos_intermedios:
             p = punto.copy()
             # Convertir coordenadas a formato consistente
-            if hasattr(p.get('coordenadas', None), 'latitude'):  # Si es GeoPoint de Firebase
+            if hasattr(p.get('coordenadas', None), 'latitude'):  # GeoPoint de Firebase
                 p['lat'] = p['coordenadas'].latitude
                 p['lon'] = p['coordenadas'].longitude
-            elif isinstance(p.get('coordenadas', None), dict):  # Si es diccionario
+            elif isinstance(p.get('coordenadas', None), dict):  # Diccionario
                 p['lat'] = p['coordenadas']['lat']
                 p['lon'] = p['coordenadas']['lon']
-            elif 'lat' not in p or 'lon' not in p:  # Si no tiene coordenadas válidas
+            elif 'lat' not in p or 'lon' not in p:  # Sin coordenadas válidas
                 continue
             puntos_validos.append(p)
 
-        # Solo optimizar si hay suficientes puntos
+        # 3. Solo optimizar si hay suficientes puntos
         if len(puntos_validos) > 1:
-            # Obtener matriz de tiempos entre puntos intermedios
+            # Obtener matriz de tiempos entre puntos
             time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
             
             # Configurar el modelo de ruteo de OR-Tools
@@ -1216,10 +1226,17 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             transit_idx = routing.RegisterTransitCallback(time_callback)
             routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-            # Agregar restricciones de tiempo si hay puntos con horarios específicos
+            # 4. Manejar restricciones horarias si existen
             if any(p.get('hora') for p in puntos_con_hora):
-                routing.AddDimension(transit_idx, 600, 7*3600, False, 'Time')
+                routing.AddDimension(
+                    transit_idx,
+                    600,       # Slack máximo (10 minutos)
+                    7*3600,    # Horizonte temporal (7 horas)
+                    False,      # No empezar acumulando desde cero
+                    'Time'
+                )
                 time_dim = routing.GetDimensionOrDie('Time')
+                
                 for idx, p in enumerate(puntos_con_hora):
                     if p.get('hora'):
                         try:
@@ -1227,19 +1244,22 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                             hh, mm = map(int, p['hora'].split(':'))
                             segundos = hh*3600 + mm*60
                             # Permitir ±10 minutos de flexibilidad
-                            time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(segundos-600, segundos+600)
+                            time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(
+                                segundos - 600,  # 10 minutos antes
+                                segundos + 600   # 10 minutos después
+                            )
                         except:
-                            pass  # Si hay error en formato de hora, ignorar
+                            pass  # Ignorar si hay error en formato de hora
 
-            # Configurar parámetros de búsqueda
+            # 5. Configurar parámetros de búsqueda
             search_params = pywrapcp.DefaultRoutingSearchParameters()
             search_params.first_solution_strategy = (
                 routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
             search_params.local_search_metaheuristic = (
                 routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-            search_params.time_limit.seconds = 15  # Límite de tiempo para la optimización
+            search_params.time_limit.seconds = 15  # Límite de tiempo para optimización
 
-            # Resolver el problema
+            # 6. Resolver el problema
             solution = routing.SolveWithParameters(search_params)
 
             if solution:
@@ -1250,29 +1270,29 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
                     ruta_optimizada_idx.append(manager.IndexToNode(index))
                     index = solution.Value(routing.NextVar(index))
                 
-                # Solo mostrar si la solución es diferente al orden original
+                # 7. Mostrar resultados solo si la solución es diferente al orden original
                 if ruta_optimizada_idx != list(range(len(puntos_validos))):
-                    # --- 3. Construir ruta completa con puntos fijos ---
+                    # Construir ruta completa con puntos fijos
                     ruta_optimizada_completa = (
-                        PUNTOS_FIJOS_INICIO + 
-                        [puntos_validos[i] for i in ruta_optimizada_idx] + 
-                        PUNTOS_FIJOS_FIN
+                        puntos_fijos_inicio +
+                        [puntos_validos[i] for i in ruta_optimizada_idx] +
+                        puntos_fijos_fin
                     )
                     
-                    # --- 4. Mostrar mapa con ruta completa ---
+                    # Mostrar UN solo mapa con la ruta completa
                     mostrar_ruta_en_mapa(ruta_optimizada_completa)
                     
-                    # --- 5. Mostrar comparación de rutas ---
+                    # Mostrar comparación de rutas
                     with st.expander("🔍 Comparación de rutas"):
-                        st.write("**Original:**", [p['direccion'] for p in PUNTOS_FIJOS_INICIO + puntos_validos + PUNTOS_FIJOS_FIN])
-                        st.write("**Optimizada:**", [p['direccion'] for p in ruta_optimizada_completa])
+                        st.write("**Original:**", [p.get('direccion', 'N/A') for p in puntos_fijos_inicio + puntos_validos + puntos_fijos_fin])
+                        st.write("**Optimizada:**", [p.get('direccion', 'N/A') for p in ruta_optimizada_completa])
                     
                     # Retornar solo los puntos intermedios optimizados
                     return [puntos_validos[i] for i in ruta_optimizada_idx]
 
-        # --- 6. Si no hay optimización o no hay suficientes puntos ---
+        # 8. Si no hay optimización o no hay suficientes puntos
         # Mostrar ruta original completa (puntos fijos + intermedios en orden original)
-        mostrar_ruta_en_mapa(PUNTOS_FIJOS_INICIO + puntos_validos + PUNTOS_FIJOS_FIN)
+        mostrar_ruta_en_mapa(puntos_fijos_inicio + puntos_validos + puntos_fijos_fin)
         return puntos_intermedios
 
     except Exception as e:
