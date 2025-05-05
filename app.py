@@ -1564,92 +1564,74 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
 # Función para mostrar ruta en mapa (completa con puntos fijos)
 def mostrar_ruta_en_mapa(ruta_completa):
     """
-    Muestra la ruta completa en un mapa interactivo con todos los puntos marcados.
-    Versión corregida que maneja puntos sin propiedad 'tipo'.
+    Muestra la ruta optimizada en un mapa interactivo considerando calles y puntos fijos.
     """
     try:
-        # Validación básica
-        if not ruta_completa or len(ruta_completa) < 2:
+        # Validar que haya suficientes puntos en la ruta
+        if len(ruta_completa) < 2:
             st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
             return None
 
-        # Filtrar solo puntos con coordenadas válidas y añadir 'tipo' por defecto si no existe
-        puntos_validos = []
-        for p in ruta_completa:
-            if 'lat' in p and 'lon' in p:
-                punto = p.copy()
-                punto.setdefault('tipo', 'intermedio')  # Valor por defecto
-                puntos_validos.append(punto)
-        
-        if len(puntos_validos) < 2:
-            st.error("No hay suficientes puntos con coordenadas válidas")
+        # Preparar los puntos para la solicitud a Google Maps Directions API
+        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in ruta_completa[1:-1]])
+        origin = f"{ruta_completa[0]['lat']},{ruta_completa[0]['lon']}"
+        destination = f"{ruta_completa[-1]['lat']},{ruta_completa[-1]['lon']}"
+
+        # Hacer la solicitud a la API de Google Maps Directions
+        url = (
+            f"https://maps.googleapis.com/maps/api/directions/json?"
+            f"origin={origin}&destination={destination}"
+            f"&waypoints={waypoints}&key={GOOGLE_MAPS_API_KEY}&mode=driving"
+        )
+        response = requests.get(url)
+        data = response.json()
+
+        if data.get("status") != "OK":
+            st.error(f"Error al obtener la ruta: {data.get('error_message', 'Desconocido')}")
             return None
 
-        # 1. Crear mapa centrado en el punto de inicio
-        m = folium.Map(
-            location=[puntos_validos[0]['lat'], puntos_validos[0]['lon']],
-            zoom_start=13,
-            control_scale=True
-        )
+        # Decodificar la polilínea de la ruta
+        polyline_points = decode_polyline(data["routes"][0]["overview_polyline"]["points"])
+        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
 
-        # 2. Añadir la línea de ruta (polyline)
+        # Crear el mapa centrado en el primer punto
+        m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
+
+        # Dibujar la ruta en el mapa
         folium.PolyLine(
-            locations=[[p['lat'], p['lon']] for p in puntos_validos],
-            color='#0066cc',
+            route_coords,
+            color="#0066cc",
             weight=6,
-            opacity=0.7,
-            tooltip="Ruta completa"
+            opacity=0.8,
+            tooltip="Ruta optimizada completa"
         ).add_to(m)
 
-        # 3. Añadir marcadores para TODOS los puntos
-        for i, punto in enumerate(puntos_validos):
-            # Determinar tipo de marcador
-            if i == 0:  # Primer punto (Inicio)
-                icono = folium.Icon(color='red', icon='flag', prefix='fa')
-                tipo = "Inicio"
-            elif i == len(puntos_validos) - 1:  # Último punto (Fin)
-                icono = folium.Icon(color='black', icon='flag-checkered', prefix='fa')
-                tipo = "Fin"
-            elif punto.get('tipo') == 'fijo':  # Puntos fijos
-                icono = folium.Icon(color='green', icon='building', prefix='fa')
-                tipo = "Punto fijo"
-            else:  # Puntos intermedios
-                icono = folium.Icon(color='blue', icon='map-pin', prefix='fa')
-                tipo = "Punto de entrega/recojo"
+        # Añadir marcadores para todos los puntos
+        for i, punto in enumerate(ruta_completa):
+            if i == 0:
+                icon = folium.Icon(color='red', icon='flag', prefix='fa')  # Inicio
+            elif i == len(ruta_completa) - 1:
+                icon = folium.Icon(color='black', icon='flag-checkered', prefix='fa')  # Fin
+            elif punto.get('tipo') == 'fijo':
+                icon = folium.Icon(color='green', icon='building', prefix='fa')  # Puntos fijos
+            else:
+                icon = folium.Icon(color='blue', icon='map-pin', prefix='fa')  # Intermedios
 
-            # Texto para el popup
-            popup_text = f"""
-            <b>Punto {i+1}</b><br>
-            <b>Tipo:</b> {tipo}<br>
-            <b>Dirección:</b> {punto.get('direccion', 'N/A')}<br>
-            <b>Hora:</b> {punto.get('hora', 'Sin hora específica')}
-            """
-
-            # Crear marcador
+            # Agregar marcador al mapa
             folium.Marker(
                 location=[punto['lat'], punto['lon']],
-                popup=folium.Popup(popup_text, max_width=300),
-                icon=icono
+                popup=folium.Popup(
+                    f"{punto.get('direccion', 'Sin dirección')}<br>Hora: {punto.get('hora', 'N/A')}",
+                    max_width=300
+                ),
+                icon=icon
             ).add_to(m)
 
-            # Añadir número de secuencia
-            folium.CircleMarker(
-                location=[punto['lat'], punto['lon']],
-                radius=10,
-                color='white',
-                fill_color='black',
-                fill_opacity=1.0
-            ).add_child(folium.DivIcon(
-                html=f'<div style="color:white;font-weight:bold;text-align:center">{i+1}</div>'
-            )).add_to(m)
-
-        # 4. Mostrar el mapa en Streamlit (asegurarse de que solo se llama una vez)
-        st_data = st_folium(m, width=700, height=500, returned_objects=[])
-        return m
+        # Mostrar el mapa en Streamlit
+        st_folium(m, width=700, height=500)
 
     except Exception as e:
-        st.error(f"Error al generar mapa: {str(e)}")
-        return None
+        st.error(f"Error al generar el mapa: {e}")
         
 def mostrar_metricas(ruta, time_matrix):
     """Métricas mejoradas con validación de restricciones"""
