@@ -1821,19 +1821,6 @@ def ver_ruta_optimizada():
 
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
-        # --- Botón de Descarga ---
-        excel_buffer = BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df_tabla.to_excel(writer, index=False)
-        
-        st.download_button(
-            label="Descargar Excel",
-            data=excel_buffer.getvalue(),
-            file_name=f"ruta_optimizada_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
         
 # --- Configuración del servidor Traccar ---
 TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
