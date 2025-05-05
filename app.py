@@ -1757,9 +1757,7 @@ def ver_ruta_optimizada():
         for item in datos:
             coords = item.get("coordenadas")
             try:
-                # Verificar que coordenadas sea un diccionario con lat y lon válidos
                 if isinstance(coords, dict) and "lat" in coords and "lon" in coords:
-                    # Convertir a float y validar rangos
                     lat = float(coords["lat"])
                     lon = float(coords["lon"])
                     if -90 <= lat <= 90 and -180 <= lon <= 180:
@@ -1775,20 +1773,6 @@ def ver_ruta_optimizada():
 
         if not puntos_validos:
             st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
-            # Mostrar tabla con datos originales
-            tabla_data = []
-            for idx, item in enumerate(datos):
-                nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-                tabla_data.append({
-                    "Orden": idx + 1,
-                    "Operación": item["operacion"],
-                    "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
-                    "Dirección": item["direccion"],
-                    "Teléfono": item["telefono"],
-                    "Hora": item["hora"] if item["hora"] else "Sin hora",
-                })
-            df_tabla = pd.DataFrame(tabla_data)
-            st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
             return
 
         # --- Optimizar Ruta ---
@@ -1831,77 +1815,12 @@ def ver_ruta_optimizada():
         df_tabla = pd.DataFrame(tabla_data)
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
 
-        # --- Mapa de Ruta Optimizada ---
-        if puntos_optimizados:
-            # Calcular el centro del mapa
-            coords_optimizadas = [item["coordenadas"] for item in puntos_optimizados]
-            centro = {
-                "lat": sum(p["lat"] for p in coords_optimizadas) / len(coords_optimizadas),
-                "lon": sum(p["lon"] for p in coords_optimizadas) / len(coords_optimizadas)
-            }
-            
-            # Crear el mapa base
-            m = folium.Map(location=[centro["lat"], centro["lon"]], zoom_start=13)
+        # --- Mostrar Mapa ---
+        # El mapa ya se genera dentro de `optimizar_ruta_algoritmoX`, así que no se duplica aquí.
+        pass
 
-            # Añadir marcadores para cada punto en el orden optimizado
-            for idx, item in enumerate(puntos_optimizados):
-                if item.get("coordenadas") and isinstance(item["coordenadas"], dict):
-                    nombre = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-                    folium.Marker(
-                        [item["coordenadas"]["lat"], item["coordenadas"]["lon"]],
-                        popup=f"{nombre} - {item['operacion']} (Orden: {idx+1})",
-                        icon=folium.Icon(color="green" if item["operacion"] == "Recojo" else "blue")
-                    ).add_to(m)
-
-            # Trazar la ruta entre los puntos optimizados usando Google Maps Directions API
-            if len(puntos_optimizados) >= 2 and GOOGLE_MAPS_API_KEY:
-                try:
-                    # Preparar la solicitud a la API de Directions
-                    origin = f"{coords_optimizadas[0]['lat']},{coords_optimizadas[0]['lon']}"
-                    destination = f"{coords_optimizadas[-1]['lat']},{coords_optimizadas[-1]['lon']}"
-                    waypoints = "|".join(
-                        [f"{p['lat']},{p['lon']}" for p in coords_optimizadas[1:-1]]
-                    ) if len(coords_optimizadas) > 2 else ""
-                    
-                    url = (
-                        f"https://maps.googleapis.com/maps/api/directions/json?"
-                        f"origin={origin}&destination={destination}"
-                        f"&waypoints={waypoints}"
-                        f"&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-                    )
-                    
-                    response = requests.get(url)
-                    route_data = response.json()
-
-                    if route_data.get("status") == "OK" and route_data.get("routes"):
-                        # Decodificar la polilínea de la ruta
-                        polyline_points = decode_polyline(
-                            route_data["routes"][0]["overview_polyline"]["points"]
-                        )
-                        # Convertir a formato para Folium
-                        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
-                        
-                        # Añadir la polilínea al mapa
-                        folium.PolyLine(
-                            route_coords,
-                            color="#0066cc",
-                            weight=6,
-                            opacity=0.8,
-                            tooltip="Ruta vehicular optimizada"
-                        ).add_to(m)
-                    else:
-                        st.warning("No se pudo obtener la ruta de Google Maps. Mostrando solo los puntos.")
-                except Exception as e:
-                    st.error(f"Error al obtener la ruta: {e}")
-                    st.warning("Mostrando solo los puntos sin ruta.")
-            elif not GOOGLE_MAPS_API_KEY:
-                st.warning("API Key de Google Maps no configurada. No se puede trazar la ruta.")
-
-            # Mostrar el mapa en Streamlit
-            st_folium(m, width=700, height=500)
-        else:
-            st.info("No hay puntos válidos para mostrar en el mapa.")
-
+    else:
+        st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
         # --- Botón de Descarga ---
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
