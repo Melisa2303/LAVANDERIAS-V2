@@ -1277,7 +1277,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
             ruta_optimizada_idx = []
             while not routing.IsEnd(index):
                 ruta_optimizada_idx.append(manager.IndexToNode(index))
-                index = solution.Value(routing.NextVar(index)))
+                index = solution.Value(routing.NextVar(index))
             
             # 8. CONSTRUIR RUTA COMPLETA (fijos + optimizados)
             ruta_completa = (
