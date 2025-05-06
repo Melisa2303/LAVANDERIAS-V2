@@ -1562,69 +1562,38 @@ def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
     return inicio + puntos_intermedios_optimizados + fin
     
 # Función para mostrar ruta en mapa (completa con puntos fijos)
+# --- Función para mostrar el mapa con colores dinámicos ---
 def mostrar_ruta_en_mapa(ruta_completa):
     """
-    Muestra la ruta optimizada en un mapa interactivo considerando calles y puntos fijos.
+    Muestra la ruta completa en un mapa interactivo con marcadores dinámicos según estado.
     """
     try:
-        # Validar que haya suficientes puntos en la ruta
         if len(ruta_completa) < 2:
-            st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
-            return None
-
-        # Preparar los puntos para la solicitud a Google Maps Directions API
-        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in ruta_completa[1:-1]])
-        origin = f"{ruta_completa[0]['lat']},{ruta_completa[0]['lon']}"
-        destination = f"{ruta_completa[-1]['lat']},{ruta_completa[-1]['lon']}"
-
-        # Hacer la solicitud a la API de Google Maps Directions
-        url = (
-            f"https://maps.googleapis.com/maps/api/directions/json?"
-            f"origin={origin}&destination={destination}"
-            f"&waypoints={waypoints}&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-        )
-        response = requests.get(url)
-        data = response.json()
-
-        if data.get("status") != "OK":
-            st.error(f"Error al obtener la ruta: {data.get('error_message', 'Desconocido')}")
-            return None
-
-        # Decodificar la polilínea de la ruta
-        polyline_points = decode_polyline(data["routes"][0]["overview_polyline"]["points"])
-        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
+            st.warning("Se necesitan al menos 2 puntos para mostrar la ruta.")
+            return
 
         # Crear el mapa centrado en el primer punto
-        m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
+        m = folium.Map(location=[ruta_completa[0]["coordenadas"]["lat"], ruta_completa[0]["coordenadas"]["lon"]], zoom_start=13)
 
-        # Dibujar la ruta en el mapa
-        folium.PolyLine(
-            route_coords,
-            color="#0066cc",
-            weight=6,
-            opacity=0.8,
-            tooltip="Ruta optimizada completa"
-        ).add_to(m)
+        # Añadir marcadores con colores dinámicos
+        for punto in ruta_completa:
+            estado = st.session_state.get(f"estado_{punto['id']}", "Por Visitar")
+            color = "gray"  # Color por defecto
+            if estado == "Visitado":
+                color = "green"
+            elif estado == "Saltado":
+                color = "red"
 
-        # Añadir marcadores para todos los puntos
-        for i, punto in enumerate(ruta_completa):
-            if i == 0:
-                icon = folium.Icon(color='red', icon='flag', prefix='fa')  # Inicio
-            elif i == len(ruta_completa) - 1:
-                icon = folium.Icon(color='black', icon='flag-checkered', prefix='fa')  # Fin
-            elif punto.get('tipo') == 'fijo':
-                icon = folium.Icon(color='green', icon='building', prefix='fa')  # Puntos fijos
-            else:
-                icon = folium.Icon(color='blue', icon='map-pin', prefix='fa')  # Intermedios
-
-            # Agregar marcador al mapa
             folium.Marker(
-                location=[punto['lat'], punto['lon']],
+                [punto["coordenadas"]["lat"], punto["coordenadas"]["lon"]],
                 popup=folium.Popup(
-                    f"{punto.get('direccion', 'Sin dirección')}<br>Hora: {punto.get('hora', 'N/A')}",
-                    max_width=300
+                    f"<b>{punto.get('nombre_cliente') or punto.get('sucursal', 'N/A')}</b><br>"
+                    f"Dirección: {punto['direccion']}<br>"
+                    f"Hora: {punto['hora'] or 'N/A'}<br>"
+                    f"Estado: {estado}",
+                    max_width=300,
                 ),
-                icon=icon
+                icon=folium.Icon(color=color, icon="info-sign"),
             ).add_to(m)
 
         # Mostrar el mapa en Streamlit
@@ -1632,6 +1601,51 @@ def mostrar_ruta_en_mapa(ruta_completa):
 
     except Exception as e:
         st.error(f"Error al generar el mapa: {e}")
+
+
+# --- Función para mostrar la ruta paso a paso ---
+def mostrar_ruta_paso_a_paso(puntos_optimizados):
+    """
+    Permite al usuario navegar punto por punto en la ruta optimizada.
+    """
+    if "indice_punto" not in st.session_state:
+        st.session_state["indice_punto"] = 0
+
+    indice = st.session_state["indice_punto"]
+    total_puntos = len(puntos_optimizados)
+
+    # Mostrar información del punto actual
+    punto_actual = puntos_optimizados[indice]
+    st.markdown(f"""
+        ### Punto {indice + 1} de {total_puntos}
+        - **Operación:** {punto_actual['operacion']}
+        - **Cliente/Sucursal:** {punto_actual.get('nombre_cliente') or punto_actual.get('sucursal', 'N/A')}
+        - **Dirección:** {punto_actual['direccion']}
+        - **Hora:** {punto_actual['hora'] or "Sin hora"}
+        - **Teléfono:** {punto_actual['telefono']}
+    """)
+
+    # Mapa del punto actual
+    m = folium.Map(location=[punto_actual["coordenadas"]["lat"], punto_actual["coordenadas"]["lon"]], zoom_start=15)
+    folium.Marker(
+        [punto_actual["coordenadas"]["lat"], punto_actual["coordenadas"]["lon"]],
+        popup=f"{punto_actual['direccion']}<br>Hora: {punto_actual['hora'] or 'N/A'}",
+        icon=folium.Icon(color="blue", icon="info-sign"),
+    ).add_to(m)
+    st_folium(m, width=700, height=500)
+
+    # Botones de navegación
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("⬅️ Anterior", disabled=(indice == 0)):
+            st.session_state["indice_punto"] -= 1
+            st.experimental_rerun()
+    with col2:
+        st.write(f"Punto {indice + 1} de {total_puntos}")
+    with col3:
+        if st.button("➡️ Siguiente", disabled=(indice == total_puntos - 1)):
+            st.session_state["indice_punto"] += 1
+            st.experimental_rerun()
         
 def mostrar_metricas(ruta, time_matrix):
     """Métricas mejoradas con validación de restricciones"""
@@ -1686,17 +1700,14 @@ def mostrar_metricas(ruta, time_matrix):
                 st.write(f"   - Hora requerida: {punto['hora']}")
                 st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
+# --- Función principal: Ver Ruta Optimizada ---
 def ver_ruta_optimizada():
     """
-    Vista principal para la gestión de la ruta optimizada, incluyendo:
-    - Tabla interactiva con puntos visitados y saltados.
-    - Modos "Completo" y "Paso a Paso".
-    - Botón para actualizar la ruta en casos excepcionales.
+    Vista principal para la gestión de la ruta optimizada.
     """
-    # --- Configuración inicial ---
     st.title("🚚 Ruta Optimizada")
-    
-    # --- Filtros ---
+
+    # Filtros
     col1, col2, col3 = st.columns(3)
     with col1:
         fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
@@ -1706,142 +1717,49 @@ def ver_ruta_optimizada():
         algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3"])
 
     # --- Obtener datos ---
-    @st.cache_data(ttl=300)
-    def cargar_ruta(fecha, tipo):
-        try:
-            query = db.collection('recogidas')
-            docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
-
-            if tipo != "Todos":
-                tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-                docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
-
-            datos = []
-            for doc in docs:
-                data = doc.to_dict()
-                doc_id = doc.id
-                
-                if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
-                    datos.append({
-                        "id": doc_id,
-                        "operacion": "Recojo",
-                        "nombre_cliente": data.get("nombre_cliente"),
-                        "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_recojo", "N/A"),
-                        "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_recojo", ""),
-                        "tipo_solicitud": data.get("tipo_solicitud"),
-                        "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
-                        "fecha": data.get("fecha_recojo"),
-                    })
-                
-                if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
-                    datos.append({
-                        "id": doc_id,
-                        "operacion": "Entrega",
-                        "nombre_cliente": data.get("nombre_cliente"),
-                        "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_entrega", "N/A"),
-                        "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_entrega", ""),
-                        "tipo_solicitud": data.get("tipo_solicitud"),
-                        "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
-                        "fecha": data.get("fecha_entrega"),
-                    })
-            
-            return datos
-        except Exception as e:
-            st.error(f"Error al cargar datos: {e}")
-            return []
-
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
     if datos:
-        # --- Validar puntos con coordenadas ---
-        puntos_validos = []
-        for item in datos:
-            coords = item.get("coordenadas")
-            try:
-                if isinstance(coords, dict) and "lat" in coords and "lon" in coords:
-                    lat = float(coords["lat"])
-                    lon = float(coords["lon"])
-                    if -90 <= lat <= 90 and -180 <= lon <= 180:
-                        puntos_validos.append(item)
-                    else:
-                        st.warning(f"Punto descartado (coordenadas fuera de rango): {item.get('direccion', 'N/A')}")
-                else:
-                    st.warning(f"Punto descartado (coordenadas inválidas): {item.get('direccion', 'N/A')}")
-            except (ValueError, TypeError) as e:
-                st.warning(f"Punto descartado (error en coordenadas): {item.get('direccion', 'N/A')} - Error: {e}")
-
-        puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
-
+        # Validar puntos con coordenadas
+        puntos_validos = [item for item in datos if "coordenadas" in item]
         if not puntos_validos:
             st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
             return
 
-        # --- Optimizar Ruta ---
-        try:
-            if algoritmo == "Algoritmo 1":
-                puntos_optimizados = optimizar_ruta_algoritmo1(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            elif algoritmo == "Algoritmo 2":
-                puntos_optimizados = optimizar_ruta_algoritmo2(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            else:
-                puntos_optimizados = optimizar_ruta_algoritmo3(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-        except Exception as e:
-            st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
-            puntos_optimizados = puntos_validos  # Usar orden original como respaldo
+        # Optimizar ruta
+        puntos_optimizados = optimizar_ruta_algoritmo1(
+            puntos_validos,
+            [item for item in puntos_validos if item.get("hora")],
+            considerar_trafico=True,
+        )
 
-        # --- Mostrar Tabla Interactiva ---
-        st.markdown("### Tabla de Puntos")
-        tabla_data = []
-        for idx, item in enumerate(puntos_optimizados):
-            nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-            estado = st.session_state.get(f"estado_{item['id']}", "Por Visitar")
-            tabla_data.append({
-                "Orden": idx + 1,
-                "Operación": item["operacion"],
-                "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
-                "Dirección": item["direccion"],
-                "Teléfono": item["telefono"],
-                "Hora": item["hora"] if item["hora"] else "Sin hora",
-                "Estado": estado,
-            })
+        # Modo de visualización
+        modo_visualizacion = st.radio("Modo de Visualización", ["Completo", "Paso a Paso"], horizontal=True)
 
-            # Interactividad: Checkbox y botón "Saltar"
-            col1, col2 = st.columns([5, 1])
-            with col1:
-                visitado = st.checkbox("Visitado", key=f"visitado_{item['id']}")
-                if visitado:
-                    st.session_state[f"estado_{item['id']}"] = "Visitado"
-            with col2:
-                if st.button("Saltar", key=f"saltar_{item['id']}"):
-                    st.session_state[f"estado_{item['id']}"] = "Saltado"
+        if modo_visualizacion == "Completo":
+            # Tabla interactiva
+            st.markdown("### Tabla de Puntos")
+            for idx, punto in enumerate(puntos_optimizados):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.checkbox(
+                        f"Visitado: {punto['direccion']}",
+                        key=f"visitado_{punto['id']}",
+                        on_change=lambda id=punto["id"]: st.session_state.update({f"estado_{id}": "Visitado"}),
+                    )
+                with col2:
+                    st.button(
+                        "Saltar",
+                        key=f"saltar_{punto['id']}",
+                        on_click=lambda id=punto["id"]: st.session_state.update({f"estado_{id}": "Saltado"}),
+                    )
 
-        df_tabla = pd.DataFrame(tabla_data)
-        st.dataframe(df_tabla, height=400, use_container_width=True, hide_index=True)
+            # Mostrar mapa con colores dinámicos
+            st.markdown("### Mapa de Ruta Optimizada")
+            mostrar_ruta_en_mapa(puntos_optimizados)
 
-        # --- Botón para Actualizar Ruta ---
-        if st.button("Actualizar Ruta"):
-            st.success("Ruta actualizada correctamente.")
-
-        # --- Mostrar Mapa Optimizado ---
-        st.markdown("### Mapa de Ruta Optimizada")
-        # El mapa ya se genera dentro de `optimizar_ruta_algoritmoX`, así que no se duplica aquí.
-        pass
+        elif modo_visualizacion == "Paso a Paso":
+            mostrar_ruta_paso_a_paso(puntos_optimizados)
 
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
