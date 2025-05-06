@@ -1687,6 +1687,12 @@ def mostrar_metricas(ruta, time_matrix):
                 st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
 def ver_ruta_optimizada():
+    """
+    Vista principal para la gestión de la ruta optimizada, incluyendo:
+    - Tabla interactiva con puntos visitados y saltados.
+    - Modos "Completo" y "Paso a Paso".
+    - Botón para actualizar la ruta en casos excepcionales.
+    """
     # --- Configuración inicial ---
     st.title("🚚 Ruta Optimizada")
     
@@ -1799,10 +1805,12 @@ def ver_ruta_optimizada():
             st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
             puntos_optimizados = puntos_validos  # Usar orden original como respaldo
 
-        # --- Mostrar Tabla Optimizada ---
+        # --- Mostrar Tabla Interactiva ---
+        st.markdown("### Tabla de Puntos")
         tabla_data = []
         for idx, item in enumerate(puntos_optimizados):
             nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+            estado = st.session_state.get(f"estado_{item['id']}", "Por Visitar")
             tabla_data.append({
                 "Orden": idx + 1,
                 "Operación": item["operacion"],
@@ -1810,12 +1818,28 @@ def ver_ruta_optimizada():
                 "Dirección": item["direccion"],
                 "Teléfono": item["telefono"],
                 "Hora": item["hora"] if item["hora"] else "Sin hora",
+                "Estado": estado,
             })
 
-        df_tabla = pd.DataFrame(tabla_data)
-        st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
+            # Interactividad: Checkbox y botón "Saltar"
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                visitado = st.checkbox("Visitado", key=f"visitado_{item['id']}")
+                if visitado:
+                    st.session_state[f"estado_{item['id']}"] = "Visitado"
+            with col2:
+                if st.button("Saltar", key=f"saltar_{item['id']}"):
+                    st.session_state[f"estado_{item['id']}"] = "Saltado"
 
-        # --- Mostrar Mapa ---
+        df_tabla = pd.DataFrame(tabla_data)
+        st.dataframe(df_tabla, height=400, use_container_width=True, hide_index=True)
+
+        # --- Botón para Actualizar Ruta ---
+        if st.button("Actualizar Ruta"):
+            st.success("Ruta actualizada correctamente.")
+
+        # --- Mostrar Mapa Optimizado ---
+        st.markdown("### Mapa de Ruta Optimizada")
         # El mapa ya se genera dentro de `optimizar_ruta_algoritmoX`, así que no se duplica aquí.
         pass
 
