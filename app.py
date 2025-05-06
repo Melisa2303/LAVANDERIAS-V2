@@ -680,6 +680,65 @@ def solicitar_recogida():
                 st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
+                
+@st.cache_data(ttl=300)
+def cargar_ruta(fecha, tipo):
+    """
+    Carga las rutas de recogida y entrega desde la base de datos para una fecha y tipo de servicio específicos.
+
+    Args:
+        fecha (datetime.date): La fecha para la cual se deben cargar las rutas.
+        tipo (str): El tipo de servicio ("Todos", "Sucursal", "Delivery").
+
+    Returns:
+        list: Lista de puntos de ruta con detalles como operación, cliente, dirección, hora, etc.
+    """
+    try:
+        query = db.collection('recogidas')
+        docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
+               list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
+
+        if tipo != "Todos":
+            tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
+            docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
+
+        datos = []
+        for doc in docs:
+            data = doc.to_dict()
+            doc_id = doc.id
+            
+            if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
+                datos.append({
+                    "id": doc_id,
+                    "operacion": "Recojo",
+                    "nombre_cliente": data.get("nombre_cliente"),
+                    "sucursal": data.get("sucursal"),
+                    "direccion": data.get("direccion_recojo", "N/A"),
+                    "telefono": data.get("telefono", "N/A"),
+                    "hora": data.get("hora_recojo", ""),
+                    "tipo_solicitud": data.get("tipo_solicitud"),
+                    "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
+                    "fecha": data.get("fecha_recojo"),
+                })
+            
+            if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
+                datos.append({
+                    "id": doc_id,
+                    "operacion": "Entrega",
+                    "nombre_cliente": data.get("nombre_cliente"),
+                    "sucursal": data.get("sucursal"),
+                    "direccion": data.get("direccion_entrega", "N/A"),
+                    "telefono": data.get("telefono", "N/A"),
+                    "hora": data.get("hora_entrega", ""),
+                    "tipo_solicitud": data.get("tipo_solicitud"),
+                    "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
+                    "fecha": data.get("fecha_entrega"),
+                })
+
+        return datos
+    except Exception as e:
+        st.error(f"Error al cargar datos: {e}")
+        return []
 
 def datos_ruta():
     # --- Configuración inicial ---
@@ -697,57 +756,8 @@ def datos_ruta():
         fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
     with col2:
         tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
-
+        
     # --- Obtener datos ---
-    @st.cache_data(ttl=300)
-    def cargar_ruta(fecha, tipo):
-        try:
-            query = db.collection('recogidas')
-            docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-                   list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
-
-            if tipo != "Todos":
-                tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-                docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
-
-            datos = []
-            for doc in docs:
-                data = doc.to_dict()
-                doc_id = doc.id
-                
-                if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
-                    datos.append({
-                        "id": doc_id,
-                        "operacion": "Recojo",
-                        "nombre_cliente": data.get("nombre_cliente"),
-                        "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_recojo", "N/A"),
-                        "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_recojo", ""),
-                        "tipo_solicitud": data.get("tipo_solicitud"),
-                        "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
-                        "fecha": data.get("fecha_recojo"),
-                    })
-                
-                if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
-                    datos.append({
-                        "id": doc_id,
-                        "operacion": "Entrega",
-                        "nombre_cliente": data.get("nombre_cliente"),
-                        "sucursal": data.get("sucursal"),
-                        "direccion": data.get("direccion_entrega", "N/A"),
-                        "telefono": data.get("telefono", "N/A"),
-                        "hora": data.get("hora_entrega", ""),
-                        "tipo_solicitud": data.get("tipo_solicitud"),
-                        "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
-                        "fecha": data.get("fecha_entrega"),
-                    })
-            
-            return datos
-        except Exception as e:
-            st.error(f"Error al cargar datos: {e}")
-            return []
-
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
 
     # --- Mostrar Tabla ---
