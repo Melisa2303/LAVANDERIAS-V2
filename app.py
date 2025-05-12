@@ -1185,10 +1185,10 @@ def obtener_puntos_fijos_fin():
     """Devuelve solo los puntos fijos de la tarde (orden < 0)"""
     return [p for p in PUNTOS_FIJOS_COMPLETOS if p['orden'] < 0]
 
-def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
+def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
     """
-    Optimiza la ruta utilizando el Algoritmo 1 y devuelve los puntos en el orden optimizado.
-    Incluye puntos fijos al inicio y al final de la ruta.
+    Optimiza la ruta utilizando el Algoritmo 1 y considera restricciones de hora para los puntos intermedios.
+    También asegura que los puntos fijos se realicen al inicio y final de la jornada laboral.
     """
     try:
         # 1. OBTENER PUNTOS FIJOS
@@ -1228,7 +1228,40 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
         transit_idx = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-        # 5. CONFIGURAR PARÁMETROS DE BÚSQUEDA
+        # 5. AGREGAR DIMENSIÓN DE TIEMPO
+        horizon = 9 * 3600  # 9 horas en segundos (capacidad máxima entre puntos optimizados)
+        routing.AddDimension(
+            transit_idx,
+            600,  # Holgura máxima permitida (10 minutos en segundos)
+            horizon,
+            False,
+            'Time'
+        )
+        time_dimension = routing.GetDimensionOrDie('Time')
+
+        # 6. CONFIGURAR VENTANAS DE TIEMPO
+        for idx, punto in enumerate(puntos_validos):
+            index = manager.NodeToIndex(idx)
+            if punto.get('hora'):
+                # Si el punto tiene una hora asignada
+                hh, mm = map(int, punto['hora'].split(':'))
+                time_min = (hh * 3600) + (mm * 60) - 600  # 10 minutos antes
+                time_max = (hh * 3600) + (mm * 60) + 600  # 10 minutos después
+                time_dimension.CumulVar(index).SetRange(time_min, time_max)
+            else:
+                # Si no tiene hora, permitir cualquier hora entre 9:00 AM y 4:00 PM
+                time_dimension.CumulVar(index).SetRange(9 * 3600, 16 * 3600)
+
+        # CONFIGURAR VENTANAS PARA LOS PUNTOS FIJOS
+        for idx, punto_fijo in enumerate(puntos_fijos_inicio):
+            index = manager.NodeToIndex(idx)
+            time_dimension.CumulVar(index).SetRange(8 * 3600, 9 * 3600)  # Entre 8 y 9 AM
+
+        for idx, punto_fijo in enumerate(puntos_fijos_fin):
+            index = manager.NodeToIndex(idx)
+            time_dimension.CumulVar(index).SetRange(16 * 3600, 17 * 3600)  # Entre 4 y 5 PM
+
+        # 7. CONFIGURAR PARÁMETROS DE BÚSQUEDA
         search_params = pywrapcp.DefaultRoutingSearchParameters()
         search_params.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
@@ -1236,9 +1269,9 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
         search_params.local_search_metaheuristic = (
             routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         )
-        search_params.time_limit.seconds = 15  # Tiempo límite para la optimización
+        search_params.time_limit.seconds = 15  # Límite de tiempo de búsqueda
 
-        # 6. SOLUCIONAR EL MODELO
+        # 8. RESOLVER EL MODELO
         solution = routing.SolveWithParameters(search_params)
 
         if solution:
@@ -1262,7 +1295,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
 
     except Exception as e:
         st.error(f"Error en Algoritmo 1: {str(e)}")
-        return puntos_intermedios
+        return puntos_fijos_inicio + puntos_intermedios + puntos_fijos_fin
         
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
