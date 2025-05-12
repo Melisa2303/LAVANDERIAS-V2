@@ -1789,14 +1789,20 @@ def ver_ruta_optimizada():
         # --- Mostrar Tabla de Puntos Optimizada ---
         tabla_data = []
         for idx, item in enumerate(puntos_optimizados):
-            nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
+            # Validar la presencia de 'tipo_solicitud' y usar un valor predeterminado si falta
+            tipo_solicitud = item.get("tipo_solicitud", "N/A")
+            nombre_mostrar = (
+                item["nombre_cliente"]
+                if tipo_solicitud == "Cliente Delivery"
+                else item.get("sucursal", "Sin Nombre")
+            )
             tabla_data.append({
                 "Orden": idx + 1,
-                "Operación": item["operacion"],
-                "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
-                "Dirección": item["direccion"],
-                "Teléfono": item["telefono"],
-                "Hora": item["hora"] if item["hora"] else "Sin hora",
+                "Operación": item.get("operacion", "N/A"),
+                "Cliente/Sucursal": nombre_mostrar,
+                "Dirección": item.get("direccion", "N/A"),
+                "Teléfono": item.get("telefono", "N/A"),
+                "Hora": item.get("hora", "Sin hora"),
             })
 
         df_tabla = pd.DataFrame(tabla_data)
