@@ -1208,7 +1208,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 puntos_validos.append(p)
 
         if not puntos_validos:
-            # Si no hay puntos intermedios válidos, solo mostrar puntos fijos
+            # Si no hay puntos intermedios válidos, mostrar solo puntos fijos
             st.warning("No hay suficientes puntos intermedios para optimizar. Mostrando solo puntos fijos.")
             return puntos_fijos_inicio + puntos_fijos_fin
 
@@ -1253,12 +1253,12 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 time_dimension.CumulVar(index).SetRange(9 * 3600, 16 * 3600)
 
         # CONFIGURAR VENTANAS PARA LOS PUNTOS FIJOS
-        for idx, punto_fijo in enumerate(puntos_fijos_inicio):
-            index = manager.NodeToIndex(idx)
+        for punto_fijo in puntos_fijos_inicio:
+            index = manager.NodeToIndex(puntos_validos.index(punto_fijo))
             time_dimension.CumulVar(index).SetRange(8 * 3600, 9 * 3600)  # Entre 8 y 9 AM
 
-        for idx, punto_fijo in enumerate(puntos_fijos_fin):
-            index = manager.NodeToIndex(idx)
+        for punto_fijo in puntos_fijos_fin:
+            index = manager.NodeToIndex(puntos_validos.index(punto_fijo))
             time_dimension.CumulVar(index).SetRange(16 * 3600, 17 * 3600)  # Entre 4 y 5 PM
 
         # 7. CONFIGURAR PARÁMETROS DE BÚSQUEDA
@@ -1800,19 +1800,16 @@ def ver_ruta_optimizada():
             if algoritmo == "Algoritmo 1":
                 puntos_optimizados = optimizar_ruta_algoritmo1(
                     puntos_validos,
-                    puntos_con_hora,
                     considerar_trafico=True
                 )
             elif algoritmo == "Algoritmo 2":
                 puntos_optimizados = optimizar_ruta_algoritmo2(
                     puntos_validos,
-                    puntos_con_hora,
                     considerar_trafico=True
                 )
             else:
                 puntos_optimizados = optimizar_ruta_algoritmo3(
                     puntos_validos,
-                    puntos_con_hora,
                     considerar_trafico=True
                 )
         except Exception as e:
