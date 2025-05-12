@@ -1185,49 +1185,42 @@ def obtener_puntos_fijos_fin():
     """Devuelve solo los puntos fijos de la tarde (orden < 0)"""
     return [p for p in PUNTOS_FIJOS_COMPLETOS if p['orden'] < 0]
 
-# Algoritmo 1: ALNS (Adaptive Large Neighborhood Search) + Path Cheapest Arc (Inicio)
 def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     """
-    Optimiza la ruta incluyendo puntos fijos y visualiza la ruta completa en un mapa interactivo.
-
-    Args:
-        puntos_intermedios: Lista de puntos a visitar entre las horas específicas.
-        puntos_con_hora: Puntos con restricciones horarias.
-        considerar_trafico: Booleano para usar datos de tráfico en tiempo real.
-
-    Returns:
-        Lista optimizada de puntos intermedios.
+    Optimiza la ruta utilizando el Algoritmo 1 y devuelve los puntos en el orden optimizado.
+    Incluye puntos fijos al inicio y al final de la ruta.
     """
     try:
-        # 1. Obtener puntos fijos
-        puntos_fijos_inicio = obtener_puntos_fijos_inicio()  # Mañana
-        puntos_fijos_fin = obtener_puntos_fijos_fin()        # Tarde
+        # 1. OBTENER PUNTOS FIJOS
+        puntos_fijos_inicio = obtener_puntos_fijos_inicio()  # Puntos iniciales (Cochera, Planta, etc.)
+        puntos_fijos_fin = obtener_puntos_fijos_fin()        # Puntos finales (Planta, Cochera, etc.)
 
-        # 2. Validar puntos intermedios
+        # 2. VALIDAR PUNTOS INTERMEDIOS
         puntos_validos = []
         for punto in puntos_intermedios:
             p = punto.copy()
-            # Convertir coordenadas a un formato consistente
-            if 'coordenadas' in p and isinstance(p['coordenadas'], dict):
+            # Validar y convertir coordenadas
+            if isinstance(p.get('coordenadas', {}), dict):
                 p['lat'] = p['coordenadas'].get('lat')
                 p['lon'] = p['coordenadas'].get('lon')
-            if 'lat' in p and 'lon' in p:  # Validar que existan coordenadas
+            if 'lat' in p and 'lon' in p:  # Asegurar que las coordenadas sean válidas
                 p.setdefault('tipo', 'intermedio')  # Tipo por defecto
                 puntos_validos.append(p)
 
         if not puntos_validos:
+            # Si no hay puntos intermedios válidos, solo mostrar puntos fijos
             st.warning("No hay suficientes puntos intermedios para optimizar. Mostrando solo puntos fijos.")
-            mostrar_ruta_en_mapa(puntos_fijos_inicio + puntos_fijos_fin)
-            return puntos_intermedios
+            return puntos_fijos_inicio + puntos_fijos_fin
 
-        # 3. Obtener matriz de tiempos usando la API de Google Maps
+        # 3. OBTENER MATRIZ DE TIEMPOS
         time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
 
-        # 4. Configurar el modelo de optimización usando OR-Tools
+        # 4. CONFIGURAR MODELO DE OPTIMIZACIÓN
         manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
         def time_callback(from_index, to_index):
+            """Devuelve el tiempo entre dos puntos."""
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
             return time_matrix[from_node][to_node]
@@ -1235,59 +1228,40 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_tr
         transit_idx = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-        # 5. Configurar restricciones de tiempo para puntos con hora
-        if puntos_con_hora:
-            routing.AddDimension(
-                transit_idx,
-                600,  # Slack máximo en segundos
-                7 * 3600,  # Horizonte temporal en segundos
-                False,  # No permitir tiempos negativos
-                'Time'
-            )
-            time_dim = routing.GetDimensionOrDie('Time')
-            for idx, punto in enumerate(puntos_con_hora):
-                if punto.get('hora'):
-                    hora = punto['hora']
-                    hh, mm = map(int, hora.split(':'))
-                    segundos = hh * 3600 + mm * 60
-                    time_dim.CumulVar(manager.NodeToIndex(idx)).SetRange(segundos - 600, segundos + 600)
-
-        # 6. Resolver problema de optimización
+        # 5. CONFIGURAR PARÁMETROS DE BÚSQUEDA
         search_params = pywrapcp.DefaultRoutingSearchParameters()
-        search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        search_params.time_limit.seconds = 20
+        search_params.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        )
+        search_params.local_search_metaheuristic = (
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        )
+        search_params.time_limit.seconds = 15  # Tiempo límite para la optimización
+
+        # 6. SOLUCIONAR EL MODELO
         solution = routing.SolveWithParameters(search_params)
 
         if solution:
-            # Obtener el orden óptimo de puntos intermedios
+            # Obtener el orden optimizado de puntos
             index = routing.Start(0)
             ruta_optimizada_idx = []
             while not routing.IsEnd(index):
                 ruta_optimizada_idx.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
 
-            # Construir ruta completa
-            ruta_completa = (
+            # Combinar puntos fijos con los intermedios optimizados
+            return (
                 puntos_fijos_inicio +
                 [puntos_validos[i] for i in ruta_optimizada_idx] +
                 puntos_fijos_fin
             )
 
-            # Mostrar ruta completa en el mapa
-            mostrar_ruta_en_mapa(ruta_completa)
-            return [puntos_validos[i] for i in ruta_optimizada_idx]
-
-        else:
-            st.warning("No se encontró una solución optimizada. Mostrando la ruta directa.")
-            ruta_completa = puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
-            mostrar_ruta_en_mapa(ruta_completa)
-            return puntos_intermedios
+        # Si no hay solución, devolver el orden original
+        st.warning("No se encontró una solución optimizada. Mostrando orden original.")
+        return puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
 
     except Exception as e:
-        st.error(f"Error durante la optimización: {e}")
-        ruta_completa = puntos_fijos_inicio + puntos_fijos_fin
-        mostrar_ruta_en_mapa(ruta_completa)
+        st.error(f"Error en Algoritmo 1: {str(e)}")
         return puntos_intermedios
         
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
@@ -1697,9 +1671,12 @@ def mostrar_metricas(ruta, time_matrix):
                 st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
 def ver_ruta_optimizada():
-    # --- Configuración inicial ---
+    """
+    Esta función permite al usuario visualizar una ruta optimizada basada en los puntos de recogida y entrega.
+    Incluye filtros, tabla de datos, mapa interactivo, y descarga de datos en Excel.
+    """
     st.title("🚚 Ruta Optimizada")
-    
+
     # --- Filtros ---
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -1785,7 +1762,7 @@ def ver_ruta_optimizada():
             st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
             return
 
-        # --- Ejecutar el Algoritmo Seleccionado ---
+        # --- Ejecutar Algoritmo Seleccionado ---
         try:
             if algoritmo == "Algoritmo 1":
                 puntos_optimizados = optimizar_ruta_algoritmo1(
@@ -1826,9 +1803,7 @@ def ver_ruta_optimizada():
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
 
         # --- Mapa de Ruta Optimizada ---
-        if puntos_optimizados:
-            # Lógica para mostrar el mapa (Esta parte sigue intacta, incluiríamos después las flechas y detalles).
-            pass
+        mostrar_ruta_en_mapa(puntos_optimizados)
 
         # --- Botón de Descarga ---
         excel_buffer = BytesIO()
