@@ -1785,7 +1785,7 @@ def ver_ruta_optimizada():
             st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
             return
 
-        # --- Optimizar Ruta ---
+        # --- Ejecutar el Algoritmo Seleccionado ---
         try:
             if algoritmo == "Algoritmo 1":
                 puntos_optimizados = optimizar_ruta_algoritmo1(
@@ -1809,7 +1809,7 @@ def ver_ruta_optimizada():
             st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
             puntos_optimizados = puntos_validos  # Usar orden original como respaldo
 
-        # --- Mostrar Tabla Optimizada ---
+        # --- Mostrar Tabla de Puntos Optimizada ---
         tabla_data = []
         for idx, item in enumerate(puntos_optimizados):
             nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
@@ -1825,10 +1825,22 @@ def ver_ruta_optimizada():
         df_tabla = pd.DataFrame(tabla_data)
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
 
-        # --- Mostrar Mapa ---
-        # El mapa ya se genera dentro de `optimizar_ruta_algoritmoX`, así que no se duplica aquí.
-        pass
+        # --- Mapa de Ruta Optimizada ---
+        if puntos_optimizados:
+            # Lógica para mostrar el mapa (Esta parte sigue intacta, incluiríamos después las flechas y detalles).
+            pass
 
+        # --- Botón de Descarga ---
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            df_tabla.to_excel(writer, index=False)
+        
+        st.download_button(
+            label="Descargar Excel",
+            data=excel_buffer.getvalue(),
+            file_name=f"ruta_optimizada_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
         
