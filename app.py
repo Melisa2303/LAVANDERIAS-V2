@@ -1196,6 +1196,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
         puntos_fijos_fin = obtener_puntos_fijos_fin()        # Puntos finales (Planta, Cochera, etc.)
 
         # 2. VALIDAR PUNTOS INTERMEDIOS
+        # Solo validamos los puntos intermedios; los puntos fijos ya están validados en el código.
         puntos_validos = []
         for punto in puntos_intermedios:
             p = punto.copy()
@@ -1212,11 +1213,15 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
             st.warning("No hay suficientes puntos intermedios para optimizar. Mostrando solo puntos fijos.")
             return puntos_fijos_inicio + puntos_fijos_fin
 
-        # 3. OBTENER MATRIZ DE TIEMPOS
-        time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
+        # 3. COMBINAR TODOS LOS PUNTOS PARA LA OPTIMIZACIÓN
+        # Los puntos fijos deben incluirse al inicio y al final, pero no se mezclan con los intermedios
+        todos_los_puntos = puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
 
-        # 4. CONFIGURAR MODELO DE OPTIMIZACIÓN
-        manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
+        # 4. OBTENER MATRIZ DE TIEMPOS
+        time_matrix = obtener_matriz_tiempos(todos_los_puntos, considerar_trafico)
+
+        # 5. CONFIGURAR MODELO DE OPTIMIZACIÓN
+        manager = pywrapcp.RoutingIndexManager(len(todos_los_puntos), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
         def time_callback(from_index, to_index):
@@ -1228,7 +1233,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
         transit_idx = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-        # 5. AGREGAR DIMENSIÓN DE TIEMPO
+        # 6. AGREGAR DIMENSIÓN DE TIEMPO
         horizon = 9 * 3600  # 9 horas en segundos (capacidad máxima entre puntos optimizados)
         routing.AddDimension(
             transit_idx,
@@ -1239,8 +1244,8 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
         )
         time_dimension = routing.GetDimensionOrDie('Time')
 
-        # 6. CONFIGURAR VENTANAS DE TIEMPO
-        for idx, punto in enumerate(puntos_validos):
+        # 7. CONFIGURAR VENTANAS DE TIEMPO
+        for idx, punto in enumerate(todos_los_puntos):
             index = manager.NodeToIndex(idx)
             if punto.get('hora'):
                 # Si el punto tiene una hora asignada
@@ -1248,20 +1253,17 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 time_min = (hh * 3600) + (mm * 60) - 600  # 10 minutos antes
                 time_max = (hh * 3600) + (mm * 60) + 600  # 10 minutos después
                 time_dimension.CumulVar(index).SetRange(time_min, time_max)
+            elif punto in puntos_fijos_inicio:
+                # Puntos fijos iniciales: 8:00 AM a 9:00 AM
+                time_dimension.CumulVar(index).SetRange(8 * 3600, 9 * 3600)
+            elif punto in puntos_fijos_fin:
+                # Puntos fijos finales: 4:00 PM a 5:00 PM
+                time_dimension.CumulVar(index).SetRange(16 * 3600, 17 * 3600)
             else:
-                # Si no tiene hora, permitir cualquier hora entre 9:00 AM y 4:00 PM
+                # Puntos intermedios sin hora: 9:00 AM a 4:00 PM
                 time_dimension.CumulVar(index).SetRange(9 * 3600, 16 * 3600)
 
-        # CONFIGURAR VENTANAS PARA LOS PUNTOS FIJOS
-        for punto_fijo in puntos_fijos_inicio:
-            index = manager.NodeToIndex(puntos_validos.index(punto_fijo))
-            time_dimension.CumulVar(index).SetRange(8 * 3600, 9 * 3600)  # Entre 8 y 9 AM
-
-        for punto_fijo in puntos_fijos_fin:
-            index = manager.NodeToIndex(puntos_validos.index(punto_fijo))
-            time_dimension.CumulVar(index).SetRange(16 * 3600, 17 * 3600)  # Entre 4 y 5 PM
-
-        # 7. CONFIGURAR PARÁMETROS DE BÚSQUEDA
+        # 8. CONFIGURAR PARÁMETROS DE BÚSQUEDA
         search_params = pywrapcp.DefaultRoutingSearchParameters()
         search_params.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
@@ -1271,7 +1273,7 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
         )
         search_params.time_limit.seconds = 15  # Límite de tiempo de búsqueda
 
-        # 8. RESOLVER EL MODELO
+        # 9. RESOLVER EL MODELO
         solution = routing.SolveWithParameters(search_params)
 
         if solution:
@@ -1282,16 +1284,12 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 ruta_optimizada_idx.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
 
-            # Combinar puntos fijos con los intermedios optimizados
-            return (
-                puntos_fijos_inicio +
-                [puntos_validos[i] for i in ruta_optimizada_idx] +
-                puntos_fijos_fin
-            )
+            # Retornar los puntos en el orden optimizado
+            return [todos_los_puntos[i] for i in ruta_optimizada_idx]
 
         # Si no hay solución, devolver el orden original
         st.warning("No se encontró una solución optimizada. Mostrando orden original.")
-        return puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
+        return todos_los_puntos
 
     except Exception as e:
         st.error(f"Error en Algoritmo 1: {str(e)}")
