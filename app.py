@@ -1808,20 +1808,22 @@ def ver_ruta_optimizada():
         df_tabla = pd.DataFrame(tabla_data)
         st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
 
-        # --- Mapa de Ruta Optimizada ---
-        mostrar_ruta_en_mapa(puntos_optimizados)
-
         # --- Botón de Descarga ---
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_tabla.to_excel(writer, index=False)
-        
+
+        # Mostrar botón justo después de la tabla
         st.download_button(
             label="Descargar Excel",
             data=excel_buffer.getvalue(),
             file_name=f"ruta_optimizada_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        # --- Mapa de Ruta Optimizada ---
+        mostrar_ruta_en_mapa(puntos_optimizados)
+
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
         
