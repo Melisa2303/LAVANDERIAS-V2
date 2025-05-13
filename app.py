@@ -1187,16 +1187,15 @@ def obtener_puntos_fijos_fin():
 
 def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
     """
-    Optimiza la ruta utilizando el Algoritmo 1 y considera restricciones de hora para los puntos intermedios.
-    También asegura que los puntos fijos se realicen al inicio y final de la jornada laboral.
+    Optimiza la ruta utilizando el Algoritmo 1 con manejo correcto de puntos fijos e intermedios.
+    Relaja restricciones para minimizar errores de solver.
     """
     try:
-        # 1. OBTENER PUNTOS FIJOS
+        # 1. OBTENER PUNTOS FIJOS (NO SE OBTIENEN DINÁMICAMENTE)
         puntos_fijos_inicio = obtener_puntos_fijos_inicio()  # Puntos iniciales (Cochera, Planta, etc.)
         puntos_fijos_fin = obtener_puntos_fijos_fin()        # Puntos finales (Planta, Cochera, etc.)
 
         # 2. VALIDAR PUNTOS INTERMEDIOS
-        # Solo validamos los puntos intermedios; los puntos fijos ya están validados en el código.
         puntos_validos = []
         for punto in puntos_intermedios:
             p = punto.copy()
@@ -1209,15 +1208,19 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 puntos_validos.append(p)
 
         if not puntos_validos:
-            # Si no hay puntos intermedios válidos, mostrar solo puntos fijos
-            st.warning("No hay suficientes puntos intermedios para optimizar. Mostrando solo puntos fijos.")
+            st.warning("No hay puntos intermedios válidos. Procesando solo puntos fijos.")
             return puntos_fijos_inicio + puntos_fijos_fin
 
-        # 3. COMBINAR TODOS LOS PUNTOS PARA LA OPTIMIZACIÓN
-        # Los puntos fijos deben incluirse al inicio y al final, pero no se mezclan con los intermedios
+        # 3. COMBINAR TODOS LOS PUNTOS
+        # Los puntos fijos están separados de los puntos intermedios para manejar sus restricciones
         todos_los_puntos = puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
 
         # 4. OBTENER MATRIZ DE TIEMPOS
+        # Validar que no exceda el límite de la API
+        if len(todos_los_puntos) > 25:
+            st.error(f"Se excede el límite de puntos permitido por la API de Google Maps ({len(todos_los_puntos)} puntos).")
+            return todos_los_puntos
+
         time_matrix = obtener_matriz_tiempos(todos_los_puntos, considerar_trafico)
 
         # 5. CONFIGURAR MODELO DE OPTIMIZACIÓN
@@ -1237,41 +1240,37 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
         horizon = 9 * 3600  # 9 horas en segundos (capacidad máxima entre puntos optimizados)
         routing.AddDimension(
             transit_idx,
-            600,  # Holgura máxima permitida (10 minutos en segundos)
+            3600,  # Holgura máxima permitida (1 hora en segundos)
             horizon,
             False,
             'Time'
         )
         time_dimension = routing.GetDimensionOrDie('Time')
 
-        # 7. CONFIGURAR VENTANAS DE TIEMPO
+        # 7. CONFIGURAR VENTANAS DE TIEMPO RELAJADAS
         for idx, punto in enumerate(todos_los_puntos):
             index = manager.NodeToIndex(idx)
             if punto.get('hora'):
-                # Si el punto tiene una hora asignada
+                # Ampliar la ventana de tiempo para evitar errores de solver
                 hh, mm = map(int, punto['hora'].split(':'))
-                time_min = (hh * 3600) + (mm * 60) - 600  # 10 minutos antes
-                time_max = (hh * 3600) + (mm * 60) + 600  # 10 minutos después
+                time_min = max((hh * 3600) + (mm * 60) - 1800, 0)  # 30 minutos antes
+                time_max = (hh * 3600) + (mm * 60) + 1800  # 30 minutos después
                 time_dimension.CumulVar(index).SetRange(time_min, time_max)
             elif punto in puntos_fijos_inicio:
-                # Puntos fijos iniciales: 8:00 AM a 9:00 AM
-                time_dimension.CumulVar(index).SetRange(8 * 3600, 9 * 3600)
+                # Puntos fijos iniciales: 7:00 AM a 9:00 AM
+                time_dimension.CumulVar(index).SetRange(7 * 3600, 9 * 3600)
             elif punto in puntos_fijos_fin:
-                # Puntos fijos finales: 4:00 PM a 5:00 PM
-                time_dimension.CumulVar(index).SetRange(16 * 3600, 17 * 3600)
+                # Puntos fijos finales: 4:00 PM a 6:00 PM
+                time_dimension.CumulVar(index).SetRange(16 * 3600, 18 * 3600)
             else:
-                # Puntos intermedios sin hora: 9:00 AM a 4:00 PM
-                time_dimension.CumulVar(index).SetRange(9 * 3600, 16 * 3600)
+                # Puntos intermedios sin hora: 8:00 AM a 5:00 PM
+                time_dimension.CumulVar(index).SetRange(8 * 3600, 17 * 3600)
 
         # 8. CONFIGURAR PARÁMETROS DE BÚSQUEDA
         search_params = pywrapcp.DefaultRoutingSearchParameters()
-        search_params.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        )
-        search_params.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        )
-        search_params.time_limit.seconds = 15  # Límite de tiempo de búsqueda
+        search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        search_params.time_limit.seconds = 20  # Límite de tiempo de búsqueda
 
         # 9. RESOLVER EL MODELO
         solution = routing.SolveWithParameters(search_params)
