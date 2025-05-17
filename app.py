@@ -1185,13 +1185,13 @@ def obtener_puntos_fijos_fin():
     """Devuelve solo los puntos fijos de la tarde (orden < 0)"""
     return [p for p in PUNTOS_FIJOS_COMPLETOS if p['orden'] < 0]
 
-def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
+def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     """
-    Optimiza la ruta utilizando el Algoritmo 1 con manejo correcto de puntos fijos e intermedios.
-    Relaja restricciones para minimizar errores de solver.
+    Optimiza la ruta utilizando el Algoritmo 1 y devuelve los puntos en el orden optimizado.
+    Incluye puntos fijos al inicio y al final de la ruta.
     """
     try:
-        # 1. OBTENER PUNTOS FIJOS (NO SE OBTIENEN DINÁMICAMENTE)
+        # 1. OBTENER PUNTOS FIJOS
         puntos_fijos_inicio = obtener_puntos_fijos_inicio()  # Puntos iniciales (Cochera, Planta, etc.)
         puntos_fijos_fin = obtener_puntos_fijos_fin()        # Puntos finales (Planta, Cochera, etc.)
 
@@ -1208,23 +1208,15 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 puntos_validos.append(p)
 
         if not puntos_validos:
-            st.warning("No hay puntos intermedios válidos. Procesando solo puntos fijos.")
+            # Si no hay puntos intermedios válidos, solo mostrar puntos fijos
+            st.warning("No hay suficientes puntos intermedios para optimizar. Mostrando solo puntos fijos.")
             return puntos_fijos_inicio + puntos_fijos_fin
 
-        # 3. COMBINAR TODOS LOS PUNTOS
-        # Los puntos fijos están separados de los puntos intermedios para manejar sus restricciones
-        todos_los_puntos = puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
+        # 3. OBTENER MATRIZ DE TIEMPOS
+        time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
 
-        # 4. OBTENER MATRIZ DE TIEMPOS
-        # Validar que no exceda el límite de la API
-        if len(todos_los_puntos) > 25:
-            st.error(f"Se excede el límite de puntos permitido por la API de Google Maps ({len(todos_los_puntos)} puntos).")
-            return todos_los_puntos
-
-        time_matrix = obtener_matriz_tiempos(todos_los_puntos, considerar_trafico)
-
-        # 5. CONFIGURAR MODELO DE OPTIMIZACIÓN
-        manager = pywrapcp.RoutingIndexManager(len(todos_los_puntos), 1, 0)
+        # 4. CONFIGURAR MODELO DE OPTIMIZACIÓN
+        manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
         routing = pywrapcp.RoutingModel(manager)
 
         def time_callback(from_index, to_index):
@@ -1236,43 +1228,17 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
         transit_idx = routing.RegisterTransitCallback(time_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-        # 6. AGREGAR DIMENSIÓN DE TIEMPO
-        horizon = 9 * 3600  # 9 horas en segundos (capacidad máxima entre puntos optimizados)
-        routing.AddDimension(
-            transit_idx,
-            3600,  # Holgura máxima permitida (1 hora en segundos)
-            horizon,
-            False,
-            'Time'
-        )
-        time_dimension = routing.GetDimensionOrDie('Time')
-
-        # 7. CONFIGURAR VENTANAS DE TIEMPO RELAJADAS
-        for idx, punto in enumerate(todos_los_puntos):
-            index = manager.NodeToIndex(idx)
-            if punto.get('hora'):
-                # Ampliar la ventana de tiempo para evitar errores de solver
-                hh, mm = map(int, punto['hora'].split(':'))
-                time_min = max((hh * 3600) + (mm * 60) - 1800, 0)  # 30 minutos antes
-                time_max = (hh * 3600) + (mm * 60) + 1800  # 30 minutos después
-                time_dimension.CumulVar(index).SetRange(time_min, time_max)
-            elif punto in puntos_fijos_inicio:
-                # Puntos fijos iniciales: 7:00 AM a 9:00 AM
-                time_dimension.CumulVar(index).SetRange(7 * 3600, 9 * 3600)
-            elif punto in puntos_fijos_fin:
-                # Puntos fijos finales: 4:00 PM a 6:00 PM
-                time_dimension.CumulVar(index).SetRange(16 * 3600, 18 * 3600)
-            else:
-                # Puntos intermedios sin hora: 8:00 AM a 5:00 PM
-                time_dimension.CumulVar(index).SetRange(8 * 3600, 17 * 3600)
-
-        # 8. CONFIGURAR PARÁMETROS DE BÚSQUEDA
+        # 5. CONFIGURAR PARÁMETROS DE BÚSQUEDA
         search_params = pywrapcp.DefaultRoutingSearchParameters()
-        search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        search_params.time_limit.seconds = 20  # Límite de tiempo de búsqueda
+        search_params.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+        )
+        search_params.local_search_metaheuristic = (
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        )
+        search_params.time_limit.seconds = 15  # Tiempo límite para la optimización
 
-        # 9. RESOLVER EL MODELO
+        # 6. SOLUCIONAR EL MODELO
         solution = routing.SolveWithParameters(search_params)
 
         if solution:
@@ -1283,16 +1249,20 @@ def optimizar_ruta_algoritmo1(puntos_intermedios, considerar_trafico):
                 ruta_optimizada_idx.append(manager.IndexToNode(index))
                 index = solution.Value(routing.NextVar(index))
 
-            # Retornar los puntos en el orden optimizado
-            return [todos_los_puntos[i] for i in ruta_optimizada_idx]
+            # Combinar puntos fijos con los intermedios optimizados
+            return (
+                puntos_fijos_inicio +
+                [puntos_validos[i] for i in ruta_optimizada_idx] +
+                puntos_fijos_fin
+            )
 
         # Si no hay solución, devolver el orden original
         st.warning("No se encontró una solución optimizada. Mostrando orden original.")
-        return todos_los_puntos
+        return puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
 
     except Exception as e:
         st.error(f"Error en Algoritmo 1: {str(e)}")
-        return puntos_fijos_inicio + puntos_intermedios + puntos_fijos_fin
+        return puntos_intermedios
         
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
@@ -1797,16 +1767,19 @@ def ver_ruta_optimizada():
             if algoritmo == "Algoritmo 1":
                 puntos_optimizados = optimizar_ruta_algoritmo1(
                     puntos_validos,
+                    puntos_con_hora,
                     considerar_trafico=True
                 )
             elif algoritmo == "Algoritmo 2":
                 puntos_optimizados = optimizar_ruta_algoritmo2(
                     puntos_validos,
+                    puntos_con_hora,
                     considerar_trafico=True
                 )
             else:
                 puntos_optimizados = optimizar_ruta_algoritmo3(
                     puntos_validos,
+                    puntos_con_hora,
                     considerar_trafico=True
                 )
         except Exception as e:
