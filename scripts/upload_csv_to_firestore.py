@@ -22,7 +22,7 @@ db = firestore.client()
 # Leer el archivo CSV de artículos
 def leer_articulos_csv():
     articulos = []
-    with open('articulos.csv', newline='', encoding='utf-8') as csvfile:
+    with open('data/articulos.csv', newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile, delimiter=',')
         for row in reader:
             articulos.append(row)
@@ -42,7 +42,7 @@ def subir_articulos_a_firestore(articulos):
 # Leer el archivo CSV de sucursales
 def leer_sucursales_csv():
     sucursales = []
-    with open('sucursales.csv', newline='', encoding='utf-8') as csvfile:
+    with open('data/sucursales.csv', newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile, delimiter=',')
         for row in reader:
             sucursales.append(row)
