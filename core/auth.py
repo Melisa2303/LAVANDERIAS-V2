@@ -1,9 +1,10 @@
 import streamlit as st
 
+# Páginas de la aplicación
 def login():
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     
@@ -18,11 +19,7 @@ def login():
             st.session_state['usuario_actual'] = usuario
             st.session_state['logged_in'] = True
             if usuario == "administrador":
-                st.session_state['menu'] = [
-                    "Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida",
-                    "Datos de Ruta", "Datos de Boletas", "Ver Ruta Optimizada",
-                    "Seguimiento al Vehículo"
-                ]
+                st.session_state['menu'] = ["Ingresar Boleta", "Ingresar Sucursal", "Solicitar Recogida", "Datos de Ruta", "Datos de Boletas", "Ver Ruta Optimizada", "Seguimiento al Vehículo"]
             elif usuario == "conductor":
                 st.session_state['menu'] = ["Ver Ruta Optimizada", "Datos de Ruta"]
             elif usuario == "sucursal":
@@ -31,6 +28,7 @@ def login():
         else:
             st.error("Usuario o contraseña incorrectos")
 
+# Función de cierre de sesión
 def logout():
     st.session_state['logged_in'] = False
     st.session_state['usuario_actual'] = None
