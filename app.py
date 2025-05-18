@@ -20,53 +20,8 @@ import pytz
 from googlemaps.convert import decode_polyline
 
 from core.auth import login, logout
-from core.firebase import obtener_articulos, obtener_sucursales, verificar_unicidad_boleta
-from core.geo_utils import obtener_sugerencias_direccion, obtener_coordenadas, obtener_direccion_desde_coordenadas
 from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
           
-# Inicializar Geolocalizador
-geolocator = Nominatim(user_agent="StreamlitApp/1.0")
-
-# Función para obtener sugerencias de dirección
-def obtener_sugerencias_direccion(direccion):
-    url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
-    headers = {"User-Agent": "StreamlitApp/1.0"}
-    try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return response.json()  # Devuelve las sugerencias en formato JSON
-        else:
-            st.warning(f"Error al consultar API de direcciones: {response.status_code}")
-    except Exception as e:
-        st.error(f"Error al conectarse a la API: {e}")
-    return []
-
-# Función para obtener coordenadas específicas (opcional)
-def obtener_coordenadas(direccion):
-    """Extrae las coordenadas de una dirección usando la API de Nominatim."""
-    url = f"https://nominatim.openstreetmap.org/search?format=json&q={direccion}&addressdetails=1"
-    headers = {"User-Agent": "StreamlitApp/1.0"}
-    try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200 and response.json():
-            data = response.json()[0]
-            return float(data["lat"]), float(data["lon"])
-        else:
-            st.warning("No se encontraron coordenadas para la dirección ingresada.")
-    except Exception as e:
-        st.error(f"Error al conectarse a la API: {e}")
-    return None, None
-
-# Función para obtener la dirección desde coordenadas
-def obtener_direccion_desde_coordenadas(lat, lon):
-    """Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud)."""
-    try:
-        location = geolocator.reverse((lat, lon), language="es")
-        return location.address if location else "Dirección no encontrada"
-    except Exception as e:
-        st.error(f"Error al obtener dirección desde coordenadas: {e}")
-        return "Dirección no encontrada"
-
 def obtener_sucursales_mapa():
     """Versión optimizada para mapas que solo necesita coordenadas"""
     if 'sucursales_mapa' not in st.session_state:
@@ -83,165 +38,6 @@ def obtener_sucursales_mapa():
         ]
     return st.session_state.sucursales_mapa
     
-def ingresar_sucursal():
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
-    with col2:
-        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
-    st.title("📝 Ingresar Sucursal")
-
-    # Inicialización
-    if "ingresar_sucursal_lat" not in st.session_state:
-        st.session_state.update({
-            "ingresar_sucursal_lat": -16.409047,
-            "ingresar_sucursal_lon": -71.537451,
-            "ingresar_sucursal_direccion": "Arequipa, Perú",
-            "nombre_sucursal": "",
-            "encargado": "",
-            "telefono": ""
-        })
-
-    # Campos del formulario
-    nombre_sucursal = st.text_input(
-        "Nombre de la Sucursal", 
-        value=st.session_state.nombre_sucursal
-    )
-    
-    direccion_input = st.text_input(
-        "Dirección",
-        value=st.session_state.ingresar_sucursal_direccion,
-        key="ingresar_sucursal_direccion_input"
-    )
-
-    # Buscar sugerencias
-    sugerencias = []
-    if direccion_input and direccion_input != st.session_state.ingresar_sucursal_direccion:
-        sugerencias = obtener_sugerencias_direccion(direccion_input)
-    
-    direccion_seleccionada = st.selectbox(
-        "Sugerencias de Direcciones:",
-        ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
-        key="ingresar_sucursal_sugerencias"
-    )
-
-    # Actualizar al seleccionar sugerencia
-    if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
-        for sug in sugerencias:
-            if direccion_seleccionada == sug["display_name"]:
-                st.session_state.ingresar_sucursal_lat = float(sug["lat"])
-                st.session_state.ingresar_sucursal_lon = float(sug["lon"])
-                st.session_state.ingresar_sucursal_direccion = direccion_seleccionada
-                
-                # Actualizar mapa
-                st.session_state.ingresar_sucursal_mapa = folium.Map(
-                    location=[st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
-                    zoom_start=15
-                )
-                folium.Marker(
-                    [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
-                    tooltip="Punto seleccionado"
-                ).add_to(st.session_state.ingresar_sucursal_mapa)
-                break
-
-    # Mapa
-    if "ingresar_sucursal_mapa" not in st.session_state:
-        st.session_state.ingresar_sucursal_mapa = folium.Map(
-            location=[st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
-            zoom_start=15
-        )
-        folium.Marker(
-            [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
-            tooltip="Punto seleccionado"
-        ).add_to(st.session_state.ingresar_sucursal_mapa)
-
-    mapa = st_folium(
-        st.session_state.ingresar_sucursal_mapa,
-        width=700,
-        height=500,
-        key="ingresar_sucursal_mapa_folium"
-    )
-
-    # Actualizar al hacer clic
-    if mapa.get("last_clicked"):
-        st.session_state.ingresar_sucursal_lat = mapa["last_clicked"]["lat"]
-        st.session_state.ingresar_sucursal_lon = mapa["last_clicked"]["lng"]
-        st.session_state.ingresar_sucursal_direccion = obtener_direccion_desde_coordenadas(
-            st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon
-        )
-        
-        # Actualizar mapa
-        st.session_state.ingresar_sucursal_mapa = folium.Map(
-            location=[st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
-            zoom_start=15
-        )
-        folium.Marker(
-            [st.session_state.ingresar_sucursal_lat, st.session_state.ingresar_sucursal_lon],
-            tooltip="Punto seleccionado"
-        ).add_to(st.session_state.ingresar_sucursal_mapa)
-        st.rerun()
-
-    # Mostrar dirección final
-    st.markdown(f"""
-        <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
-            <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-            <p style='color: #555; font-size: 16px;'>{st.session_state.ingresar_sucursal_direccion}</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Otros campos
-    col1, col2 = st.columns(2)
-    with col1:
-        encargado = st.text_input("Encargado (Opcional)", value=st.session_state.encargado)
-    with col2:
-        telefono = st.text_input("Teléfono (Opcional)", value=st.session_state.telefono, max_chars=9)
-        
-    if st.button("💾 Ingresar Sucursal"):
-        # Validaciones
-        if not nombre_sucursal:
-            st.error("El nombre de la sucursal es obligatorio.")
-            return
-        if telefono and not re.match(r"^\d{9}$", telefono):
-            st.error("El teléfono debe tener 9 dígitos.")
-            return
-
-        try:
-            # Guardar en Firestore
-            db.collection("sucursales").add({
-                "nombre": nombre_sucursal,
-                "direccion": st.session_state.ingresar_sucursal_direccion,
-                "coordenadas": {
-                    "lat": st.session_state.ingresar_sucursal_lat,
-                    "lon": st.session_state.ingresar_sucursal_lon
-                },
-                "encargado": encargado if encargado else None,
-                "telefono": telefono if telefono else None,
-            })
-            
-            # Mensaje de éxito
-            st.success("✅ Sucursal registrada correctamente")
-            
-            # Limpiar caché
-            if 'sucursales' in st.session_state:
-                del st.session_state.sucursales
-            if 'sucursales_mapa' in st.session_state:
-                del st.session_state.sucursales_mapa
-            
-            # Resetear campos
-            st.session_state.update({
-                "nombre_sucursal": "",
-                "encargado": "",
-                "telefono": "",
-                "ingresar_sucursal_direccion": "Arequipa, Perú",
-                "ingresar_sucursal_lat": -16.409047,
-                "ingresar_sucursal_lon": -71.537451
-            })
-            
-            success_msg.empty()
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Error al guardar: {e}")
               
 def solicitar_recogida():
     col1, col2 = st.columns([1, 3])
@@ -1642,7 +1438,9 @@ else:
         ingresar_boleta()
         pass
     elif choice == "Ingresar Sucursal":
+        from features.sucursales import ingresar_sucursal
         ingresar_sucursal()
+        pass
     elif choice == "Solicitar Recogida":
         solicitar_recogida()
     elif choice == "Datos de Ruta":
