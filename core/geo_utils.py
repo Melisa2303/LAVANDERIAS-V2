@@ -1,3 +1,5 @@
+# Aquí irán funciones de geolocalización, sugerencias y mapas
+
 import streamlit as st
 import requests
 import folium
