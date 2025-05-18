@@ -1,3 +1,5 @@
+# Aquí irá la configuración de firebase y helpers de Firestore
+
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
