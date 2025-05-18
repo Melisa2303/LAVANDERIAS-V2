@@ -4,6 +4,7 @@ from firebase_admin import credentials, firestore
 import os
 from dotenv import load_dotenv
 
+# Cargar variables de entorno
 load_dotenv()
 
 # Inicializa Firebase solo si no está inicializado
@@ -23,15 +24,19 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
+# Leer datos de artículos desde Firestore
 def obtener_articulos():
     if 'articulos' not in st.session_state:
+        # Solo leer si no hay caché
         articulos_ref = db.collection('articulos')
         docs = articulos_ref.stream()
         st.session_state.articulos = [doc.to_dict().get('Nombre', 'Nombre no disponible') for doc in docs]
     return st.session_state.articulos
 
+# Leer datos de sucursales desde Firestore
 def obtener_sucursales():
     if 'sucursales' not in st.session_state:
+        # Solo leer si no hay caché
         sucursales_ref = db.collection('sucursales')
         docs = sucursales_ref.stream()
         st.session_state.sucursales = [
@@ -44,23 +49,32 @@ def obtener_sucursales():
         ]
     return st.session_state.sucursales
 
+# Verificar unicidad del número de boleta
 def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
+    # Caché local para verificaciones recientes
     cache_key = f"{numero_boleta}-{tipo_servicio}-{sucursal}"
     if 'boletas_verificadas' in st.session_state and cache_key in st.session_state.boletas_verificadas:
         return st.session_state.boletas_verificadas[cache_key]
     
     boletas_ref = db.collection('boletas')
+    
+    # Construimos una consulta con LIMIT 1 para optimizar
     if tipo_servicio == "🏢 Sucursal":
         query = boletas_ref.where('numero_boleta', '==', numero_boleta)\
                           .where('tipo_servicio', '==', tipo_servicio)\
                           .where('sucursal', '==', sucursal)\
-                          .limit(1)
+                          .limit(1)  # Solo necesitamos saber si existe al menos una
     else:
         query = boletas_ref.where('numero_boleta', '==', numero_boleta)\
                           .where('tipo_servicio', '==', tipo_servicio)\
                           .limit(1)
+    
+    # Verificamos si hay al menos un documento
     existe = bool(next(query.stream(), None))
+    
+    # Actualizamos caché
     if 'boletas_verificadas' not in st.session_state:
         st.session_state.boletas_verificadas = {}
     st.session_state.boletas_verificadas[cache_key] = not existe
+    
     return not existe
