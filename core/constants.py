@@ -1,3 +1,5 @@
+# Aquí pondrás variables globales, claves y PUNTOS_FIJOS_COMPLETOS
+
 import os
 import streamlit as st
 
