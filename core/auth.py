@@ -1,3 +1,5 @@
+# Aquí irán las funciones de login, logout y gestión de sesión
+
 import streamlit as st
 
 # Páginas de la aplicación
