@@ -1,23 +1,6 @@
 import streamlit as st
 from core.auth import login, logout
-          
-def obtener_sucursales_mapa():
-    """Versión optimizada para mapas que solo necesita coordenadas"""
-    if 'sucursales_mapa' not in st.session_state:
-        sucursales = obtener_sucursales()  # Usa la caché principal
-        st.session_state.sucursales_mapa = [
-            {
-                'nombre': suc['nombre'],
-                'lat': suc['coordenadas'].get('lat'),
-                'lon': suc['coordenadas'].get('lon'),
-                'direccion': suc['direccion']
-            }
-            for suc in sucursales
-            if suc.get('coordenadas') and isinstance(suc['coordenadas'], dict)
-        ]
-    return st.session_state.sucursales_mapa
-    
-       
+              
 # Algoritmo 2: Google OR-Tools (LNS + GLS)
 def optimizar_ruta_algoritmo2(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
     try:
@@ -214,60 +197,6 @@ def optimizar_ruta_algoritmo4(puntos_intermedios, puntos_con_hora, considerar_tr
             
     except Exception as e:
         return puntos_intermedios
-
-      
-def mostrar_metricas(ruta, time_matrix):
-    """Métricas mejoradas con validación de restricciones"""
-    if len(ruta) <= 1:
-        st.warning("No hay suficientes puntos para calcular métricas")
-        return
-    
-    # Calcular métricas basadas en la matriz de tiempos real
-    tiempo_total = 0
-    tiempo_con_restricciones = 0
-    puntos_con_restriccion = 0
-    
-    for i in range(len(ruta)-1):
-        tiempo_segmento = time_matrix[i][i+1]
-        tiempo_total += tiempo_segmento
-        
-        if ruta[i].get('hora'):
-            puntos_con_restriccion += 1
-            tiempo_con_restricciones += tiempo_segmento
-    
-    # Convertir a horas/minutos
-    horas_total = int(tiempo_total // 3600)
-    minutos_total = int((tiempo_total % 3600) // 60)
-    
-    # Eficiencia
-    eficiencia = (tiempo_con_restricciones / tiempo_total) * 100 if tiempo_total > 0 else 0
-    
-    # Mostrar en columnas con formato mejorado
-    col1, col2, col3, col4 = st.columns(4)
-    
-    col1.metric("📌 Total de paradas", len(ruta))
-    col2.metric("⏱️ Tiempo total", f"{horas_total}h {minutos_total}m")
-    col3.metric("⏳ Puntos con restricción", f"{puntos_con_restriccion}/{len(ruta)}")
-    col4.metric("📊 Eficiencia", f"{eficiencia:.1f}%")
-    
-    # Gráfico de tiempo por segmento
-    segmentos = [f"{i+1}-{i+2}" for i in range(len(ruta)-1)]
-    tiempos = [time_matrix[i][i+1]/60 for i in range(len(ruta)-1)]  # En minutos
-    
-    df_tiempos = pd.DataFrame({
-        'Segmento': segmentos,
-        'Tiempo (min)': tiempos
-    })
-    
-    st.bar_chart(df_tiempos.set_index('Segmento'))
-    
-    # Detalle de restricciones
-    with st.expander("🔍 Ver detalles de restricciones"):
-        for i, punto in enumerate(ruta):
-            if punto.get('hora'):
-                st.write(f"📍 **Punto {i+1}**: {punto.get('nombre', '')}")
-                st.write(f"   - Hora requerida: {punto['hora']}")
-                st.write(f"   - Dirección: {punto.get('direccion', '')}")
 
 # Inicializar 'logged_in', 'usuario_actual' y 'menu' en session_state
 if 'logged_in' not in st.session_state:
