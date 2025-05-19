@@ -1,4 +1,5 @@
 # Lógico para el Algoritmo 1: PCA + GLS OR TOOLS
+import streamlit as st
 from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
 from googlemaps.convert import decode_polyline
 from ortools.constraint_solver import routing_enums_pb2
