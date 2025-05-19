@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime, timedelta, time
 import time as tiempo
 import pytz
+import requests  # Importar requests
 
 # Función para obtener matriz de distancias reales con Google Maps API
 @st.cache_data(ttl=300)  # Cache de 5 minutos (el tráfico cambia frecuentemente)
