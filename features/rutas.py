@@ -3,7 +3,7 @@ import pandas as pd
 from io import BytesIO
 from datetime import datetime
 from core.firebase import db
-from core.constants import PUNTOS_FIJOS_COMPLETOS
+from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
