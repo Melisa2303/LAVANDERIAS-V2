@@ -315,28 +315,21 @@ else:
     if choice == "Ingresar Boleta":
         from features.boletas import ingresar_boleta
         ingresar_boleta()
-        pass
     elif choice == "Ingresar Sucursal":
         from features.sucursales import ingresar_sucursal
         ingresar_sucursal()
-        pass
     elif choice == "Solicitar Recogida":
         from features.recogidas import solicitar_recogida
         solicitar_recogida()
-        pass
     elif choice == "Datos de Ruta":
         from features.rutas import datos_ruta
         datos_ruta()
-        pass
     elif choice == "Datos de Boletas":
         from features.boletas import datos_boletas
         datos_boletas()
-        pass
     elif choice == "Ver Ruta Optimizada":
         from features.rutas import ver_ruta_optimizada
         ver_ruta_optimizada()
-        pass
     elif choice == "Seguimiento al Vehículo":
         from features.tracking import seguimiento_vehiculo
         seguimiento_vehiculo()
-        pass
