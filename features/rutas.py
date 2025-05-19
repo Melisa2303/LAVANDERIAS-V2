@@ -6,6 +6,8 @@ from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
 import requests  # Importar requests
 from googlemaps.convert import decode_polyline
+from streamlit_folium import st_folium
+import folium
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
