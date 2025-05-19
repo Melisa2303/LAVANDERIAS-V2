@@ -389,18 +389,19 @@ def ver_ruta_optimizada():
                     puntos_con_hora,
                     considerar_trafico=True
                 )
-            else:
+            elif algoritmo == "Algoritmo 3":
                 puntos_optimizados = optimizar_ruta_algoritmo3(
                     puntos_validos,
                     puntos_con_hora,
                     considerar_trafico=True
                 )
-              else:
+            else:
                 puntos_optimizados = optimizar_ruta_algoritmo4(
                     puntos_validos,
                     puntos_con_hora,
                     considerar_trafico=True
                 )
+                
         except Exception as e:
             st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
             puntos_optimizados = puntos_validos  # Usar orden original como respaldo
