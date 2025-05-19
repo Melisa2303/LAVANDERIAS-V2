@@ -333,9 +333,9 @@ else:
         datos_boletas()
         pass
     elif choice == "Ver Ruta Optimizada":
-        from features.rutas import ver_ruta_optimizada
-        ver_ruta_optimizada()
-        pass
+          from features.rutas import ver_ruta_optimizada
+          ver_ruta_optimizada()
+          pass
     elif choice == "Seguimiento al Vehículo":
         from features.tracking import seguimiento_vehiculo
         seguimiento_vehiculo()
