@@ -285,6 +285,59 @@ def datos_ruta():
         )
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
+
+def mostrar_metricas(ruta, time_matrix):
+    """Métricas mejoradas con validación de restricciones"""
+    if len(ruta) <= 1:
+        st.warning("No hay suficientes puntos para calcular métricas")
+        return
+    
+    # Calcular métricas basadas en la matriz de tiempos real
+    tiempo_total = 0
+    tiempo_con_restricciones = 0
+    puntos_con_restriccion = 0
+    
+    for i in range(len(ruta)-1):
+        tiempo_segmento = time_matrix[i][i+1]
+        tiempo_total += tiempo_segmento
+        
+        if ruta[i].get('hora'):
+            puntos_con_restriccion += 1
+            tiempo_con_restricciones += tiempo_segmento
+    
+    # Convertir a horas/minutos
+    horas_total = int(tiempo_total // 3600)
+    minutos_total = int((tiempo_total % 3600) // 60)
+    
+    # Eficiencia
+    eficiencia = (tiempo_con_restricciones / tiempo_total) * 100 if tiempo_total > 0 else 0
+    
+    # Mostrar en columnas con formato mejorado
+    col1, col2, col3, col4 = st.columns(4)
+    
+    col1.metric("📌 Total de paradas", len(ruta))
+    col2.metric("⏱️ Tiempo total", f"{horas_total}h {minutos_total}m")
+    col3.metric("⏳ Puntos con restricción", f"{puntos_con_restriccion}/{len(ruta)}")
+    col4.metric("📊 Eficiencia", f"{eficiencia:.1f}%")
+    
+    # Gráfico de tiempo por segmento
+    segmentos = [f"{i+1}-{i+2}" for i in range(len(ruta)-1)]
+    tiempos = [time_matrix[i][i+1]/60 for i in range(len(ruta)-1)]  # En minutos
+    
+    df_tiempos = pd.DataFrame({
+        'Segmento': segmentos,
+        'Tiempo (min)': tiempos
+    })
+    
+    st.bar_chart(df_tiempos.set_index('Segmento'))
+    
+    # Detalle de restricciones
+    with st.expander("🔍 Ver detalles de restricciones"):
+        for i, punto in enumerate(ruta):
+            if punto.get('hora'):
+                st.write(f"📍 **Punto {i+1}**: {punto.get('nombre', '')}")
+                st.write(f"   - Hora requerida: {punto['hora']}")
+                st.write(f"   - Dirección: {punto.get('direccion', '')}")
       
 def ver_ruta_optimizada():
     st.title("🚚 Ruta Optimizada")
