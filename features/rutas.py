@@ -10,6 +10,7 @@ from streamlit_folium import st_folium
 import folium
 from datetime import datetime, timedelta, time
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1
+from algorithms.algoritmo1 import cargar_pedidos
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
