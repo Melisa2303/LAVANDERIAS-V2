@@ -291,235 +291,145 @@ def datos_ruta():
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
 
-# Función para mostrar ruta en mapa (completa con puntos fijos)
-def mostrar_ruta_en_mapa(ruta_completa):
-    """
-    Muestra la ruta optimizada en un mapa interactivo considerando calles y puntos fijos.
-    """
-    try:
-        # Validar que haya suficientes puntos en la ruta
-        if len(ruta_completa) < 2:
-            st.warning("Se necesitan al menos 2 puntos para mostrar la ruta")
-            return None
+# ============ PÁGINA “Ver Ruta Optimizada” ============
 
-        # Preparar los puntos para la solicitud a Google Maps Directions API
-        waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in ruta_completa[1:-1]])
-        origin = f"{ruta_completa[0]['lat']},{ruta_completa[0]['lon']}"
-        destination = f"{ruta_completa[-1]['lat']},{ruta_completa[-1]['lon']}"
-
-        # Hacer la solicitud a la API de Google Maps Directions
-        url = (
-            f"https://maps.googleapis.com/maps/api/directions/json?"
-            f"origin={origin}&destination={destination}"
-            f"&waypoints={waypoints}&key={GOOGLE_MAPS_API_KEY}&mode=driving"
-        )
-        response = requests.get(url)
-        data = response.json()
-
-        if data.get("status") != "OK":
-            st.error(f"Error al obtener la ruta: {data.get('error_message', 'Desconocido')}")
-            return None
-
-        # Decodificar la polilínea de la ruta
-        polyline_points = decode_polyline(data["routes"][0]["overview_polyline"]["points"])
-        route_coords = [(p["lat"], p["lng"]) for p in polyline_points]
-
-        # Crear el mapa centrado en el primer punto
-        m = folium.Map(location=[ruta_completa[0]['lat'], ruta_completa[0]['lon']], zoom_start=13)
-
-        # Dibujar la ruta en el mapa
-        folium.PolyLine(
-            route_coords,
-            color="#0066cc",
-            weight=6,
-            opacity=0.8,
-            tooltip="Ruta optimizada completa"
-        ).add_to(m)
-
-        # Añadir marcadores para todos los puntos
-        for i, punto in enumerate(ruta_completa):
-            if i == 0:
-                icon = folium.Icon(color='red', icon='flag', prefix='fa')  # Inicio
-            elif i == len(ruta_completa) - 1:
-                icon = folium.Icon(color='black', icon='flag-checkered', prefix='fa')  # Fin
-            elif punto.get('tipo') == 'fijo':
-                icon = folium.Icon(color='green', icon='building', prefix='fa')  # Puntos fijos
-            else:
-                icon = folium.Icon(color='blue', icon='map-pin', prefix='fa')  # Intermedios
-
-            # Agregar marcador al mapa
-            folium.Marker(
-                location=[punto['lat'], punto['lon']],
-                popup=folium.Popup(
-                    f"{punto.get('direccion', 'Sin dirección')}<br>Hora: {punto.get('hora', 'N/A')}",
-                    max_width=300
-                ),
-                icon=icon
-            ).add_to(m)
-
-        # Mostrar el mapa en Streamlit
-        st_folium(m, width=700, height=500)
-
-    except Exception as e:
-        st.error(f"Error al generar el mapa: {e}")
-
-def mostrar_metricas(ruta, time_matrix):
-    """Métricas mejoradas con validación de restricciones"""
-    if len(ruta) <= 1:
-        st.warning("No hay suficientes puntos para calcular métricas")
-        return
-    
-    # Calcular métricas basadas en la matriz de tiempos real
-    tiempo_total = 0
-    tiempo_con_restricciones = 0
-    puntos_con_restriccion = 0
-    
-    for i in range(len(ruta)-1):
-        tiempo_segmento = time_matrix[i][i+1]
-        tiempo_total += tiempo_segmento
-        
-        if ruta[i].get('hora'):
-            puntos_con_restriccion += 1
-            tiempo_con_restricciones += tiempo_segmento
-    
-    # Convertir a horas/minutos
-    horas_total = int(tiempo_total // 3600)
-    minutos_total = int((tiempo_total % 3600) // 60)
-    
-    # Eficiencia
-    eficiencia = (tiempo_con_restricciones / tiempo_total) * 100 if tiempo_total > 0 else 0
-    
-    # Mostrar en columnas con formato mejorado
-    col1, col2, col3, col4 = st.columns(4)
-    
-    col1.metric("📌 Total de paradas", len(ruta))
-    col2.metric("⏱️ Tiempo total", f"{horas_total}h {minutos_total}m")
-    col3.metric("⏳ Puntos con restricción", f"{puntos_con_restriccion}/{len(ruta)}")
-    col4.metric("📊 Eficiencia", f"{eficiencia:.1f}%")
-    
-    # Gráfico de tiempo por segmento
-    segmentos = [f"{i+1}-{i+2}" for i in range(len(ruta)-1)]
-    tiempos = [time_matrix[i][i+1]/60 for i in range(len(ruta)-1)]  # En minutos
-    
-    df_tiempos = pd.DataFrame({
-        'Segmento': segmentos,
-        'Tiempo (min)': tiempos
-    })
-    
-    st.bar_chart(df_tiempos.set_index('Segmento'))
-    
-    # Detalle de restricciones
-    with st.expander("🔍 Ver detalles de restricciones"):
-        for i, punto in enumerate(ruta):
-            if punto.get('hora'):
-                st.write(f"📍 **Punto {i+1}**: {punto.get('nombre', '')}")
-                st.write(f"   - Hora requerida: {punto['hora']}")
-                st.write(f"   - Dirección: {punto.get('direccion', '')}")
-      
 def ver_ruta_optimizada():
-    st.title("🚚 Ruta Optimizada")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
-    with col2:
-        tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
-    with col3:
-        algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3", "Algoritmo 4"])
+    st.title("🚚 Ver Ruta Optimizada")
+    c1,c2 = st.columns(2)
+    with c1:
+        fecha = st.date_input("Fecha", value=datetime.now().date())
+    with c2:
+        tipo  = st.radio("Tipo Servicio", ["Todos","Sucursal","Delivery"], horizontal=True)
 
-    datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
+    # Variables de estado (persisten entre clicks)
+    if "res" not in st.session_state:
+        st.session_state["res"] = None
+    if "df_ruta" not in st.session_state:
+        st.session_state["df_ruta"] = None
+    if "df_completo" not in st.session_state:
+        st.session_state["df_completo"] = None
+    if "ruta_guardada" not in st.session_state:
+        st.session_state["ruta_guardada"] = False
+    if "leg_0" not in st.session_state:
+        st.session_state["leg_0"] = 0
 
-    if datos:
-        # Validar puntos con coordenadas
-        puntos_validos = []
-        for item in datos:
-            coords = item.get("coordenadas")
-            try:
-                if isinstance(coords, dict) and "lat" in coords and "lon" in coords:
-                    lat = float(coords["lat"])
-                    lon = float(coords["lon"])
-                    if -90 <= lat <= 90 and -180 <= lon <= 180:
-                        puntos_validos.append(item)
-                    else:
-                        st.warning(f"Punto descartado (coordenadas fuera de rango): {item.get('direccion', 'N/A')}")
-                else:
-                    st.warning(f"Punto descartado (coordenadas inválidas): {item.get('direccion', 'N/A')}")
-            except (ValueError, TypeError) as e:
-                st.warning(f"Punto descartado (error en coordenadas): {item.get('direccion', 'N/A')} - Error: {e}")
-
-        puntos_con_hora = [item for item in puntos_validos if item.get("hora")]
-
-        if not puntos_validos:
-            st.error("No hay puntos válidos con coordenadas correctas para optimizar.")
+    # Solo calcula si aún no hay resultado
+    if st.session_state["res"] is None:
+        pedidos = cargar_pedidos(fecha, tipo)
+        if not pedidos:
+            st.info("No hay pedidos para esa fecha/tipo.")
             return
 
-        # Ejecutar Algoritmo Seleccionado
-        try:
-            if algoritmo == "Algoritmo 1":
-                puntos_optimizados = optimizar_ruta_algoritmo1(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            elif algoritmo == "Algoritmo 2":
-                puntos_optimizados = optimizar_ruta_algoritmo2(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            elif algoritmo == "Algoritmo 3":
-                puntos_optimizados = optimizar_ruta_algoritmo3(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-            else:
-                puntos_optimizados = optimizar_ruta_algoritmo4(
-                    puntos_validos,
-                    puntos_con_hora,
-                    considerar_trafico=True
-                )
-                
-        except Exception as e:
-            st.error(f"Error al optimizar la ruta con {algoritmo}: {e}")
-            puntos_optimizados = puntos_validos  # Usar orden original como respaldo
+        #Lo que es equivalente a lo de puntos fijos que se planetearon, aquí sólo se considera la planta Aka. Depósito
+        DF = pd.DataFrame(pedidos)
+        DEP = {
+            "id":"DEP",
+            "operacion":"Depósito",
+            "nombre_cliente":"Depósito",
+            "lat":-16.40904,
+            "lon":-71.53745,
+            "time_start":"08:00",
+            "time_end":"18:00",
+            "demand":0
+        }
+        df = pd.concat([pd.DataFrame([DEP]), DF], ignore_index=True)
+        st.session_state["df_completo"] = df
 
-        # Mostrar Tabla de Puntos Optimizada
-        tabla_data = []
-        for idx, item in enumerate(puntos_optimizados):
-            # Validar la presencia de 'tipo_solicitud' y usar un valor predeterminado si falta
-            tipo_solicitud = item.get("tipo_solicitud", "N/A")
-            nombre_mostrar = (
-                item["nombre_cliente"]
-                if tipo_solicitud == "Cliente Delivery"
-                else item.get("sucursal", "Sin Nombre")
-            )
-            tabla_data.append({
-                "Orden": idx + 1,
-                "Operación": item.get("operacion", "N/A"),
-                "Cliente/Sucursal": nombre_mostrar,
-                "Dirección": item.get("direccion", "N/A"),
-                "Teléfono": item.get("telefono", "N/A"),
-                "Hora": item.get("hora", "Sin hora"),
-            })
+        data = _crear_data_model(df, vehiculos=1, capacidad_veh=None)
+        t0 = tiempo.time()
+        res = resolver_vrptw(data, tiempo_max_seg=120)
+        solve_t = tiempo.time()-t0
+        if not res:
+            st.error("😕 Sin solución factible.")
+            return
 
-        df_tabla = pd.DataFrame(tabla_data)
-        st.dataframe(df_tabla, height=600, use_container_width=True, hide_index=True)
+        st.session_state["res"] = res
+        st.metric("⏱️ Tiempo de cómputo", f"{solve_t:.2f} s")
+        st.metric("📏 Distancia total (km)", f"{res['distance_total_m']/1000:.2f}")
 
-        # Botón de Descarga
-        excel_buffer = BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df_tabla.to_excel(writer, index=False)
+        route = res["routes"][0]["route"]
+        arr   = res["routes"][0]["arrival_sec"]
 
-        # Mostrar botón justo después de la tabla
-        st.download_button(
-            label="Descargar Excel",
-            data=excel_buffer.getvalue(),
-            file_name=f"ruta_optimizada_{fecha_seleccionada.strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        df_r = df.loc[route,["nombre_cliente","time_start","time_end"]].copy()
+        df_r["ETA"]   = [datetime.utcfromtimestamp(t).strftime("%H:%M") for t in arr]
+        df_r["orden"] = range(len(route))
+        st.session_state["df_ruta"] = df_r
+
+        if not st.session_state["ruta_guardada"]:
+            doc = {
+                "fecha": fecha.strftime("%Y-%m-%d"),
+                "tipo_servicio": tipo,
+                "creado_en": firestore.SERVER_TIMESTAMP,
+                "vehiculos": 1,
+                "distancia_total_m": res["distance_total_m"],
+                "paradas":[]
+            }
+            for idx,n in enumerate(route):
+                doc["paradas"].append({
+                    "orden": idx,
+                    "pedidoId": df.loc[n,"id"],
+                    "nombre": df.loc[n,"nombre_cliente"],
+                    "lat": df.loc[n,"lat"],
+                    "lon": df.loc[n,"lon"],
+                    "ETA": datetime.utcfromtimestamp(arr[idx]).strftime("%H:%M")
+                })
+            db.collection("rutas").add(doc)
+            st.session_state["ruta_guardada"] = True
+
+    # Mostrar tabla
+    df_r = st.session_state["df_ruta"]
+    df   = st.session_state["df_completo"]
+    res  = st.session_state["res"]
+    route = res["routes"][0]["route"]
+
+    st.dataframe(df_r[["orden","ETA","nombre_cliente","time_start","time_end"]], use_container_width=True)
+
+    # Botón reinicio
+    if st.button("🔄 Reiniciar Tramos"): #Bueno, una vez que se terminaron de pasar los "Ya llegué a..., se reinicia el tramo"
+        st.session_state["leg_0"] = 0
+
+    leg = st.session_state["leg_0"]
+    if leg >= len(route)-1:
+        st.success("✅ Todas las paradas completadas") 
+        return
+
+    o,d = route[leg], route[leg+1]
+    name = df.loc[d,"nombre_cliente"]
+    ETA  = df_r.loc[df_r["orden"]==leg+1,"ETA"].values[0]
+    st.markdown(f"### Próximo → **{name}** (ETA {ETA})")
+    if st.button(f"Ya llegué a {name}"):
+        st.session_state["leg_0"] += 1
+        st.rerun()
+
+    # Mapa tramo actual
+    coords = [(df.loc[i,"lat"],df.loc[i,"lon"]) for i in route]
+    orig = f"{coords[leg][0]},{coords[leg][1]}"
+    dest = f"{coords[leg+1][0]},{coords[leg+1][1]}"
+    try:
+        dirs = gmaps.directions(
+            orig, dest,
+            mode="driving",
+            departure_time=datetime.now(),
+            traffic_model="best_guess"
         )
+        leg0 = dirs[0]["legs"][0]
+        tt   = leg0.get("duration_in_traffic",leg0["duration"])["text"]
+        ov   = dirs[0]["overview_polyline"]["points"]
+        seg  = [(p["lat"],p["lng"]) for p in decode_polyline(ov)]
+    except:
+        tt  = None
+        seg = [coords[leg],coords[leg+1]]
 
-        # Mapa de Ruta Optimizada
-        mostrar_ruta_en_mapa(puntos_optimizados)
-
-    else:
-        st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
+    t1,t2 = st.tabs(["🗺 Tramo","ℹ️ Info"])
+    with t1:
+        m = folium.Map(location=seg[0],zoom_start=14)
+        folium.PolyLine(seg,color="blue",weight=5,opacity=0.8,
+                        tooltip=f"⏱ {tt}" if tt else None).add_to(m)
+        folium.Marker(seg[0],popup="Origen",
+                      icon=folium.Icon(color="green",icon="play",prefix="fa")).add_to(m)
+        folium.Marker(seg[-1],popup=name,
+                      icon=folium.Icon(color="blue",icon="map-marker",prefix="fa")).add_to(m)
+        st_folium(m,width=700,height=400)
+    with t2:
+        st.write(f"**Tiempo estimado (tráfico):** {tt or '--'}")
+        
