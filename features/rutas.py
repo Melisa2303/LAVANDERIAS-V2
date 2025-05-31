@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
 from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
 import requests  # Importar requests
