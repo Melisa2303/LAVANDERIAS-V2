@@ -14,7 +14,7 @@ from googlemaps.convert import decode_polyline
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 import folium
 from streamlit_folium import st_folium
-from core.constants import GOOGLE_MAPS_API_KEY, DEP
+from core.constants import GOOGLE_MAPS_API_KEY
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
