@@ -9,7 +9,7 @@ from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
 from datetime import datetime, timedelta, time
-from algorithms.algoritmo1 import *
+from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix, 
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
@@ -337,7 +337,7 @@ def ver_ruta_optimizada():
 
         data = _crear_data_model(df, vehiculos=1, capacidad_veh=None)
         t0 = tiempo.time()
-        res = resolver_vrptw(data, tiempo_max_seg=120)
+        res = optimizar_ruta_algoritmo1(data, tiempo_max_seg=120)
         solve_t = tiempo.time()-t0
         if not res:
             st.error("😕 Sin solución factible.")
