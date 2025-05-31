@@ -1,256 +1,199 @@
-# Lógico para el Algoritmo 1: PCA + GLS OR TOOLS
-import streamlit as st
-from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
-from googlemaps.convert import decode_polyline
-from ortools.constraint_solver import routing_enums_pb2
-from ortools.constraint_solver import pywrapcp
+#Algoritmo 1: OR
+import os
 import math
-import pandas as pd
-from datetime import datetime, timedelta, time
 import time as tiempo
-import pytz
-import requests  # Importar requests
+from datetime import datetime
+from io import BytesIO
 
-# Función para obtener matriz de distancias reales con Google Maps API
-@st.cache_data(ttl=300)  # Cache de 5 minutos (el tráfico cambia frecuentemente)
-def obtener_matriz_tiempos(puntos, considerar_trafico=True):
-    """
-    Obtiene los tiempos reales de viaje entre puntos, considerando tráfico actual.
-    
-    Args:
-        puntos: Lista de puntos con coordenadas {lat, lon}
-        considerar_trafico: Si True, usa datos de tráfico en tiempo real
-    
-    Returns:
-        Matriz de tiempos en segundos entre cada par de puntos
-    """
+import streamlit as st
+import pandas as pd
+import firebase_admin
+from firebase_admin import credentials, firestore
+import googlemaps
+from googlemaps.convert import decode_polyline
+from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+import folium
+from streamlit_folium import st_folium
+from core.constants import GOOGLE_MAPS_API_KEY, DEP
+
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
+
+# -------------------- CONSTANTES VRP --------------------
+SERVICE_TIME    = 10 * 60        # 10 minutos de servicio
+MAX_ELEMENTS    = 100            # límite de celdas por petición DM API
+SHIFT_START_SEC =  9 * 3600      # 09:00
+SHIFT_END_SEC   = 16*3600 +30*60 # 16:30
+
+# ===================== AUXILIARES VRP =====================
+db = firestore.client()
+
+def _hora_a_segundos(hhmm):
+    if hhmm is None or pd.isna(hhmm):
+        return None
+    h, m = map(int, str(hhmm).split(":"))
+    return h*3600 + m*60
+#Distancia euclidiana - Drones - Emergencia - Botar sí o sí una tabla ordenada considerando distancias, 
+# no tiempo real, sino estimación
+def _haversine_dist_dur(coords, vel_kmh=40.0):
+    R = 6371e3
+    n = len(coords)
+    dist = [[0]*n for _ in range(n)]
+    dur  = [[0]*n for _ in range(n)]
+    v_ms = vel_kmh * 1000 / 3600
+    for i in range(n):
+        for j in range(n):
+            if i==j: continue
+            la1,lo1 = map(math.radians, coords[i])
+            la2,lo2 = map(math.radians, coords[j])
+            dlat = la2-la1; dlon=lo2-lo1
+            a = math.sin(dlat/2)**2 + math.cos(la1)*math.cos(la2)*math.sin(dlon/2)**2
+            d = 2*R*math.asin(math.sqrt(a))
+            dist[i][j] = int(d)
+            dur [i][j] = int(d/v_ms)
+    return dist, dur
+
+#Tomar los puntos de la API - Matriz para el algoritmo las reciba 
+@st.cache_data(ttl="1h", show_spinner=False)
+def _distancia_duracion_matrix(coords):
     if not GOOGLE_MAPS_API_KEY:
-        st.error("❌ Se requiere API Key de Google Maps")
-        return [[0]*len(puntos) for _ in puntos]
-    
-    # 1. Preparar parámetros para la API
-    locations = [f"{p['lat']},{p['lon']}" for p in puntos]
-    params = {
-        'origins': '|'.join(locations),
-        'destinations': '|'.join(locations),
-        'key': GOOGLE_MAPS_API_KEY,
-        'units': 'metric'
+        return _haversine_dist_dur(coords)
+    n = len(coords)
+    dist = [[0]*n for _ in range(n)]
+    dur  = [[0]*n for _ in range(n)]
+    batch = max(1, min(n, MAX_ELEMENTS//n))
+    for i0 in range(0, n, batch):
+        resp = gmaps.distance_matrix(
+            origins=coords[i0:i0+batch],
+            destinations=coords,
+            mode="driving",
+            units="metric",
+            departure_time=datetime.now(),
+            traffic_model="best_guess" #pessimistic / optimistic
+        )
+        for i,row in enumerate(resp["rows"]):
+            for j,el in enumerate(row["elements"]):
+                dist[i0+i][j] = el.get("distance",{}).get("value",1)
+                dur [i0+i][j] = el.get("duration_in_traffic",{}).get("value",
+                                      el.get("duration",{}).get("value",1))
+    return dist, dur
+
+#Datos para la visualización del usuario + Consideraciones del algoritmo
+def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
+    coords = list(zip(df["lat"], df["lon"]))
+    dist_m, dur_s = _distancia_duracion_matrix(coords)
+    time_windows, demandas = [], []
+    for _, row in df.iterrows():
+        ini = _hora_a_segundos(row.get("time_start"))
+        fin = _hora_a_segundos(row.get("time_end"))
+        if ini is None or fin is None:
+            ini, fin = SHIFT_START_SEC, SHIFT_END_SEC
+        time_windows.append((ini, fin))
+        demandas.append(row.get("demand", 1))
+    return {
+        "distance_matrix":    dist_m,
+        "duration_matrix":    dur_s,
+        "time_windows":       time_windows,
+        "demands":            demandas,
+        "num_vehicles":       vehiculos,
+        "vehicle_capacities": [capacidad_veh or 10**9] * vehiculos,
+        "depot":              0,
     }
-    
-    # 2. Añadir parámetros de tráfico si está activado
-    if considerar_trafico:
-        params.update({
-            'departure_time': 'now',  # Usar hora actual
-            'traffic_model': 'best_guess'  # Modelo: best_guess/pessimistic/optimistic
+
+
+#Algoritmos diversos
+#OR-Tool + PCA
+def optimizar_ruta_algoritmo1(data, tiempo_max_seg=120):
+    manager = pywrapcp.RoutingIndexManager(
+        len(data["distance_matrix"]),
+        data["num_vehicles"],
+        data["depot"]
+    )
+    routing = pywrapcp.RoutingModel(manager)
+
+    def time_cb(f, t):
+        i = manager.IndexToNode(f)
+        j = manager.IndexToNode(t)
+        travel = data["duration_matrix"][i][j]
+        service = SERVICE_TIME if i != data["depot"] else 0
+        return travel + service
+
+    transit_cb = routing.RegisterTransitCallback(time_cb)
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_cb)
+
+    routing.AddDimension(
+        transit_cb,
+        slack_max=24*3600,
+        capacity=24*3600,
+        fix_start_cumul_to_zero=False,
+        name="Time"
+    )
+    time_dim = routing.GetDimensionOrDie("Time")
+    depot_idx = manager.NodeToIndex(data["depot"])
+    time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
+    for node, (ini, fin) in enumerate(data["time_windows"]):
+        if node == data["depot"]: continue
+        idx = manager.NodeToIndex(node)
+        time_dim.CumulVar(idx).SetRange(ini, fin)
+
+    if any(data["demands"]): #Capacidad actual del vehículo aproximadamente a 100 kg pero no se está considerando por ahora
+        def dem_cb(i):
+            return data["demands"][manager.IndexToNode(i)]
+        dem_idx = routing.RegisterUnaryTransitCallback(dem_cb)
+        routing.AddDimensionWithVehicleCapacity(
+            dem_idx, 0, data["vehicle_capacities"], True, "Capacity"
+        )
+
+    params = pywrapcp.DefaultRoutingSearchParameters()
+    params.time_limit.FromSeconds(tiempo_max_seg)
+    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+
+    sol = routing.SolveWithParameters(params)
+    if not sol:
+        return None
+
+    rutas, dist_total = [], 0
+    for v in range(data["num_vehicles"]):
+        idx = routing.Start(v)
+        route, llegada = [], []
+        while not routing.IsEnd(idx):
+            n = manager.IndexToNode(idx)
+            route.append(n)
+            llegada.append(sol.Min(time_dim.CumulVar(idx)))
+            nxt = sol.Value(routing.NextVar(idx))
+            dist_total += routing.GetArcCostForVehicle(idx, nxt, v)
+            idx = nxt
+        rutas.append({"vehicle": v, "route": route, "arrival_sec": llegada})
+
+    return {"routes": rutas, "distance_total_m": dist_total}
+
+# ============= CARGAR PEDIDOS DESDE FIRESTORE =============
+
+@st.cache_data(ttl=300)
+def cargar_pedidos(fecha, tipo):
+    col = db.collection('recogidas')
+    docs = []
+    docs += col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()
+    docs += col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
+    if tipo != "Todos":
+        tf = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
+        docs = [d for d in docs if d.to_dict().get("tipo_solicitud")==tf]
+    out = []
+    for d in docs:
+        data = d.to_dict()
+        is_recojo = data.get("fecha_recojo")==fecha.strftime("%Y-%m-%d")
+        op = "Recojo" if is_recojo else "Entrega"
+        coords = data.get(f"coordenadas_{'recojo' if is_recojo else 'entrega'}",{})
+        lat, lon = coords.get("lat"), coords.get("lon")
+        hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}","")
+        ts, te = (hs,hs) if hs else ("08:00","18:00")
+        out.append({
+            "id":d.id,
+            "operacion":op,
+            "nombre_cliente":data.get("nombre_cliente",""),
+            "lat":lat, "lon":lon,
+            "time_start":ts, "time_end":te,
+            "demand":1
         })
-    
-    # 3. Hacer la petición a la API
-    try:
-        url = "https://maps.googleapis.com/maps/api/distancematrix/json"
-        response = requests.get(url, params=params)
-        data = response.json()
-        
-        if data['status'] != 'OK':
-            st.error(f"⚠️ Error en API: {data.get('error_message', 'Código: '+data['status'])}")
-            return [[0]*len(puntos) for _ in puntos]
-        
-        # 4. Procesar respuesta
-        matriz = []
-        for row in data['rows']:
-            fila_tiempos = []
-            for elemento in row['elements']:
-                # Priorizar 'duration_in_traffic' si existe
-                tiempo = elemento.get('duration_in_traffic', elemento['duration'])
-                fila_tiempos.append(tiempo['value'])  # Tiempo en segundos
-            matriz.append(fila_tiempos)
-        
-        return matriz
-        
-    except Exception as e:
-        st.error(f"🚨 Error al conectar con API: {str(e)}")
-        return [[0]*len(puntos) for _ in puntos]
-
-# Función para obtener geometría de ruta con Directions API
-@st.cache_data(ttl=3600)
-def obtener_geometria_ruta(puntos):
-    """Versión segura para Directions API usando API key global"""
-    if not GOOGLE_MAPS_API_KEY:
-        st.error("API key de Google Maps no configurada")
-        return {}
-    
-    waypoints = "|".join([f"{p['lat']},{p['lon']}" for p in puntos[1:-1]])
-    url = f"https://maps.googleapis.com/maps/api/directions/json?origin={puntos[0]['lat']},{puntos[0]['lon']}&destination={puntos[-1]['lat']},{puntos[-1]['lon']}&waypoints=optimize:true|{waypoints}&key={GOOGLE_MAPS_API_KEY}"
-    return requests.get(url).json()
-
-# Funciones auxiliares para obtener puntos fijos específicos
-def obtener_puntos_fijos_inicio():
-    """Devuelve solo los puntos fijos de la mañana (orden >= 0)"""
-    return [p for p in PUNTOS_FIJOS_COMPLETOS if p['orden'] >= 0]
-
-def obtener_puntos_fijos_fin():
-    """Devuelve solo los puntos fijos de la tarde (orden < 0)"""
-    return [p for p in PUNTOS_FIJOS_COMPLETOS if p['orden'] < 0]
-
-def optimizar_ruta_algoritmo1(puntos_intermedios, puntos_con_hora, considerar_trafico=True):
-    """
-    Optimiza la ruta utilizando el Algoritmo 1 y devuelve los puntos en el orden optimizado.
-    Incluye puntos fijos al inicio y al final de la ruta.
-    """
-    try:
-        # 1. OBTENER PUNTOS FIJOS
-        puntos_fijos_inicio = obtener_puntos_fijos_inicio()  # Puntos iniciales (Cochera, Planta, etc.)
-        puntos_fijos_fin = obtener_puntos_fijos_fin()        # Puntos finales (Planta, Cochera, etc.)
-
-        # 2. VALIDAR PUNTOS INTERMEDIOS
-        puntos_validos = []
-        for punto in puntos_intermedios:
-            p = punto.copy()
-            # Validar y convertir coordenadas
-            if isinstance(p.get('coordenadas', {}), dict):
-                p['lat'] = p['coordenadas'].get('lat')
-                p['lon'] = p['coordenadas'].get('lon')
-            if 'lat' in p and 'lon' in p:  # Asegurar que las coordenadas sean válidas
-                p.setdefault('tipo', 'intermedio')  # Tipo por defecto
-                puntos_validos.append(p)
-
-        if not puntos_validos:
-            # Si no hay puntos intermedios válidos, solo mostrar puntos fijos
-            st.warning("No hay suficientes puntos intermedios para optimizar. Mostrando solo puntos fijos.")
-            return puntos_fijos_inicio + puntos_fijos_fin
-
-        # 3. OBTENER MATRIZ DE TIEMPOS
-        time_matrix = obtener_matriz_tiempos(puntos_validos, considerar_trafico)
-
-        # 4. CONFIGURAR MODELO DE OPTIMIZACIÓN
-        manager = pywrapcp.RoutingIndexManager(len(puntos_validos), 1, 0)
-        routing = pywrapcp.RoutingModel(manager)
-
-        def time_callback(from_index, to_index):
-            """Devuelve el tiempo entre dos puntos."""
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return time_matrix[from_node][to_node]
-
-        transit_idx = routing.RegisterTransitCallback(time_callback)
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
-
-        # 5. CONFIGURAR PARÁMETROS DE BÚSQUEDA
-        search_params = pywrapcp.DefaultRoutingSearchParameters()
-        search_params.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-        )
-        search_params.local_search_metaheuristic = (
-            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-        )
-        search_params.time_limit.seconds = 15  # Tiempo límite para la optimización
-
-        # 6. SOLUCIONAR EL MODELO
-        solution = routing.SolveWithParameters(search_params)
-
-        if solution:
-            # Obtener el orden optimizado de puntos
-            index = routing.Start(0)
-            ruta_optimizada_idx = []
-            while not routing.IsEnd(index):
-                ruta_optimizada_idx.append(manager.IndexToNode(index))
-                index = solution.Value(routing.NextVar(index))
-
-            # Combinar puntos fijos con los intermedios optimizados
-            return (
-                puntos_fijos_inicio +
-                [puntos_validos[i] for i in ruta_optimizada_idx] +
-                puntos_fijos_fin
-            )
-
-        # Si no hay solución, devolver el orden original
-        st.warning("No se encontró una solución optimizada. Mostrando orden original.")
-        return puntos_fijos_inicio + puntos_validos + puntos_fijos_fin
-
-    except Exception as e:
-        st.error(f"Error en Algoritmo 1: {str(e)}")
-        return puntos_intermedios
-
-def obtener_puntos_del_dia(fecha):
-    """Función principal con caché condicional"""
-    # Determinar TTL basado en si es fecha histórica
-    ttl = 3600 if fecha < datetime.now().date() else 300
-    return _obtener_puntos_del_dia_cached(fecha, ttl)
-
-@st.cache_data(ttl=3600)
-def _obtener_puntos_del_dia_cached(fecha, _ttl=None):
-    """Función interna con caché - Versión modificada mínima"""
-    try:
-        fecha_str = fecha.strftime("%Y-%m-%d")
-        puntos = []
-        recogidas_ref = db.collection('recogidas')
-        
-        # Consulta para recogidas
-        recogidas = list(recogidas_ref.where('fecha_recojo', '==', fecha_str).stream())
-        for doc in recogidas:
-            data = doc.to_dict()
-            if 'coordenadas_recojo' in data:
-                punto = {
-                    "id": doc.id,
-                    "tipo": "recojo",
-                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Punto de recogida'),
-                    "direccion": data.get('direccion_recojo', 'Dirección no especificada'),
-                    "hora": data.get('hora_recojo'),
-                    "duracion_estimada": 15
-                }
-                # Conversión segura de coordenadas
-                coords = data['coordenadas_recojo']
-                if hasattr(coords, 'latitude'):  # Si es GeoPoint
-                    punto.update({
-                        "lat": coords.latitude,
-                        "lon": coords.longitude
-                    })
-                elif isinstance(coords, dict):  # Si es diccionario
-                    punto.update({
-                        "lat": coords.get('lat'),
-                        "lon": coords.get('lon')
-                    })
-                puntos.append(punto)
-        
-        # Consulta para entregas (misma lógica que arriba)
-        entregas = list(recogidas_ref.where('fecha_entrega', '==', fecha_str).stream())
-        for doc in entregas:
-            data = doc.to_dict()
-            if 'coordenadas_entrega' in data:
-                punto = {
-                    "id": doc.id,
-                    "tipo": "entrega",
-                    "nombre": data.get('nombre_cliente') or data.get('sucursal', 'Punto de entrega'),
-                    "direccion": data.get('direccion_entrega', 'Dirección no especificada'),
-                    "hora": data.get('hora_entrega'),
-                    "duracion_estimada": 15
-                }
-                # Conversión segura de coordenadas
-                coords = data['coordenadas_entrega']
-                if hasattr(coords, 'latitude'):
-                    punto.update({
-                        "lat": coords.latitude,
-                        "lon": coords.longitude
-                    })
-                elif isinstance(coords, dict):
-                    punto.update({
-                        "lat": coords.get('lat'),
-                        "lon": coords.get('lon')
-                    })
-                puntos.append(punto)
-        
-        return puntos
-        
-    except Exception as e:
-        st.error(f"Error al obtener puntos: {str(e)}")
-        return []
-        
-def construir_ruta_completa(puntos_fijos, puntos_intermedios_optimizados):
-    """Combina puntos fijos con la ruta optimizada en el orden CORRECTO"""
-    # Ordenar puntos fijos iniciales (orden >= 0)
-    inicio = sorted([p for p in puntos_fijos if p['orden'] >= 0], key=lambda x: x['orden'])
-    
-    # Ordenar puntos fijos finales (orden < 0)
-    fin = sorted([p for p in puntos_fijos if p['orden'] < 0], key=lambda x: x['orden'])
-    
-    return inicio + puntos_intermedios_optimizados + fin
-    
+    return out
