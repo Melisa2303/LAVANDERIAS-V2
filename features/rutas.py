@@ -9,7 +9,7 @@ from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
 from datetime import datetime, timedelta, time
-from time as tiempo
+import time as tiempo
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
