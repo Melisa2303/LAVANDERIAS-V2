@@ -12,6 +12,7 @@ from streamlit_folium import st_folium
 import folium
 from datetime import datetime, timedelta, time
 import time as tiempo
+import googlemaps
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
