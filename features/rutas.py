@@ -17,6 +17,8 @@ from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
 from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
 @st.cache_data(ttl=300)
 def cargar_ruta(fecha, tipo):
     # Carga las rutas de recogida y entrega desde la base de datos para una fecha y tipo de servicio específicos.
