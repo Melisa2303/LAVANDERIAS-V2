@@ -9,6 +9,10 @@ from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 
 def solicitar_recogida():
+    # Inicializar delivery_data en session_state si no existe
+    if "delivery_data" not in st.session_state:
+        st.session_state["delivery_data"] = {}
+        
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
