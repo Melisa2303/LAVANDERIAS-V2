@@ -23,10 +23,8 @@ def solicitar_recogida():
     if "delivery_direccion" not in st.session_state:
         st.session_state["delivery_direccion"] = "Arequipa, Perú"
     if "delivery_mapa" not in st.session_state:
-        import folium
         st.session_state["delivery_mapa"] = folium.Map(location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]], zoom_start=15)
     if "delivery_marker" not in st.session_state:
-        import folium
         st.session_state["delivery_marker"] = folium.Marker(
             [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
             tooltip="Punto seleccionado"
