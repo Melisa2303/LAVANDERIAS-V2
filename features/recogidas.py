@@ -9,9 +9,28 @@ from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 
 def solicitar_recogida():
-    # Inicializar delivery_data en session_state si no existe
+    # Inicialización para evitar AttributeError
     if "delivery_data" not in st.session_state:
-        st.session_state["delivery_data"] = {}
+        st.session_state["delivery_data"] = {
+            "direccion": "",
+            "lat": None,
+            "lon": None
+        }
+    if "delivery_lat" not in st.session_state:
+        st.session_state["delivery_lat"] = -16.409047
+    if "delivery_lon" not in st.session_state:
+        st.session_state["delivery_lon"] = -71.537451
+    if "delivery_direccion" not in st.session_state:
+        st.session_state["delivery_direccion"] = "Arequipa, Perú"
+    if "delivery_mapa" not in st.session_state:
+        import folium
+        st.session_state["delivery_mapa"] = folium.Map(location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]], zoom_start=15)
+    if "delivery_marker" not in st.session_state:
+        import folium
+        st.session_state["delivery_marker"] = folium.Marker(
+            [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+            tooltip="Punto seleccionado"
+        ).add_to(st.session_state["delivery_mapa"])
         
     col1, col2 = st.columns([1, 3])
     with col1:
