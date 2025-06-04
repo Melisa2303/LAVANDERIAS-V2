@@ -182,7 +182,7 @@ def solicitar_recogida():
             </div>
         """, unsafe_allow_html=True)
 
-        fecha_recojo = st.date_input("Fecha de Recojo")
+        fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
 
         if st.button("💾 Solicitar Recogida"):
             if not nombre_cliente:
