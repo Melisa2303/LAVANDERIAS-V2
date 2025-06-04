@@ -193,6 +193,10 @@ def solicitar_recogida():
                 return
 
             fecha_entrega = calcular_fecha_entrega(fecha_recojo)
+
+            st.session_state.delivery_data["direccion"] = st.session_state.delivery_direccion
+            st.session_state.delivery_data["lat"] = st.session_state.delivery_lat
+            st.session_state.delivery_data["lon"] = st.session_state.delivery_lon
             
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
