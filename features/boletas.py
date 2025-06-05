@@ -142,7 +142,7 @@ def ingresar_boleta():
             st.session_state.telefono = ""
             st.session_state.monto = 0.0
             st.session_state.fecha_registro = datetime.now()
-            st.rerun()
+            # st.rerun()
 
 import pandas as pd
 from io import BytesIO
