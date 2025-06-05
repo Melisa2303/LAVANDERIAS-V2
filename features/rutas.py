@@ -301,11 +301,9 @@ def datos_ruta():
 
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
-    c1,c2 = st.columns(2)
-    with c1:
-        fecha = st.date_input("Fecha", value=datetime.now().date())
-    with c2:
-        tipo  = st.radio("Tipo Servicio", ["Todos","Sucursal","Delivery"], horizontal=True)
+
+    fecha = st.date_input("Fecha", value=datetime.now().date())
+
 
     # Variables de estado (persisten entre clicks)
     if "res" not in st.session_state:
