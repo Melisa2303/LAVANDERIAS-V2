@@ -301,9 +301,11 @@ def datos_ruta():
 
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
-
-    fecha = st.date_input("Fecha", value=datetime.now().date())
-
+    c1,c2 = st.columns(2)
+    with c1:
+        fecha = st.date_input("Fecha", value=datetime.now().date())
+    with c2:
+        tipo  = st.radio("Tipo Servicio", ["Todos","Sucursal","Delivery"], horizontal=True)  
 
     # Variables de estado (persisten entre clicks)
     if "res" not in st.session_state:
@@ -319,7 +321,7 @@ def ver_ruta_optimizada():
 
     # Solo calcula si aún no hay resultado
     if st.session_state["res"] is None:
-        pedidos = cargar_pedidos(fecha)
+        pedidos = cargar_pedidos(fecha, tipo)
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
             return
