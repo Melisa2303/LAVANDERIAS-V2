@@ -10,8 +10,8 @@ import requests  # Importar requests
 from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
-from datetime import datetime, timedelta, time
-import time as tiempo
+from datetime import datetime, timedelta
+import time
 import googlemaps
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
 from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
