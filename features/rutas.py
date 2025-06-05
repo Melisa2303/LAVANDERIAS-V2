@@ -319,9 +319,9 @@ def ver_ruta_optimizada():
 
     # Solo calcula si aún no hay resultado
     if st.session_state["res"] is None:
-        pedidos = cargar_pedidos(fecha, tipo)
+        pedidos = cargar_pedidos(fecha)
         if not pedidos:
-            st.info("No hay pedidos para esa fecha/tipo.")
+            st.info("No hay pedidos para esa fecha.")
             return
 
         #Lo que es equivalente a lo de puntos fijos que se planetearon, aquí sólo se considera la planta Aka. Depósito
