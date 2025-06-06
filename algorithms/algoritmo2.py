@@ -144,7 +144,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         "depot":              0,
     }
 #
-def optimizar_ruta_algoritmo1(data, tiempo_max_seg=120):
+def optimizar_ruta_algoritmo2(data, tiempo_max_seg=120):
     """
     Resuelve un VRPTW de un ...solo vehículo... usando OR-Tools.
     data: diccionario creado por _crear_data_model.
