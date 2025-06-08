@@ -13,6 +13,8 @@ import folium
 from datetime import datetime, timedelta, time
 import time as tiempo
 import googlemaps
+from core.firebase import db, obtener_sucursales
+from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
