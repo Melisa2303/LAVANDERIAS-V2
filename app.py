@@ -54,13 +54,13 @@ else:
         from features.recogidas import solicitar_recogida
         solicitar_recogida()
     elif choice == "Datos de Ruta":
-        from features.rutas import datos_ruta
+        from features.rutas2 import datos_ruta
         datos_ruta()
     elif choice == "Datos de Boletas":
         from features.boletas import datos_boletas
         datos_boletas()
     elif choice == "Ver Ruta Optimizada":
-        from features.rutas import ver_ruta_optimizada
+        from features.rutas2 import ver_ruta_optimizada
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         from features.tracking import seguimiento_vehiculo
