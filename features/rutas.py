@@ -14,9 +14,6 @@ from datetime import datetime, timedelta, time
 import time as tiempo
 import googlemaps
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
-from algorithms.algoritmo2 import optimizar_ruta_algoritmo2
-from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
-from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
