@@ -262,7 +262,7 @@ def agrupar_puntos_aglomerativo(df, eps_metros=300):
     # 2) Aplicar AgglomerativeClustering con distancia precomputada
     clustering = AgglomerativeClustering(
         n_clusters=None, #1
-        affinity="precomputed",
+        metric="precomputed", #cambie affinity x metric, salía error
         linkage="average",
         distance_threshold=eps_metros
     )
