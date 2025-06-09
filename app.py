@@ -1,7 +1,7 @@
 import streamlit as st
 from core.auth import login, logout
               
-# Inicializar 'logged_in', 'usuario_actual' y 'menu' en session_state
+# Inicializar 'logged_in.', 'usuario_actual' y 'menu' en session_state
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'usuario_actual' not in st.session_state:
