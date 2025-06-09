@@ -6,7 +6,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
-import requests  # Importar requests
+import requests  # Importar requests A
 from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
