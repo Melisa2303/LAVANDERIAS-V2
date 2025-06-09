@@ -1,53 +1,36 @@
-#################################################################################################################
-# demoapp6.py  –  Streamlit App Integrado:
-#   → GLS + PCA + OR-Tools
-#   → Firebase Firestore (usando service account JSON)
-#   → Google Maps Distance Matrix & Directions
-#   → OR-Tools VRP-TW con servicio, ventanas, tráfico real
-#   → Se empleó el algoritmo de agrupación: Agglomerative Clustering para agrupar pedidos cercanos en 300m a la redonda.
-#   → Página única: Ver Ruta Optimizada
-#   → En caso el algoritmo no dé respuesta, usa distancias euclidianas
-##################################################################################################################
-
 import os
 import math
 import time as tiempo
 from datetime import datetime
-
 import streamlit as st
 import pandas as pd
-import numpy as np
 import firebase_admin
 from firebase_admin import credentials, firestore
 import googlemaps
 from googlemaps.convert import decode_polyline
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-from sklearn.cluster import AgglomerativeClustering
 import folium
 from streamlit_folium import st_folium
 
 # -------------------- INICIALIZAR FIREBASE --------------------
-# Usa el JSON de servicio: 'lavanderia_key.json'
 if not firebase_admin._apps:
     cred = credentials.Certificate("lavanderia_key.json")
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # -------------------- CONFIG GOOGLE MAPS --------------------
-# En su caso se implemente con st.secrets
 GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
-SERVICE_TIME    = 10 * 60        # 10 minutos de servicio en cada parada (excepto depósito)
-MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matrix API
-SHIFT_START_SEC =  9 * 3600      # 09:00 en segundos
-SHIFT_END_SEC   = 16*3600 +30*60 # 16:30 en segundos
+SERVICE_TIME    = 10 * 60
+MAX_ELEMENTS    = 100
+SHIFT_START_SEC =  9 * 3600
+SHIFT_END_SEC   = 16*3600 +30*60
 
-# ===================== FUNCIONES AUXILIARES =====================
+# -------------------- FUNCIONES AUXILIARES --------------------
 
 def _hora_a_segundos(hhmm):
-    """Convierte 'HH:MM' a segundos desde medianoche. Si es None o inválido, retorna None."""
     if hhmm is None or pd.isna(hhmm) or hhmm == "":
         return None
     try:
@@ -57,20 +40,14 @@ def _hora_a_segundos(hhmm):
         return None
 
 def _haversine_dist_dur(coords, vel_kmh=40.0):
-    """
-    Calcula matrices de distancias (en metros) y duraciones (en segundos)
-    basadas en fórmula de Haversine asumiendo velocidad vel_kmh para la duración.
-    coords = [(lat1, lon1), (lat2, lon2), ...]
-    """
-    R = 6371e3  # radio terrestre en metros
+    R = 6371e3
     n = len(coords)
     dist = [[0]*n for _ in range(n)]
     dur  = [[0]*n for _ in range(n)]
-    v_ms = vel_kmh * 1000 / 3600  # convertir km/h a m/s
+    v_ms = vel_kmh * 1000 / 3600
     for i in range(n):
         for j in range(n):
-            if i == j:
-                continue
+            if i == j: continue
             lat1, lon1 = map(math.radians, coords[i])
             lat2, lon2 = map(math.radians, coords[j])
             dlat = lat2 - lat1
@@ -83,17 +60,11 @@ def _haversine_dist_dur(coords, vel_kmh=40.0):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _distancia_duracion_matrix(coords):
-    """
-    Llama a la Distance Matrix API de Google Maps para obtener distancias (m) y duraciones (s)
-    entre cada par de coords = [(lat, lon), ...].
-    Si falta clave de la API del archivo st.secrets, usa la aproximación Haversine.
-    """
     if not GOOGLE_MAPS_API_KEY:
         return _haversine_dist_dur(coords)
     n = len(coords)
     dist = [[0]*n for _ in range(n)]
     dur  = [[0]*n for _ in range(n)]
-    # Dividimos en lotes para no exceder MAX_ELEMENTS celdas
     batch = max(1, min(n, MAX_ELEMENTS // n))
     for i0 in range(0, n, batch):
         resp = gmaps.distance_matrix(
@@ -106,23 +77,12 @@ def _distancia_duracion_matrix(coords):
         )
         for i, row in enumerate(resp["rows"]):
             for j, el in enumerate(row["elements"]):
-                dist[i0 + i][j] = el.get("distance", {}).get("value", 1)
-                dur[i0 + i][j]  = el.get("duration_in_traffic", {}).get(
-                    "value",
-                    el.get("duration", {}).get("value", 1)
-                )
+                dist[i0+i][j] = el.get("distance", {}).get("value", 1)
+                dur[i0+i][j]  = el.get("duration_in_traffic", {}).get("value",
+                                 el.get("duration", {}).get("value", 1))
     return dist, dur
 
-def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
-    """
-    Construye el diccionario 'data' esperado por el resolver VRPTW:
-      - distance_matrix: matriz de distancias (m)
-      - duration_matrix: matriz de duraciones (s)
-      - time_windows: lista de (inicio, fin) en segundos
-      - demands: lista de demandas por nodo
-      - num_vehicles, vehicle_capacities, depot
-    df debe tener columnas ['lat', 'lon', 'time_start', 'time_end', 'demand'].
-    """
+def _crear_data_model(df):
     coords = list(zip(df["lat"], df["lon"]))
     dist_m, dur_s = _distancia_duracion_matrix(coords)
     time_windows = []
@@ -139,24 +99,13 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         "duration_matrix":    dur_s,
         "time_windows":       time_windows,
         "demands":            demandas,
-        "num_vehicles":       vehiculos,
-        "vehicle_capacities": [capacidad_veh or 10**9] * vehiculos,
+        "num_vehicles":       1,
+        "vehicle_capacities": [10**9],
         "depot":              0,
     }
-#
-def optimizar_ruta_algoritmo2(data, tiempo_max_seg=120):
-    """
-    Resuelve un VRPTW de un ...solo vehículo... usando OR-Tools.
-    data: diccionario creado por _crear_data_model.
-    Retorna {'routes': [ { 'vehicle': v, 'route': [nodos], 'arrival_sec': [segundos] } , ... ],
-             'distance_total_m': distancia_total_en_metros }
-    o None si no hay solución factible.
-    """
-    manager = pywrapcp.RoutingIndexManager(
-        len(data["distance_matrix"]),
-        data["num_vehicles"],
-        data["depot"]
-    )
+
+def optimizar_ruta(data, tiempo_max_seg=120):
+    manager = pywrapcp.RoutingIndexManager(len(data["distance_matrix"]), 1, data["depot"])
     routing = pywrapcp.RoutingModel(manager)
 
     def time_cb(from_index, to_index):
@@ -171,166 +120,48 @@ def optimizar_ruta_algoritmo2(data, tiempo_max_seg=120):
 
     routing.AddDimension(
         transit_cb_idx,
-        slack_max=24*3600,   # max tiempo de espera
-        capacity=24*3600,    # duracion max ruta
+        slack_max=24*3600,
+        capacity=24*3600,
         fix_start_cumul_to_zero=False,
         name="Time"
     )
     time_dim = routing.GetDimensionOrDie("Time")
     depot_idx = manager.NodeToIndex(data["depot"])
-    # Fijar la ventana del depósito
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
-    # Aplicar ventanas de tiempo a cada nodo
     for node, (ini, fin) in enumerate(data["time_windows"]):
-        if node == data["depot"]:
-            continue
+        if node == data["depot"]: continue
         idx = manager.NodeToIndex(node)
         time_dim.CumulVar(idx).SetRange(ini, fin)
-
-    # Si hay demandas, agrego dimensión de capacidad
-    if any(data["demands"]):
-        def demand_callback(i_idx):
-            return data["demands"][manager.IndexToNode(i_idx)]
-        dem_cb_idx = routing.RegisterUnaryTransitCallback(demand_callback)
-        routing.AddDimensionWithVehicleCapacity(
-            dem_cb_idx, 0, data["vehicle_capacities"], True, "Capacity"
-        )
 
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.time_limit.FromSeconds(tiempo_max_seg)
     params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-
     sol = routing.SolveWithParameters(params)
     if not sol:
         return None
 
-    rutas = []
-    dist_total = 0
-    for v in range(data["num_vehicles"]):
-        idx = routing.Start(v)
-        route, llegada = [], []
-        while not routing.IsEnd(idx):
-            n = manager.IndexToNode(idx)
-            route.append(n)
-            llegada.append(sol.Min(time_dim.CumulVar(idx)))
-            nxt = sol.Value(routing.NextVar(idx))
-            dist_total += routing.GetArcCostForVehicle(idx, nxt, v)
-            idx = nxt
-        rutas.append({"vehicle": v, "route": route, "arrival_sec": llegada})
-    return {"routes": rutas, "distance_total_m": dist_total}
-
-# ===================== FUNCIONES PARA CLUSTERING =====================
-
-
-def _haversine_meters(lat1, lon1, lat2, lon2):
-    """Retorna distancia en metros entre dos puntos (lat, lon) usando Haversine."""
-    R = 6371e3  # metros
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
-    return 2 * R * math.asin(math.sqrt(a))
-
-def agrupar_puntos_aglomerativo(df, eps_metros=300):
-    """
-    Agrupa pedidos cercanos mediante AgglomerativeClustering. 
-    eps_metros: umbral de distancia máxima en metros para que queden en el mismo cluster.
-    Retorna (df_clusters, df_etiquetado), donde:
-      - df_etiquetado = df original con columna 'cluster' indicando etiqueta de cluster.
-      - df_clusters  = DataFrame de centroides con columnas ['id','operacion','nombre_cliente',
-                        'dirección','lat','lon','time_start','time_end','demand'].
-    """
-    if df.empty:
-        return pd.DataFrame(), df.copy()
-
-    coords = df[["lat", "lon"]].to_numpy()
-    n = len(coords)
-    # 1) Construir matriz de distancias en metros
-    dist_m = np.zeros((n, n), dtype=float)
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                dist_m[i, j] = 0.0
-            else:
-                dist_m[i, j] = _haversine_meters(
-                    coords[i, 0], coords[i, 1],
-                    coords[j, 0], coords[j, 1]
-                )
-
-    # 2) Aplico AgglomerativeClustering solo si hay más de un punto
-    if n < 2:
-        labels = np.zeros(n, dtype=int)
-    else:
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            metric="precomputed",
-            linkage="single",
-            distance_threshold=eps_metros
-        )
-        labels = clustering.fit_predict(dist_m)
-
-    df_labeled = df.copy()
-    df_labeled["cluster"] = labels
-
-    # 3) Construir DataFrame de centroides
-    agrupados = []
-    for clus in sorted(np.unique(labels)):
-        members = df_labeled[df_labeled["cluster"] == clus]
-        centro_lat = members["lat"].mean()
-        centro_lon = members["lon"].mean()
-        nombres = list(members["nombre_cliente"].unique())
-        nombre_desc = ", ".join(nombres[:2]) + ("..." if len(nombres) > 2 else "")
-        direcciones = list(members["direccion"].unique())
-        direccion_desc = ", ".join(direcciones[:2]) + ("..." if len(direcciones) > 2 else "")
-        ts_vals = members["time_start"].tolist()
-        te_vals = members["time_end"].tolist()
-        ts_vals = [t for t in ts_vals if t]
-        te_vals = [t for t in te_vals if t]
-        inicio_cluster = min(ts_vals) if ts_vals else ""
-        fin_cluster    = max(te_vals) if te_vals else ""
-        demanda_total  = int(members["demand"].sum())
-        agrupados.append({
-            "id":             f"cluster_{clus}",
-            "operacion":      "Agrupado",
-            "nombre_cliente": f"Grupo {clus}: {nombre_desc}",
-            "direccion":      direccion_desc,
-            "lat":            centro_lat,
-            "lon":            centro_lon,
-            "time_start":     inicio_cluster,
-            "time_end":       fin_cluster,
-            "demand":         demanda_total
-        })
-
-    df_clusters = pd.DataFrame(agrupados)
-    return df_clusters, df_labeled
-
-
-# ===================== CARGAR PEDIDOS DESDE FIRESTORE =====================
+    ruta, llegada, dist_total = [], [], 0
+    idx = routing.Start(0)
+    while not routing.IsEnd(idx):
+        n = manager.IndexToNode(idx)
+        ruta.append(n)
+        llegada.append(sol.Min(time_dim.CumulVar(idx)))
+        nxt = sol.Value(routing.NextVar(idx))
+        dist_total += data["distance_matrix"][n][manager.IndexToNode(nxt)] if not routing.IsEnd(nxt) else 0
+        idx = nxt
+    return {"route": ruta, "arrival": llegada, "distance_total_m": dist_total}
 
 @st.cache_data(ttl=300)
-def cargar_pedidos(fecha, tipo):
-    """
-    Lee de Firestore las colecciones 'recogidas' filtradas por fecha de recojo/entrega
-    y tipo de servicio. Retorna una lista de dict con los campos necesarios:
-      - id, operacion, nombre_cliente, direccion, lat, lon, time_start, time_end, demand
-    """
+def cargar_pedidos(fecha):
     col = db.collection('recogidas')
     docs = []
-    # Todas las recogidas cuya fecha_recojo coincida
     docs += col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()
-    # Todas las recogidas cuya fecha_entrega coincida
     docs += col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
-    if tipo != "Todos":
-        tf = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-        docs = [d for d in docs if d.to_dict().get("tipo_solicitud") == tf]
-
     out = []
     for d in docs:
         data = d.to_dict()
         is_recojo = data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d")
         op = "Recojo" if is_recojo else "Entrega"
-        # Extraer coordenadas y dirección según tipo
         key_coord = f"coordenadas_{'recojo' if is_recojo else 'entrega'}"
         key_dir   = f"direccion_{'recojo' if is_recojo else 'entrega'}"
         coords = data.get(key_coord, {})
@@ -339,14 +170,7 @@ def cargar_pedidos(fecha, tipo):
         hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
         ts, te = (hs, hs) if hs else ("08:00", "18:00")
         out.append({
-            "id":             d.id,
-            "operacion":      op,
-            "nombre_cliente": data.get("nombre_cliente", ""),
-            "direccion":      direccion,
-            "lat":            lat,
-            "lon":            lon,
-            "time_start":     ts,
-            "time_end":       te,
-            "demand":         1
+            "id": d.id, "operacion": op, "nombre_cliente": data.get("nombre_cliente", ""),
+            "direccion": direccion, "lat": lat, "lon": lon, "time_start": ts, "time_end": te, "demand": 1
         })
     return out
