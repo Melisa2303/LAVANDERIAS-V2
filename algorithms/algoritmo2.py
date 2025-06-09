@@ -1,4 +1,3 @@
-# demoapp6.py  –  Streamlit App Integrado:
 #   → GLS + PCA + OR-Tools
 #   → Firebase Firestore (usando service account JSON)
 #   → Google Maps Distance Matrix & Directions
@@ -6,13 +5,11 @@
 #   → Se empleó el algoritmo de agrupación: Agglomerative Clustering para agrupar pedidos cercanos en 300m a la redonda.
 #   → Página única: Ver Ruta Optimizada
 #   → En caso el algoritmo no dé respuesta, usa distancias euclidianas
-##################################################################################################################
 
 import os
 import math
 import time as tiempo
 from datetime import datetime
-
 import streamlit as st
 import pandas as pd
 import numpy as np
