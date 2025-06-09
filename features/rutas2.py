@@ -23,12 +23,16 @@ from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 @st.cache_data(ttl=300)
-@st.cache_data(ttl=300)
-def cargar_ruta(fecha):
+def cargar_ruta(fecha, tipo):
+    # Carga las rutas de recogida y entrega desde la base de datos para una fecha y tipo de servicio específicos.
     try:
         query = db.collection('recogidas')
         docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
                list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
+
+        if tipo != "Todos":
+            tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
+            docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
 
         datos = []
         for doc in docs:
@@ -80,6 +84,8 @@ def datos_ruta():
     col1, col2 = st.columns(2)
     with col1:
         fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
+    with col2:
+        tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
         
     # Obtener datos
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
@@ -300,6 +306,8 @@ def ver_ruta_optimizada():
     c1, c2 = st.columns(2)
     with c1:
         fecha = st.date_input("Fecha", value=datetime.now().date())
+    with c2:
+        tipo  = st.radio("Tipo Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
 
     # Estado persistente
     if "res" not in st.session_state:
