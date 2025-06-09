@@ -80,14 +80,11 @@ def datos_ruta():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📋 Ruta del Día")
 
-    # Filtros
-    col1, col2 = st.columns(2)
-    with col1:
-        fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
-        
-    # Obtener datos
-    datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
+    # Filtro: solo fecha
+    fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
 
+    # Obtener datos
+    datos = cargar_ruta(fecha_seleccionada)
     # Mostrar Tabla
     if datos:
         tabla_data = []
