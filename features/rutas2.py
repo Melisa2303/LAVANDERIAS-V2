@@ -80,8 +80,6 @@ def datos_ruta():
     col1, col2 = st.columns(2)
     with col1:
         fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
-    with col2:
-        tipo_servicio = st.radio("Tipo de Servicio", ["Todos", "Sucursal", "Delivery"], horizontal=True)
         
     # Obtener datos
     datos = cargar_ruta(fecha_seleccionada, tipo_servicio)
