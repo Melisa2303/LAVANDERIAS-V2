@@ -23,16 +23,12 @@ from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 @st.cache_data(ttl=300)
-def cargar_ruta(fecha, tipo):
-    # Carga las rutas de recogida y entrega desde la base de datos para una fecha y tipo de servicio específicos.
+@st.cache_data(ttl=300)
+def cargar_ruta(fecha):
     try:
         query = db.collection('recogidas')
         docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
                list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
-
-        if tipo != "Todos":
-            tipo_filtro = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-            docs = [doc for doc in docs if doc.to_dict().get("tipo_solicitud") == tipo_filtro]
 
         datos = []
         for doc in docs:
