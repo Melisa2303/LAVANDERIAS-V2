@@ -8,5 +8,5 @@ folium
 requests
 ortools==9.12.4544
 openpyxl
-scikit-learn==1.4.2
-numpy==1.26.0
+scikit-learn 
+ 
