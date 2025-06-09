@@ -241,7 +241,6 @@ def agrupar_puntos_aglomerativo(df, eps_metros=300):
       - df_clusters  = DataFrame de centroides con columnas ['id','operacion','nombre_cliente',
                         'dirección','lat','lon','time_start','time_end','demand'].
     """
-    # Si no hay pedidos, retorno vacíos
     if df.empty:
         return pd.DataFrame(), df.copy()
 
@@ -259,14 +258,18 @@ def agrupar_puntos_aglomerativo(df, eps_metros=300):
                     coords[j, 0], coords[j, 1]
                 )
 
-    # 2) Aplicar AgglomerativeClustering con distancia precomputada
-    clustering = AgglomerativeClustering(
-        n_clusters=None, #1
-        metric="precomputed", #cambie affinity x metric, salía error
-        linkage="average",
-        distance_threshold=eps_metros
-    )
-    labels = clustering.fit_predict(dist_m)
+    # 2) Aplico AgglomerativeClustering solo si hay más de un punto
+    if n < 2:
+        labels = np.zeros(n, dtype=int)
+    else:
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            affinity="precomputed",
+            linkage="average",
+            distance_threshold=eps_metros
+        )
+        labels = clustering.fit_predict(dist_m)
+
     df_labeled = df.copy()
     df_labeled["cluster"] = labels
 
@@ -276,13 +279,10 @@ def agrupar_puntos_aglomerativo(df, eps_metros=300):
         members = df_labeled[df_labeled["cluster"] == clus]
         centro_lat = members["lat"].mean()
         centro_lon = members["lon"].mean()
-        # Nombre descriptivo: primeros dos clientes del cluster
         nombres = list(members["nombre_cliente"].unique())
         nombre_desc = ", ".join(nombres[:2]) + ("..." if len(nombres) > 2 else "")
-        # Concatenar direcciones de los pedidos (hasta 2)
         direcciones = list(members["direccion"].unique())
         direccion_desc = ", ".join(direcciones[:2]) + ("..." if len(direcciones) > 2 else "")
-        # Ventana: tomo min y max de time_start/time_end
         ts_vals = members["time_start"].tolist()
         te_vals = members["time_end"].tolist()
         ts_vals = [t for t in ts_vals if t]
@@ -304,6 +304,7 @@ def agrupar_puntos_aglomerativo(df, eps_metros=300):
 
     df_clusters = pd.DataFrame(agrupados)
     return df_clusters, df_labeled
+
 
 # ===================== CARGAR PEDIDOS DESDE FIRESTORE =====================
 
