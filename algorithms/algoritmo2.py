@@ -265,7 +265,7 @@ def agrupar_puntos_aglomerativo(df, eps_metros=300):
         clustering = AgglomerativeClustering(
             n_clusters=None,
             affinity="precomputed",
-            linkage="complete",
+            linkage="single",
             distance_threshold=eps_metros
         )
         labels = clustering.fit_predict(dist_m)
