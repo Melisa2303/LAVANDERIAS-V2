@@ -16,7 +16,7 @@ import googlemaps
 from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 #from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
-from algorithms.algoritmo2 import optimizar_ruta_algoritmo2, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix , agrupar_puntos_aglomerativo
+from algorithms.algoritmo2 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix , agrupar_puntos_aglomerativo
 #from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
 #from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
@@ -127,7 +127,7 @@ def ver_ruta_optimizada():
 
         # 5) Resolver VRPTW
         t0 = tiempo.time()
-        res = optimizar_ruta_algoritmo2(data, tiempo_max_seg=120)
+        res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
         solve_t = tiempo.time() - t0
         if not res:
             st.error("😕 Sin solución factible. Usando aproximación euclidiana.")
