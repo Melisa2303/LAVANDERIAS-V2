@@ -1,3 +1,26 @@
+import streamlit as st
+import pandas as pd
+from io import BytesIO
+from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
+from core.firebase import db
+from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
+import requests  # Importar requests A
+from googlemaps.convert import decode_polyline
+from streamlit_folium import st_folium
+import folium
+from datetime import datetime, timedelta, time
+import time as tiempo
+import googlemaps
+from core.firebase import db, obtener_sucursales
+from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
+#from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
+from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix , agrupar_puntos_aglomerativo
+#from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
+#from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
+
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
     c1, c2 = st.columns(2)
