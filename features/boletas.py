@@ -10,25 +10,25 @@ from io import BytesIO
 def ingresar_boleta():
     # Inicialización de claves en session_state
     if "numero_boleta" not in st.session_state:
-        st.session_state.numero_boleta = ""
+        st.session_state["numero_boleta"] = ""
     if "nombre_cliente" not in st.session_state:
-        st.session_state.nombre_cliente = ""
+        st.session_state["nombre_cliente"] = ""
     if "dni" not in st.session_state:
-        st.session_state.dni = ""
+        st.session_state["dni"] = ""
     if "telefono" not in st.session_state:
-        st.session_state.telefono = ""
+        st.session_state["telefono"] = ""
     if "monto" not in st.session_state:
-        st.session_state.monto = 0.0
+        st.session_state["monto"] = 0.0
     if "fecha_registro" not in st.session_state:
-        st.session_state.fecha_registro = datetime.now()
+        st.session_state["fecha_registro"] = datetime.now()
     if "sucursal" not in st.session_state:
-        st.session_state.sucursal = None
+        st.session_state["sucursal"] = None
     if "articulo_seleccionado" not in st.session_state:
-        st.session_state.articulo_seleccionado = ""
+        st.session_state["articulo_seleccionado"] = ""
     if "tipo_servicio" not in st.session_state:
-        st.session_state.tipo_servicio = "🏢 Sucursal"
+        st.session_state["tipo_servicio"] = "🏢 Sucursal"
     if "cantidades" not in st.session_state:
-        st.session_state['cantidades'] = {}
+        st.session_state["cantidades"] = {}
 
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -65,13 +65,13 @@ def ingresar_boleta():
     st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
     articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0, key="articulo_seleccionado")
 
-    if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
-        st.session_state['cantidades'][articulo_seleccionado] = 1
+    if articulo_seleccionado and articulo_seleccionado not in st.session_state["cantidades"]:
+        st.session_state["cantidades"][articulo_seleccionado] = 1
 
-    if st.session_state['cantidades']:
+    if st.session_state["cantidades"]:
         st.markdown("<h4>Artículos Seleccionados</h4>", unsafe_allow_html=True)
         articulos_a_eliminar = []
-        for articulo, cantidad in st.session_state['cantidades'].items():
+        for articulo, cantidad in st.session_state["cantidades"].items():
             col1, col2, col3 = st.columns([2, 1, 0.3])
             with col1:
                 st.markdown(f"<b>{articulo}</b>", unsafe_allow_html=True)
@@ -82,19 +82,19 @@ def ingresar_boleta():
                     value=cantidad,
                     key=f"cantidad_{articulo}"
                 )
-                st.session_state['cantidades'][articulo] = nueva_cantidad
+                st.session_state["cantidades"][articulo] = nueva_cantidad
             with col3:
                 if st.button("🗑️", key=f"eliminar_{articulo}"):
                     articulos_a_eliminar.append(articulo)
-                    st.session_state['update'] = True
+                    st.session_state["update"] = True
 
         if articulos_a_eliminar:
             for articulo in articulos_a_eliminar:
-                del st.session_state['cantidades'][articulo]
+                del st.session_state["cantidades"][articulo]
             st.rerun()
 
-    if 'update' in st.session_state and st.session_state['update']:
-        st.session_state['update'] = False
+    if "update" in st.session_state and st.session_state["update"]:
+        st.session_state["update"] = False
 
     fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now(), key="fecha_registro")
 
@@ -118,7 +118,7 @@ def ingresar_boleta():
             if monto <= 0:
                 st.error("El monto a pagar debe ser mayor a 0.")
                 return
-            if not st.session_state['cantidades']:
+            if not st.session_state["cantidades"]:
                 st.error("Debe seleccionar al menos un artículo antes de ingresar la boleta.")
                 return
             if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
@@ -133,27 +133,26 @@ def ingresar_boleta():
                 "monto": monto,
                 "tipo_servicio": tipo_servicio,
                 "sucursal": sucursal,
-                "articulos": st.session_state['cantidades'],
+                "articulos": st.session_state["cantidades"],
                 "fecha_registro": fecha_registro.strftime("%Y-%m-%d")
             }
 
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
 
-            # Limpiar todos los campos
-            st.session_state['cantidades'] = {}
-            st.session_state.numero_boleta = ""
-            st.session_state.nombre_cliente = ""
-            st.session_state.dni = ""
-            st.session_state.telefono = ""
-            st.session_state.monto = 0.0
-            st.session_state.fecha_registro = datetime.now()
-            st.session_state.articulo_seleccionado = ""
-            st.session_state.sucursal = None
-            st.session_state.tipo_servicio = "🏢 Sucursal"
+            # Limpieza final usando la notación segura
+            st.session_state["cantidades"] = {}
+            st.session_state["numero_boleta"] = ""
+            st.session_state["nombre_cliente"] = ""
+            st.session_state["dni"] = ""
+            st.session_state["telefono"] = ""
+            st.session_state["monto"] = 0.0
+            st.session_state["fecha_registro"] = datetime.now()
+            st.session_state["articulo_seleccionado"] = ""
+            st.session_state["sucursal"] = None
+            st.session_state["tipo_servicio"] = "🏢 Sucursal"
 
             st.rerun()
-
 
 
 def datos_boletas():
