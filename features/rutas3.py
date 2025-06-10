@@ -20,6 +20,25 @@ from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
+import streamlit as st
+import pandas as pd
+from io import BytesIO
+from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, firestore
+from core.firebase import db
+from core.constants import GOOGLE_MAPS_API_KEY
+import requests
+from googlemaps.convert import decode_polyline
+from streamlit_folium import st_folium
+import folium
+import time as tiempo
+import googlemaps
+from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
+from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
+
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
     c1, c2 = st.columns(2)
@@ -28,22 +47,15 @@ def ver_ruta_optimizada():
     with c2:
         algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3", "Algoritmo 4"])
 
-    # 🔧 REINICIAR SESIÓN SI CAMBIA LA FECHA O ALGORITMO
-    if "fecha_previa" not in st.session_state:
-        st.session_state["fecha_previa"] = fecha
-    if "algoritmo_previo" not in st.session_state:
-        st.session_state["algoritmo_previo"] = algoritmo
-
-    if (st.session_state["fecha_previa"] != fecha) or (st.session_state["algoritmo_previo"] != algoritmo):
-        for var in ["res", "df_clusters", "df_etiquetado", "df_final", "ruta_guardada", "leg_0", "solve_t", "df_ruta"]:
-            if var in st.session_state:
-                del st.session_state[var]
-        st.session_state["fecha_previa"] = fecha
-        st.session_state["algoritmo_previo"] = algoritmo
-        st.rerun()
+    # Resetea estado para recalcular siempre que cambia la fecha o el algoritmo
+    if "fecha_anterior" not in st.session_state or st.session_state["fecha_anterior"] != fecha or st.session_state.get("algoritmo_anterior") != algoritmo:
+        for var in ["res", "df_clusters", "df_etiquetado", "df_final", "ruta_guardada", "df_ruta", "solve_t", "leg_0"]:
+            st.session_state[var] = None if var not in ["ruta_guardada", "leg_0"] else (False if var == "ruta_guardada" else 0)
+        st.session_state["fecha_anterior"] = fecha
+        st.session_state["algoritmo_anterior"] = algoritmo
 
     # Procesamiento
-    if st.session_state["res"] is None:
+    if st.session_state.get("res") is None:
         pedidos = cargar_pedidos(fecha, "Todos")
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
@@ -72,7 +84,7 @@ def ver_ruta_optimizada():
             return
 
         st.session_state["res"] = res
-        st.session_state["solve_t"] = solve_t  # guardar para usar en métricas finales
+        st.session_state["solve_t"] = solve_t
 
         ruta = res["routes"][0]["route"]
         arr = res["routes"][0]["arrival_sec"]
@@ -155,3 +167,4 @@ def ver_ruta_optimizada():
         tiempo_total_min = (max(res['routes'][0]['arrival_sec']) - 9 * 3600) / 60
         st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
         st.markdown(f"- Puntos totales visitados: **{len(ruta)}**")
+
