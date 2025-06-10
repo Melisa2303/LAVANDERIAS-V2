@@ -22,7 +22,7 @@ from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-@st.cache_data(ttl=300)
+
 @st.cache_data(ttl=300)
 def cargar_ruta(fecha):
     """
@@ -320,13 +320,13 @@ def ver_ruta_optimizada():
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
             return
-        # Crear columnas "lat" y "lon" a partir de "coordenadas"
+
+        df_original = pd.DataFrame(pedidos)
+           # Crear columnas "lat" y "lon" a partir de "coordenadas"
     if "coordenadas" in df_original.columns:
         df_original["lat"] = df_original["coordenadas"].apply(lambda x: x.get("lat") if isinstance(x, dict) else None)
         df_original["lon"] = df_original["coordenadas"].apply(lambda x: x.get("lon") if isinstance(x, dict) else None)
 
-
-        df_original = pd.DataFrame(pedidos)
         df_clusters, df_etiquetado = agrupar_puntos_aglomerativo(df_original, eps_metros=300)
         st.session_state["df_clusters"] = df_clusters.copy()
         st.session_state["df_etiquetado"] = df_etiquetado.copy()
