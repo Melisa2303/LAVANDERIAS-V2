@@ -186,7 +186,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
     # Penalización por llegar antes o después de la ventana real (Soft Time Windows)
-    PENALIDAD_ESPERA = 10  # penalización por segundo de espera fuera de la ventana real
+    PENALIDAD_ESPERA = 10000  # penalización por segundo de espera fuera de la ventana real
     for node, (ini, fin) in enumerate(data["time_windows"]):
         if node == data["depot"]:
             continue
