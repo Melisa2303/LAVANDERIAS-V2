@@ -28,12 +28,19 @@ def ver_ruta_optimizada():
     with c2:
         algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3", "Algoritmo 4"])
 
-    # Estado persistente
-    for var in ["res", "df_clusters", "df_etiquetado", "df_final", "ruta_guardada", "leg_0", "solve_t"]:
-        if var not in st.session_state:
-            st.session_state[var] = None if var != "ruta_guardada" else False
-            if var == "leg_0":
-                st.session_state[var] = 0
+    # 🔧 REINICIAR SESIÓN SI CAMBIA LA FECHA O ALGORITMO
+    if "fecha_previa" not in st.session_state:
+        st.session_state["fecha_previa"] = fecha
+    if "algoritmo_previo" not in st.session_state:
+        st.session_state["algoritmo_previo"] = algoritmo
+
+    if (st.session_state["fecha_previa"] != fecha) or (st.session_state["algoritmo_previo"] != algoritmo):
+        for var in ["res", "df_clusters", "df_etiquetado", "df_final", "ruta_guardada", "leg_0", "solve_t", "df_ruta"]:
+            if var in st.session_state:
+                del st.session_state[var]
+        st.session_state["fecha_previa"] = fecha
+        st.session_state["algoritmo_previo"] = algoritmo
+        st.rerun()
 
     # Procesamiento
     if st.session_state["res"] is None:
