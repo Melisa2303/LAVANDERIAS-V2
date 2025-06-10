@@ -34,9 +34,7 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 # -------------------- CONFIG GOOGLE MAPS --------------------
-# En su caso se implemente con st.secrets
-GOOGLE_MAPS_API_KEY = "AIzaSyC80b7603zMwdhktzXzEbFqoyRNivR5Dvw"
-
+# Mmmmmm
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
