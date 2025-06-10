@@ -5,22 +5,18 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 from core.firebase import db
-from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
-import requests  # Importar requests A
+from core.constants import GOOGLE_MAPS_API_KEY
+import requests
 from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
-from datetime import datetime, timedelta, time
 import time as tiempo
 import googlemaps
-from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
-#from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
-from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix , agrupar_puntos_aglomerativo
-#from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
-#from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
+from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
     c1, c2 = st.columns(2)
@@ -90,56 +86,58 @@ def ver_ruta_optimizada():
     df_cl = st.session_state["df_clusters"]
     df_et = st.session_state["df_etiquetado"]
     ruta = st.session_state["res"]["routes"][0]["route"]
+    res = st.session_state["res"]
 
-    st.subheader("📋 Orden de visita optimizada")
-    st.dataframe(df_r, use_container_width=True)
+    # Tabs de "Tramo" e "Info"
+    tab1, tab2 = st.tabs(["🚀 Tramo actual", "ℹ️ Info general"])
+    with tab1:
+        leg = st.session_state["leg_0"]
+        if leg >= len(ruta) - 1:
+            st.success("✅ Todas las paradas completadas")
+            return
 
-    if st.button("🔄 Reiniciar Tramos"):
-        st.session_state["leg_0"] = 0
+        n_origen = ruta[leg]
+        n_dest = ruta[leg + 1]
+        nombre_dest = df_f.loc[n_dest, "nombre_cliente"]
+        direccion_dest = df_f.loc[n_dest, "direccion"]
+        ETA_dest = df_r.loc[df_r["orden"] == leg + 1, "ETA"].values[0]
 
-    leg = st.session_state["leg_0"]
-    if leg >= len(ruta) - 1:
-        st.success("✅ Todas las paradas completadas")
-        return
+        st.markdown(f"### Próximo → **{nombre_dest}** (ETA {ETA_dest})")
+        if st.button(f"✅ Llegué a {nombre_dest}"):
+            st.session_state["leg_0"] += 1
+            st.rerun()
 
-    # Tab de tramo actual y de ruta completa
-    n_origen = ruta[leg]
-    n_dest = ruta[leg + 1]
-    nombre_dest = df_f.loc[n_dest, "nombre_cliente"]
-    direccion_dest = df_f.loc[n_dest, "direccion"]
-    ETA_dest = df_r.loc[df_r["orden"] == leg + 1, "ETA"].values[0]
+        orig = f"{df_f.loc[n_origen, 'lat']},{df_f.loc[n_origen, 'lon']}"
+        dest = f"{df_f.loc[n_dest, 'lat']},{df_f.loc[n_dest, 'lon']}"
+        try:
+            directions = gmaps.directions(orig, dest, mode="driving", departure_time=datetime.now(), traffic_model="best_guess")
+            leg0 = directions[0]["legs"][0]
+            tiempo_traffic = leg0.get("duration_in_traffic", leg0["duration"])["text"]
+            overview = directions[0]["overview_polyline"]["points"]
+            segmento = [(p["lat"], p["lng"]) for p in decode_polyline(overview)]
+        except:
+            tiempo_traffic = None
+            segmento = [(df_f.loc[n_origen, "lat"], df_f.loc[n_origen, "lon"]), (df_f.loc[n_dest, "lat"], df_f.loc[n_dest, "lon"])]
 
-    st.markdown(f"### Próximo → **{nombre_dest}** (ETA {ETA_dest})")
-    if st.button(f"✅ Llegué a {nombre_dest}"):
-        st.session_state["leg_0"] += 1
-        st.rerun()
+        m = folium.Map(location=segmento[0], zoom_start=14)
+        folium.PolyLine(segmento, color="blue", weight=5, opacity=0.8, tooltip=f"⏱ {tiempo_traffic}" if tiempo_traffic else None).add_to(m)
+        folium.Marker(segmento[0], icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
+        folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
+        st_folium(m, width=700, height=400)
 
-    # Direcciones completas para trazo de toda la ruta
-    coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
-
-    # Mapa global con todos los tramos
-    with st.expander("🗺️ Mapa de toda la ruta"):
+    with tab2:
+        st.subheader("🗺️ Mapa de toda la ruta")
+        coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
         m = folium.Map(location=coords_final[0], zoom_start=13)
-
-        # Línea azul de la ruta completa
         folium.PolyLine(coords_final, color="blue", weight=4, opacity=0.7).add_to(m)
 
-        # Depósito
-        folium.Marker(
-            coords_final[0],
-            popup="Depósito",
-            icon=folium.Icon(color="green", icon="home", prefix="fa")
-        ).add_to(m)
-
-        # Nodos de la ruta
+        folium.Marker(coords_final[0], popup="Depósito", icon=folium.Icon(color="green", icon="home", prefix="fa")).add_to(m)
         for idx, (lat, lon) in enumerate(coords_final[1:], start=1):
             folium.Marker(
                 (lat, lon),
                 popup=f"{df_f.loc[ruta[idx], 'nombre_cliente']}<br>{df_f.loc[ruta[idx], 'direccion']}",
                 icon=folium.Icon(color="orange", icon="flag", prefix="fa")
             ).add_to(m)
-
-        # Pedidos individuales originales
         for _, fila_p in df_et.iterrows():
             folium.CircleMarker(
                 location=(fila_p["lat"], fila_p["lon"]),
@@ -148,13 +146,12 @@ def ver_ruta_optimizada():
                 fill=True,
                 fill_opacity=0.7
             ).add_to(m)
-
         st_folium(m, width=700, height=500)
 
     # Métricas finales
     st.markdown("## 🔍 Métricas Finales")
     st.markdown(f"- Kilometraje total: **{res['distance_total_m'] / 1000:.2f} km**")
     st.markdown(f"- Tiempo de cómputo: **{solve_t:.2f} segundos**")
-    st.markdown(f"- Tiempo estimado total: **{(max(res['routes'][0]['arrival_sec']) - SHIFT_START_SEC) / 60:.2f} min**")
+    tiempo_total_min = (max(res['routes'][0]['arrival_sec']) - 9 * 3600) / 60
+    st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
     st.markdown(f"- Puntos totales visitados: **{len(ruta)}**")
-
