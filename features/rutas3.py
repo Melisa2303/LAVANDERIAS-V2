@@ -47,15 +47,23 @@ def ver_ruta_optimizada():
     with c2:
         algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3", "Algoritmo 4"])
 
-    # Resetea estado para recalcular siempre que cambia la fecha o el algoritmo
-    if "fecha_anterior" not in st.session_state or st.session_state["fecha_anterior"] != fecha or st.session_state.get("algoritmo_anterior") != algoritmo:
-        for var in ["res", "df_clusters", "df_etiquetado", "df_final", "ruta_guardada", "df_ruta", "solve_t", "leg_0"]:
-            st.session_state[var] = None if var not in ["ruta_guardada", "leg_0"] else (False if var == "ruta_guardada" else 0)
-        st.session_state["fecha_anterior"] = fecha
-        st.session_state["algoritmo_anterior"] = algoritmo
+    # Limpiar la sesión cuando cambia fecha o algoritmo
+    if "fecha_actual" not in st.session_state or st.session_state["fecha_actual"] != fecha or st.session_state.get("algoritmo_actual") != algoritmo:
+        for var in ["res", "df_clusters", "df_etiquetado", "df_final", "df_ruta", "solve_t", "ruta_guardada"]:
+            st.session_state[var] = None
+        st.session_state["leg_0"] = 0
+        st.session_state["fecha_actual"] = fecha
+        st.session_state["algoritmo_actual"] = algoritmo
+
+    # Estado persistente
+    for var in ["res", "df_clusters", "df_etiquetado", "df_final", "df_ruta", "solve_t"]:
+        if var not in st.session_state:
+            st.session_state[var] = None
+    if "leg_0" not in st.session_state:
+        st.session_state["leg_0"] = 0
 
     # Procesamiento
-    if st.session_state.get("res") is None:
+    if st.session_state["res"] is None:
         pedidos = cargar_pedidos(fecha, "Todos")
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
@@ -126,13 +134,17 @@ def ver_ruta_optimizada():
         dest = f"{df_f.loc[n_dest, 'lat']},{df_f.loc[n_dest, 'lon']}"
         try:
             directions = gmaps.directions(orig, dest, mode="driving", departure_time=datetime.now(), traffic_model="best_guess")
+            leg0 = directions[0]["legs"][0]
+            tiempo_traffic = leg0.get("duration_in_traffic", leg0["duration"])["text"]
             overview = directions[0]["overview_polyline"]["points"]
             segmento = [(p["lat"], p["lng"]) for p in decode_polyline(overview)]
         except:
+            tiempo_traffic = None
             segmento = [(df_f.loc[n_origen, "lat"], df_f.loc[n_origen, "lon"]), (df_f.loc[n_dest, "lat"], df_f.loc[n_dest, "lon"])]
 
+        # Mapa del tramo actual con tooltip
         m = folium.Map(location=segmento[0], zoom_start=14)
-        folium.PolyLine(segmento, color="blue", weight=5, opacity=0.8).add_to(m)
+        folium.PolyLine(segmento, color="blue", weight=5, opacity=0.8, tooltip=f"⏱ {tiempo_traffic}" if tiempo_traffic else None).add_to(m)
         folium.Marker(segmento[0], icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
@@ -167,4 +179,5 @@ def ver_ruta_optimizada():
         tiempo_total_min = (max(res['routes'][0]['arrival_sec']) - 9 * 3600) / 60
         st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
         st.markdown(f"- Puntos totales visitados: **{len(ruta)}**")
+
 
