@@ -298,16 +298,11 @@ def datos_ruta():
 
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
-    c1, c2 = st.columns(2)
-    with c1:
-        fecha = st.date_input("Fecha", value=datetime.now().date())
+    fecha = st.date_input("Fecha", value=datetime.now().date())
 
+    # Estado persistente
     if "res" not in st.session_state:
         st.session_state["res"] = None
-    if "df_clusters" not in st.session_state:
-        st.session_state["df_clusters"] = None
-    if "df_etiquetado" not in st.session_state:
-        st.session_state["df_etiquetado"] = None
     if "df_final" not in st.session_state:
         st.session_state["df_final"] = None
     if "ruta_guardada" not in st.session_state:
@@ -315,22 +310,22 @@ def ver_ruta_optimizada():
     if "leg_0" not in st.session_state:
         st.session_state["leg_0"] = 0
 
+    # Calcular solo si no está ya en sesión
     if st.session_state["res"] is None:
         pedidos = cargar_ruta(fecha)
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
             return
 
+        # Crear DataFrame
         df_original = pd.DataFrame(pedidos)
-           # Crear columnas "lat" y "lon" a partir de "coordenadas"
-    if "coordenadas" in df_original.columns:
-        df_original["lat"] = df_original["coordenadas"].apply(lambda x: x.get("lat") if isinstance(x, dict) else None)
-        df_original["lon"] = df_original["coordenadas"].apply(lambda x: x.get("lon") if isinstance(x, dict) else None)
 
-        df_clusters, df_etiquetado = agrupar_puntos_aglomerativo(df_original, eps_metros=300)
-        st.session_state["df_clusters"] = df_clusters.copy()
-        st.session_state["df_etiquetado"] = df_etiquetado.copy()
+        # Añadir columnas lat y lon si existen coordenadas
+        if "coordenadas" in df_original.columns:
+            df_original["lat"] = df_original["coordenadas"].apply(lambda x: x.get("lat") if isinstance(x, dict) else None)
+            df_original["lon"] = df_original["coordenadas"].apply(lambda x: x.get("lon") if isinstance(x, dict) else None)
 
+        # Insertar depósito manualmente
         DEP = {
             "id": "DEP",
             "operacion": "Depósito",
@@ -342,16 +337,18 @@ def ver_ruta_optimizada():
             "time_end": "18:00",
             "demand": 0
         }
-        df_final = pd.concat([pd.DataFrame([DEP]), df_clusters], ignore_index=True)
+        df_final = pd.concat([pd.DataFrame([DEP]), df_original], ignore_index=True)
         st.session_state["df_final"] = df_final.copy()
 
+        # Crear modelo para VRPTW
         data = _crear_data_model(df_final, vehiculos=1, capacidad_veh=None)
 
+        # Resolver VRPTW
         t0 = tiempo.time()
         res = optimizar_ruta_algoritmo2(data, tiempo_max_seg=120)
         solve_t = tiempo.time() - t0
         if not res:
-            st.error("😕 Sin solución factible. Usando aproximación euclidiana.")
+            st.error("😕 Sin solución factible.")
             return
 
         st.session_state["res"] = res
@@ -366,6 +363,7 @@ def ver_ruta_optimizada():
         df_r["orden"] = range(len(ruta))
         st.session_state["df_ruta"] = df_r.copy()
 
+        # Guardar ruta en Firestore (opcional)
         if not st.session_state["ruta_guardada"]:
             doc = {
                 "fecha": fecha.strftime("%Y-%m-%d"),
@@ -387,9 +385,12 @@ def ver_ruta_optimizada():
             db.collection("rutas").add(doc)
             st.session_state["ruta_guardada"] = True
 
+    # Mostrar la tabla
     df_r = st.session_state["df_ruta"]
     st.subheader("📋 Orden de visita optimizada")
     st.dataframe(df_r, use_container_width=True)
 
+    # Botón para reiniciar tramos
     if st.button("🔄 Reiniciar Tramos"):
         st.session_state["leg_0"] = 0
+
