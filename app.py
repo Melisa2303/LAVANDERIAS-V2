@@ -60,7 +60,7 @@ else:
         from features.boletas import datos_boletas
         datos_boletas()
     elif choice == "Ver Ruta Optimizada":
-        from features.rutas22 import ver_ruta_optimizada
+        from features.rutas3 import ver_ruta_optimizada
         ver_ruta_optimizada()
     elif choice == "Seguimiento al Vehículo":
         from features.tracking import seguimiento_vehiculo
