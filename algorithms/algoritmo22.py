@@ -44,7 +44,6 @@ MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matr
 SHIFT_START_SEC =  9 * 3600      # 09:00 en segundos
 SHIFT_END_SEC   = 16*3600 +30*60 # 16:30 en segundos
 MARGEN = 15 * 60  # 15 minutos en segundos
-PENALIDAD_ESPERA = 10000
 # 100 kg <------------------------------------------------ #Preguntar
 # ===================== FUNCIONES AUXILIARES =====================
 
@@ -186,7 +185,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
     # Penalización por llegar antes o después de la ventana real (Soft Time Windows)
-    PENALIDAD_ESPERA = 10000  # penalización por segundo de espera fuera de la ventana real
+    PENALIDAD_ESPERA = 1000000  # penalización por segundo de espera fuera de la ventana real
     for node, (ini, fin) in enumerate(data["time_windows"]):
         if node == data["depot"]:
             continue
