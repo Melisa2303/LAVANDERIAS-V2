@@ -87,6 +87,9 @@ def _distancia_duracion_matrix(coords):
 def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
     coords = list(zip(df["lat"], df["lon"]))
     dist_m, dur_s = _distancia_duracion_matrix(coords)
+    
+    MARGEN = 15 * 60  # 15 minutos en segundos
+    
     time_windows = []
     demandas = []
     for _, row in df.iterrows():
@@ -94,8 +97,12 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         fin = _hora_a_segundos(row.get("time_end"))
         if ini is None or fin is None:
             ini, fin = SHIFT_START_SEC, SHIFT_END_SEC
+        else:
+            ini = max(0, ini - MARGEN)
+            fin = min(24*3600, fin + MARGEN)
         time_windows.append((ini, fin))
         demandas.append(row.get("demand", 1))
+    
     return {
         "distance_matrix": dist_m,
         "duration_matrix": dur_s,
