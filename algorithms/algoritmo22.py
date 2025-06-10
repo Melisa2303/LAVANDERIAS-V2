@@ -33,10 +33,7 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# -------------------- CONFIG GOOGLE MAPS --------------------
-# En su caso se implemente con st.secrets
-GOOGLE_MAPS_API_KEY = "AIzaSyC80b7603zMwdhktzXzEbFqoyRNivR5Dvw"
-
+GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
@@ -45,6 +42,7 @@ MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matr
 SHIFT_START_SEC =  9 * 3600      # 09:00 en segundos
 SHIFT_END_SEC   = 16*3600 +30*60 # 16:30 en segundos
 MARGEN = 15 * 60  # 15 minutos en segundos
+PENALIDAD_ESPERA = 10000
 # 100 kg <------------------------------------------------ #Preguntar
 # ===================== FUNCIONES AUXILIARES =====================
 
