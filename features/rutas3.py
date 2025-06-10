@@ -148,4 +148,3 @@ def ver_ruta_optimizada():
         tiempo_total_min = (max(res['routes'][0]['arrival_sec']) - 9 * 3600) / 60
         st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
         st.markdown(f"- Puntos totales visitados: **{len(ruta)}**")
-
