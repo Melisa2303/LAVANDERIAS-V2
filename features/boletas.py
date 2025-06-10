@@ -4,8 +4,32 @@ import streamlit as st
 import re
 from datetime import datetime
 from core.firebase import obtener_articulos, obtener_sucursales, verificar_unicidad_boleta, db
+import pandas as pd
+from io import BytesIO
 
 def ingresar_boleta():
+    # Inicialización de claves en session_state
+    if "numero_boleta" not in st.session_state:
+        st.session_state.numero_boleta = ""
+    if "nombre_cliente" not in st.session_state:
+        st.session_state.nombre_cliente = ""
+    if "dni" not in st.session_state:
+        st.session_state.dni = ""
+    if "telefono" not in st.session_state:
+        st.session_state.telefono = ""
+    if "monto" not in st.session_state:
+        st.session_state.monto = 0.0
+    if "fecha_registro" not in st.session_state:
+        st.session_state.fecha_registro = datetime.now()
+    if "sucursal" not in st.session_state:
+        st.session_state.sucursal = None
+    if "articulo_seleccionado" not in st.session_state:
+        st.session_state.articulo_seleccionado = ""
+    if "tipo_servicio" not in st.session_state:
+        st.session_state.tipo_servicio = "🏢 Sucursal"
+    if "cantidades" not in st.session_state:
+        st.session_state['cantidades'] = {}
+
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
@@ -14,14 +38,10 @@ def ingresar_boleta():
     st.title("📝 Ingresar Boleta")
   
     # Obtener datos necesarios
-    articulos = obtener_articulos()  # Artículos lavados desde la base de datos
-    sucursales = obtener_sucursales()  # Sucursales disponibles
+    articulos = obtener_articulos()
+    sucursales = obtener_sucursales()
 
-    # Inicializar o actualizar cantidades en st.session_state
-    if 'cantidades' not in st.session_state:
-        st.session_state['cantidades'] = {}
-
-    # Campos de entrada principales, vinculados a session_state mediante key
+    # Campos de entrada principales
     numero_boleta = st.text_input("Número de Boleta", max_chars=5, key="numero_boleta")
     nombre_cliente = st.text_input("Nombre del Cliente", key="nombre_cliente")
     
@@ -39,9 +59,9 @@ def ingresar_boleta():
     if "Sucursal" in tipo_servicio:
         sucursal = st.selectbox("Sucursal", nombres_sucursales, key="sucursal")
     else:
-        sucursal = None  # Asegurar que 'sucursal' esté inicializada para el caso "Delivery"
+        sucursal = None
 
-    # Sección de artículos: dinámico e inmediato
+    # Sección de artículos
     st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
     articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0, key="articulo_seleccionado")
 
@@ -78,7 +98,6 @@ def ingresar_boleta():
 
     fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now(), key="fecha_registro")
 
-    # Botón para guardar boleta dentro de un formulario
     with st.form(key='form_boleta'):
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
 
@@ -87,27 +106,21 @@ def ingresar_boleta():
             if not re.match(r'^\d{4,5}$', numero_boleta):
                 st.error("El número de boleta debe tener entre 4 y 5 dígitos.")
                 return
-
             if not re.match(r'^[a-zA-Z\s]+$', nombre_cliente):
                 st.error("El nombre del cliente solo debe contener letras.")
                 return
-
             if dni and not re.match(r'^\d{8}$', dni):
                 st.error("El número de DNI debe tener 8 dígitos.")
                 return
-
             if telefono and not re.match(r'^\d{9}$', telefono):
                 st.error("El número de teléfono debe tener 9 dígitos.")
                 return
-
             if monto <= 0:
                 st.error("El monto a pagar debe ser mayor a 0.")
                 return
-
             if not st.session_state['cantidades']:
                 st.error("Debe seleccionar al menos un artículo antes de ingresar la boleta.")
                 return
-
             if not verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
                 st.error("Ya existe una boleta con este número en la misma sucursal o tipo de servicio.")
                 return
@@ -136,12 +149,12 @@ def ingresar_boleta():
             st.session_state.monto = 0.0
             st.session_state.fecha_registro = datetime.now()
             st.session_state.articulo_seleccionado = ""
+            st.session_state.sucursal = None
+            st.session_state.tipo_servicio = "🏢 Sucursal"
 
             st.rerun()
 
 
-import pandas as pd
-from io import BytesIO
 
 def datos_boletas():
     col1, col2 = st.columns([1, 3])
