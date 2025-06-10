@@ -21,35 +21,33 @@ def ingresar_boleta():
     if 'cantidades' not in st.session_state:
         st.session_state['cantidades'] = {}
 
-    # Campos de entrada principales
-    numero_boleta = st.text_input("Número de Boleta", max_chars=5)
-    nombre_cliente = st.text_input("Nombre del Cliente")
+    # Campos de entrada principales, vinculados a session_state mediante key
+    numero_boleta = st.text_input("Número de Boleta", max_chars=5, key="numero_boleta")
+    nombre_cliente = st.text_input("Nombre del Cliente", key="nombre_cliente")
     
     col1, col2 = st.columns(2)
     with col1:
-        dni = st.text_input("Número de DNI (Opcional)", max_chars=8)
+        dni = st.text_input("Número de DNI (Opcional)", max_chars=8, key="dni")
     with col2:
-        telefono = st.text_input("Teléfono (Opcional)", max_chars=9)
+        telefono = st.text_input("Teléfono (Opcional)", max_chars=9, key="telefono")
 
-    monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01)
+    monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01, key="monto")
 
     nombres_sucursales = [sucursal['nombre'] for sucursal in sucursales]
 
-    tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True)
+    tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True, key="tipo_servicio")
     if "Sucursal" in tipo_servicio:
-        sucursal = st.selectbox("Sucursal", nombres_sucursales)
+        sucursal = st.selectbox("Sucursal", nombres_sucursales, key="sucursal")
     else:
         sucursal = None  # Asegurar que 'sucursal' esté inicializada para el caso "Delivery"
 
     # Sección de artículos: dinámico e inmediato
     st.markdown("<h3 style='margin-bottom: 10px;'>Seleccionar Artículos Lavados</h3>", unsafe_allow_html=True)
-    articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0)
+    articulo_seleccionado = st.selectbox("Agregar Artículo", [""] + articulos, index=0, key="articulo_seleccionado")
 
-    # Manejar selección de artículos y cantidades dinámicamente
     if articulo_seleccionado and articulo_seleccionado not in st.session_state['cantidades']:
         st.session_state['cantidades'][articulo_seleccionado] = 1
 
-    # Manejar selección de artículos y cantidades dinámicamente con opción de eliminar
     if st.session_state['cantidades']:
         st.markdown("<h4>Artículos Seleccionados</h4>", unsafe_allow_html=True)
         articulos_a_eliminar = []
@@ -68,20 +66,17 @@ def ingresar_boleta():
             with col3:
                 if st.button("🗑️", key=f"eliminar_{articulo}"):
                     articulos_a_eliminar.append(articulo)
-                    st.session_state['update'] = True  # Bandera para forzar cambios
+                    st.session_state['update'] = True
 
-        # Eliminar los artículos seleccionados para borrar
         if articulos_a_eliminar:
             for articulo in articulos_a_eliminar:
                 del st.session_state['cantidades'][articulo]
             st.rerun()
 
-    # Si la bandera de actualización está activa, reiniciar después de la acción
     if 'update' in st.session_state and st.session_state['update']:
-        st.session_state['update'] = False  # Reinicia la bandera después de actualizar
+        st.session_state['update'] = False
 
-    # Selector de fecha
-    fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now())
+    fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now(), key="fecha_registro")
 
     # Botón para guardar boleta dentro de un formulario
     with st.form(key='form_boleta'):
@@ -105,7 +100,7 @@ def ingresar_boleta():
                 st.error("El número de teléfono debe tener 9 dígitos.")
                 return
 
-            if monto <= 0:  # Validación para el monto
+            if monto <= 0:
                 st.error("El monto a pagar debe ser mayor a 0.")
                 return
 
@@ -117,7 +112,6 @@ def ingresar_boleta():
                 st.error("Ya existe una boleta con este número en la misma sucursal o tipo de servicio.")
                 return
 
-            # Guardar los datos en Firestore
             boleta = {
                 "numero_boleta": numero_boleta,
                 "nombre_cliente": nombre_cliente,
@@ -133,16 +127,18 @@ def ingresar_boleta():
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
 
-            # Limpiar el estado de cantidades después de guardar
-            # Reset form fields
-            st.session_state['cantidades'] = {}  # Already present
-            st.session_state.numero_boleta = ""  # Add keys for other inputs
+            # Limpiar todos los campos
+            st.session_state['cantidades'] = {}
+            st.session_state.numero_boleta = ""
             st.session_state.nombre_cliente = ""
             st.session_state.dni = ""
             st.session_state.telefono = ""
             st.session_state.monto = 0.0
             st.session_state.fecha_registro = datetime.now()
-            # st.rerun()
+            st.session_state.articulo_seleccionado = ""
+
+            st.rerun()
+
 
 import pandas as pd
 from io import BytesIO
