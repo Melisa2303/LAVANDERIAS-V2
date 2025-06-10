@@ -84,7 +84,7 @@ def ver_ruta_optimizada():
 
         data = _crear_data_model(df_final, vehiculos=1)
         t0 = tiempo.time()
-        res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
+        res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=60)
         solve_t = tiempo.time() - t0
 
         if not res:
