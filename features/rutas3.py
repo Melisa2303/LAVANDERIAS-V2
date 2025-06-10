@@ -1,38 +1,10 @@
-import streamlit as st
-import pandas as pd
-from io import BytesIO
-from datetime import datetime
-import firebase_admin
-from firebase_admin import credentials, firestore
-from core.firebase import db
-from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
-import requests  # Importar requests A
-from googlemaps.convert import decode_polyline
-from streamlit_folium import st_folium
-import folium
-from datetime import datetime, timedelta, time
-import time as tiempo
-import googlemaps
-from core.firebase import db, obtener_sucursales
-from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
-#from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
-from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix , agrupar_puntos_aglomerativo
-#from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
-#from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
-
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
-
-
-# ===================== PÁGINA “Ver Ruta Optimizada” =====================
-
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
-
     c1, c2 = st.columns(2)
     with c1:
         fecha = st.date_input("Fecha", value=datetime.now().date())
     with c2:
-        algoritmo = st.selectbox("Seleccionar Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3", "Algoritmo 4"])
+        algoritmo = st.selectbox("Algoritmo", ["Algoritmo 1", "Algoritmo 2", "Algoritmo 3", "Algoritmo 4"])
 
     # Estado persistente
     if "res" not in st.session_state:
@@ -48,9 +20,9 @@ def ver_ruta_optimizada():
     if "leg_0" not in st.session_state:
         st.session_state["leg_0"] = 0
 
-    # Solo recalcular si aún no lo hemos hecho para esta sesión
+    # Procesamiento
     if st.session_state["res"] is None:
-        pedidos = cargar_pedidos(fecha, "Todos")  # Asumimos que quieres todos los pedidos
+        pedidos = cargar_pedidos(fecha, "Todos")
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
             return
@@ -61,30 +33,16 @@ def ver_ruta_optimizada():
         st.session_state["df_etiquetado"] = df_etiquetado.copy()
 
         DEP = {
-            "id": "DEP",
-            "operacion": "Depósito",
-            "nombre_cliente": "Depósito",
-            "direccion": "Planta Lavandería",
-            "lat": -16.40904,
-            "lon": -71.53745,
-            "time_start": "08:00",
-            "time_end": "18:00",
-            "demand": 0
+            "id": "DEP", "operacion": "Depósito", "nombre_cliente": "Depósito",
+            "direccion": "Planta Lavandería", "lat": -16.40904, "lon": -71.53745,
+            "time_start": "08:00", "time_end": "18:00", "demand": 0
         }
         df_final = pd.concat([pd.DataFrame([DEP]), df_clusters], ignore_index=True)
         st.session_state["df_final"] = df_final.copy()
 
-        data = _crear_data_model(df_final, vehiculos=1, capacidad_veh=None)
-
+        data = _crear_data_model(df_final, vehiculos=1)
         t0 = tiempo.time()
-        if algoritmo == "Algoritmo 1":
-            res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
-        elif algoritmo == "Algoritmo 2":
-            res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
-        elif algoritmo == "Algoritmo 3":
-            res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
-        else:
-            res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
+        res = optimizar_ruta_algoritmo22(data, tiempo_max_seg=120)
         solve_t = tiempo.time() - t0
 
         if not res:
@@ -92,6 +50,8 @@ def ver_ruta_optimizada():
             return
 
         st.session_state["res"] = res
+        st.metric("⏱️ Tiempo de cómputo", f"{solve_t:.2f} s")
+        st.metric("📏 Distancia total (km)", f"{res['distance_total_m'] / 1000:.2f}")
 
         ruta = res["routes"][0]["route"]
         arr = res["routes"][0]["arrival_sec"]
@@ -101,39 +61,10 @@ def ver_ruta_optimizada():
         df_r["orden"] = range(len(ruta))
         st.session_state["df_ruta"] = df_r.copy()
 
-        if not st.session_state["ruta_guardada"]:
-            doc = {
-                "fecha": fecha.strftime("%Y-%m-%d"),
-                "algoritmo": algoritmo,
-                "creado_en": firestore.SERVER_TIMESTAMP,
-                "vehiculos": 1,
-                "distancia_total_m": res["distance_total_m"],
-                "paradas": []
-            }
-            for idx, n in enumerate(ruta):
-                doc["paradas"].append({
-                    "orden": idx,
-                    "pedidoId": df_final.loc[n, "id"],
-                    "nombre": df_final.loc[n, "nombre_cliente"],
-                    "direccion": df_final.loc[n, "direccion"],
-                    "lat": df_final.loc[n, "lat"],
-                    "lon": df_final.loc[n, "lon"],
-                    "ETA": datetime.utcfromtimestamp(arr[idx]).strftime("%H:%M")
-                })
-            db.collection("rutas").add(doc)
-            st.session_state["ruta_guardada"] = True
-
-        # Métricas completas
-        st.write("### 📊 Métricas del recorrido")
-        st.metric("⏱️ Tiempo de cómputo", f"{solve_t:.2f} s")
-        st.metric("📏 Distancia total (km)", f"{res['distance_total_m'] / 1000:.2f}")
-        tiempo_total_ruta_min = (arr[-1] - arr[0]) / 60
-        st.metric("🕒 Tiempo total estimado (min)", f"{tiempo_total_ruta_min:.1f}")
-        st.metric("🗺️ Puntos totales visitados", len(ruta))
-
-    # -------------------- MOSTRAR TABLA Y MAPA --------------------
+    # Mostramos resultados
     df_r = st.session_state["df_ruta"]
     df_f = st.session_state["df_final"]
+    df_cl = st.session_state["df_clusters"]
     df_et = st.session_state["df_etiquetado"]
     ruta = st.session_state["res"]["routes"][0]["route"]
 
@@ -148,39 +79,59 @@ def ver_ruta_optimizada():
         st.success("✅ Todas las paradas completadas")
         return
 
-    # Mostrar mapa completo con todas las rutas en pestaña Info
-    t1, t2 = st.tabs(["🗺 Tramo", "ℹ️ Mapa Completo"])
-    with t1:
-        # Tramo actual
-        n_origen = ruta[leg]
-        n_dest = ruta[leg + 1]
-        nombre_dest = df_f.loc[n_dest, "nombre_cliente"]
-        direccion_dest = df_f.loc[n_dest, "direccion"]
-        ETA_dest = df_r.loc[df_r["orden"] == leg + 1, "ETA"].values[0]
+    # Tab de tramo actual y de ruta completa
+    n_origen = ruta[leg]
+    n_dest = ruta[leg + 1]
+    nombre_dest = df_f.loc[n_dest, "nombre_cliente"]
+    direccion_dest = df_f.loc[n_dest, "direccion"]
+    ETA_dest = df_r.loc[df_r["orden"] == leg + 1, "ETA"].values[0]
 
-        st.markdown(f"### Próximo → **{nombre_dest}** (ETA {ETA_dest})")
-        if st.button(f"Ya llegué a {nombre_dest}"):
-            st.session_state["leg_0"] += 1
-            st.rerun()
+    st.markdown(f"### Próximo → **{nombre_dest}** (ETA {ETA_dest})")
+    if st.button(f"✅ Llegué a {nombre_dest}"):
+        st.session_state["leg_0"] += 1
+        st.rerun()
 
-        orig = f"{df_f.loc[n_origen, 'lat']},{df_f.loc[n_origen, 'lon']}"
-        dest = f"{df_f.loc[n_dest, 'lat']},{df_f.loc[n_dest, 'lon']}"
-        directions = gmaps.directions(orig, dest, mode="driving", departure_time=datetime.now(), traffic_model="best_guess")
-        overview = directions[0]["overview_polyline"]["points"]
-        segmento = [(p["lat"], p["lng"]) for p in decode_polyline(overview)]
+    # Direcciones completas para trazo de toda la ruta
+    coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
 
-        m = folium.Map(location=segmento[0], zoom_start=14)
-        folium.PolyLine(segmento, color="blue", weight=5).add_to(m)
-        st_folium(m, width=700, height=400)
+    # Mapa global con todos los tramos
+    with st.expander("🗺️ Mapa de toda la ruta"):
+        m = folium.Map(location=coords_final[0], zoom_start=13)
 
-    with t2:
-        # Mapa completo
-        m_all = folium.Map(location=[df_f.loc[ruta[0], "lat"], df_f.loc[ruta[0], "lon"]], zoom_start=13)
-        for i in range(len(ruta) - 1):
-            orig = f"{df_f.loc[ruta[i], 'lat']},{df_f.loc[ruta[i], 'lon']}"
-            dest = f"{df_f.loc[ruta[i+1], 'lat']},{df_f.loc[ruta[i+1], 'lon']}"
-            directions = gmaps.directions(orig, dest, mode="driving", departure_time=datetime.now(), traffic_model="best_guess")
-            overview = directions[0]["overview_polyline"]["points"]
-            segmento = [(p["lat"], p["lng"]) for p in decode_polyline(overview)]
-            folium.PolyLine(segmento, color="blue", weight=4).add_to(m_all)
-        st_folium(m_all, width=700, height=500)
+        # Línea azul de la ruta completa
+        folium.PolyLine(coords_final, color="blue", weight=4, opacity=0.7).add_to(m)
+
+        # Depósito
+        folium.Marker(
+            coords_final[0],
+            popup="Depósito",
+            icon=folium.Icon(color="green", icon="home", prefix="fa")
+        ).add_to(m)
+
+        # Nodos de la ruta
+        for idx, (lat, lon) in enumerate(coords_final[1:], start=1):
+            folium.Marker(
+                (lat, lon),
+                popup=f"{df_f.loc[ruta[idx], 'nombre_cliente']}<br>{df_f.loc[ruta[idx], 'direccion']}",
+                icon=folium.Icon(color="orange", icon="flag", prefix="fa")
+            ).add_to(m)
+
+        # Pedidos individuales originales
+        for _, fila_p in df_et.iterrows():
+            folium.CircleMarker(
+                location=(fila_p["lat"], fila_p["lon"]),
+                radius=4,
+                color="red",
+                fill=True,
+                fill_opacity=0.7
+            ).add_to(m)
+
+        st_folium(m, width=700, height=500)
+
+    # Métricas finales
+    st.markdown("## 🔍 Métricas Finales")
+    st.markdown(f"- Kilometraje total: **{res['distance_total_m'] / 1000:.2f} km**")
+    st.markdown(f"- Tiempo de cómputo: **{solve_t:.2f} segundos**")
+    st.markdown(f"- Tiempo estimado total: **{(max(res['routes'][0]['arrival_sec']) - SHIFT_START_SEC) / 60:.2f} min**")
+    st.markdown(f"- Puntos totales visitados: **{len(ruta)}**")
+
