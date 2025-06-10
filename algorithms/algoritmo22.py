@@ -115,17 +115,11 @@ def _distancia_duracion_matrix(coords):
     return dist, dur
 
 def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
-    """
-    Construye el diccionario 'data' esperado por el resolver VRPTW:
-      - distance_matrix: matriz de distancias (m)
-      - duration_matrix: matriz de duraciones (s)
-      - time_windows: lista de (inicio, fin) en segundos
-      - demands: lista de demandas por nodo
-      - num_vehicles, vehicle_capacities, depot
-    df debe tener columnas ['lat', 'lon', 'time_start', 'time_end', 'demand'].
-    """
     coords = list(zip(df["lat"], df["lon"]))
     dist_m, dur_s = _distancia_duracion_matrix(coords)
+    
+    MARGEN = 15 * 60  # 15 minutos en segundos
+    
     time_windows = []
     demandas = []
     for _, row in df.iterrows():
@@ -133,16 +127,20 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         fin = _hora_a_segundos(row.get("time_end"))
         if ini is None or fin is None:
             ini, fin = SHIFT_START_SEC, SHIFT_END_SEC
+        else:
+            ini = max(0, ini - MARGEN)
+            fin = min(24*3600, fin + MARGEN)
         time_windows.append((ini, fin))
         demandas.append(row.get("demand", 1))
+    
     return {
-        "distance_matrix":    dist_m,
-        "duration_matrix":    dur_s,
-        "time_windows":       time_windows,
-        "demands":            demandas,
-        "num_vehicles":       vehiculos,
+        "distance_matrix": dist_m,
+        "duration_matrix": dur_s,
+        "time_windows": time_windows,
+        "demands": demandas,
+        "num_vehicles": vehiculos,
         "vehicle_capacities": [capacidad_veh or 10**9] * vehiculos,
-        "depot":              0,
+        "depot": 0,
     }
 #
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
