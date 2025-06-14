@@ -146,8 +146,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     """
     Resuelve un VRPTW (Vehicle Routing Problem with Time Windows) para un solo vehículo
-    usando OR-Tools, con priorización de las ventanas de tiempo (soft time windows).
-    Penaliza llegar antes o después de la ventana real para que se prioricen ventanas cercanas.
+    usando OR-Tools. Respeta las ventanas de tiempo estrictamente y minimiza el tiempo total.
     Retorna:
         {'routes': [ { 'vehicle': v, 'route': [nodos], 'arrival_sec': [segundos] } , ... ],
          'distance_total_m': distancia_total_en_metros}
@@ -160,6 +159,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     )
     routing = pywrapcp.RoutingModel(manager)
 
+    # Callback de duración de viaje + tiempo de servicio
     def time_cb(from_index, to_index):
         i = manager.IndexToNode(from_index)
         j = manager.IndexToNode(to_index)
@@ -170,34 +170,28 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     transit_cb_idx = routing.RegisterTransitCallback(time_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_idx)
 
-    # Configurar dimensión de tiempo
+    # Dimensión de tiempo con restricciones estrictas
     routing.AddDimension(
         transit_cb_idx,
-        slack_max=24*3600,   # margen de espera máximo por nodo
-        capacity=24*3600,    # duración máxima de la ruta
+        slack_max=24*3600,     # margen de espera máximo (para flexibilidad interna)
+        capacity=24*3600,      # duración máxima de ruta
         fix_start_cumul_to_zero=False,
         name="Time"
     )
     time_dim = routing.GetDimensionOrDie("Time")
     depot_idx = manager.NodeToIndex(data["depot"])
 
-    # Fijar la hora de inicio del depósito
+    # Hora exacta de inicio del depósito
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
-    # Penalización por llegar antes o después de la ventana real (Soft Time Windows)
-    PENALIDAD_ESPERA = 1000000  # penalización por segundo de espera fuera de la ventana real
+    # Aplicar ventanas de tiempo estrictas a cada nodo
     for node, (ini, fin) in enumerate(data["time_windows"]):
         if node == data["depot"]:
             continue
         idx = manager.NodeToIndex(node)
-        # Rango total amplio (todo el turno)
-        time_dim.CumulVar(idx).SetRange(SHIFT_START_SEC, SHIFT_END_SEC)
-        # Penalización por llegar antes de la apertura real
-        time_dim.SetCumulVarSoftLowerBound(idx, ini, PENALIDAD_ESPERA)
-        # Penalización por llegar después del cierre real
-        time_dim.SetCumulVarSoftUpperBound(idx, fin, PENALIDAD_ESPERA)
+        time_dim.CumulVar(idx).SetRange(ini, fin)
 
-    # Si hay demandas, agregar restricción de capacidad
+    # Agregar dimensión de capacidad si hay demandas
     if any(data["demands"]):
         def demand_callback(i_idx):
             return data["demands"][manager.IndexToNode(i_idx)]
@@ -212,12 +206,12 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
     params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
 
-    # Resolver
+    # Resolver el problema
     sol = routing.SolveWithParameters(params)
     if not sol:
         return None
 
-    # Reconstruir rutas y llegada por nodo
+    # Reconstrucción de rutas
     rutas = []
     dist_total = 0
     for v in range(data["num_vehicles"]):
@@ -233,6 +227,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
         rutas.append({"vehicle": v, "route": route, "arrival_sec": llegada})
 
     return {"routes": rutas, "distance_total_m": dist_total}
+
 
 # ===================== FUNCIONES PARA CLUSTERING =====================
 
