@@ -329,6 +329,7 @@ def cargar_pedidos(fecha, tipo):
     docs += col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()
     # Todas las recogidas cuya fecha_entrega coincida
     docs += col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
+
     if tipo != "Todos":
         tf = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
         docs = [d for d in docs if d.to_dict().get("tipo_solicitud") == tf]
@@ -338,18 +339,27 @@ def cargar_pedidos(fecha, tipo):
         data = d.to_dict()
         is_recojo = data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d")
         op = "Recojo" if is_recojo else "Entrega"
+
         # Extraer coordenadas y dirección según tipo
         key_coord = f"coordenadas_{'recojo' if is_recojo else 'entrega'}"
         key_dir   = f"direccion_{'recojo' if is_recojo else 'entrega'}"
         coords = data.get(key_coord, {})
         lat, lon = coords.get("lat"), coords.get("lon")
         direccion = data.get(key_dir, "") or ""
+
+        # Extraer nombre del cliente o sucursal
+        nombre = data.get("nombre_cliente")
+        if not nombre:
+            nombre = data.get("sucursal", "") or "Sin nombre"
+
+        # Hora de servicio
         hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
         ts, te = (hs, hs) if hs else ("08:00", "18:00")
+
         out.append({
             "id":             d.id,
             "operacion":      op,
-            "nombre_cliente": data.get("nombre_cliente", ""),
+            "nombre_cliente": nombre,
             "direccion":      direccion,
             "lat":            lat,
             "lon":            lon,
@@ -357,4 +367,5 @@ def cargar_pedidos(fecha, tipo):
             "time_end":       te,
             "demand":         1
         })
+
     return out
