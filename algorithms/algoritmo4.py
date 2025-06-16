@@ -126,24 +126,24 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=60):
     transit_cb_index = routing.RegisterTransitCallback(time_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_index)
 
-    # Dimensión de tiempo
+    # Dimensión de tiempo con inicio fijado a las 08:00
     routing.AddDimension(
         transit_cb_index,
-        3600,                # slack: margen de espera
-        24 * 3600,           # tiempo máximo permitido (24h)
-        False,
+        3600,                # tiempo de espera permitido (slack)
+        24 * 3600,           # límite total de ruta
+        True,                # <- fijar el tiempo inicial a 0 (necesario para controlarlo)
         "Time"
     )
     time_dimension = routing.GetDimensionOrDie("Time")
 
-    # Ventanas de tiempo
-    depot_index = manager.NodeToIndex(data["depot"])
-    time_dimension.CumulVar(depot_index).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
+    # Fijar salida del depósito a las 08:00
+    for vehicle_id in range(data["num_vehicles"]):
+        start_index = routing.Start(vehicle_id)
+        time_dimension.CumulVar(start_index).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
-    for node, (ini, fin) in enumerate(data["time_windows"]):
-        if node == data["depot"]:
-            continue
-        index = manager.NodeToIndex(node)
+    # Aplicar ventanas de tiempo a cada nodo
+    for node_index, (ini, fin) in enumerate(data["time_windows"]):
+        index = manager.NodeToIndex(node_index)
         time_dimension.CumulVar(index).SetRange(ini, fin)
 
     # Capacidad (si hay demandas)
