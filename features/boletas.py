@@ -7,55 +7,60 @@ from core.firebase import obtener_articulos, obtener_sucursales, verificar_unici
 import pandas as pd
 from io import BytesIO
 
-def ingresar_boleta():
-    # Inicialización de claves en session_state
-    if "numero_boleta" not in st.session_state:
-        st.session_state["numero_boleta"] = ""
-    if "nombre_cliente" not in st.session_state:
-        st.session_state["nombre_cliente"] = ""
-    if "dni" not in st.session_state:
-        st.session_state["dni"] = ""
-    if "telefono" not in st.session_state:
-        st.session_state["telefono"] = ""
-    if "monto" not in st.session_state:
-        st.session_state["monto"] = 0.0
-    if "fecha_registro" not in st.session_state:
-        st.session_state["fecha_registro"] = datetime.now()
-    if "sucursal" not in st.session_state:
-        st.session_state["sucursal"] = None
-    if "articulo_seleccionado" not in st.session_state:
-        st.session_state["articulo_seleccionado"] = ""
-    if "tipo_servicio" not in st.session_state:
-        st.session_state["tipo_servicio"] = "🏢 Sucursal"
-    if "cantidades" not in st.session_state:
-        st.session_state["cantidades"] = {}
+import streamlit as st
+import re
+from datetime import datetime
+from core.firebase import obtener_articulos, obtener_sucursales, verificar_unicidad_boleta, db
 
+def ingresar_boleta():
+    # ✅ Reinicio seguro al detectar bandera de reseteo
+    if st.session_state.get("reset_boleta", False):
+        for key in [
+            "numero_boleta", "nombre_cliente", "dni", "telefono",
+            "monto", "fecha_registro", "articulo_seleccionado",
+            "sucursal", "tipo_servicio", "cantidades"
+        ]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.session_state["reset_boleta"] = False
+        st.rerun()
+
+    # Inicialización de claves si no existen
+    st.session_state.setdefault("numero_boleta", "")
+    st.session_state.setdefault("nombre_cliente", "")
+    st.session_state.setdefault("dni", "")
+    st.session_state.setdefault("telefono", "")
+    st.session_state.setdefault("monto", 0.0)
+    st.session_state.setdefault("fecha_registro", datetime.now())
+    st.session_state.setdefault("articulo_seleccionado", "")
+    st.session_state.setdefault("sucursal", None)
+    st.session_state.setdefault("tipo_servicio", "🏢 Sucursal")
+    st.session_state.setdefault("cantidades", {})
+
+    # Header
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📝 Ingresar Boleta")
-  
+
     # Obtener datos necesarios
     articulos = obtener_articulos()
     sucursales = obtener_sucursales()
+    nombres_sucursales = [s['nombre'] for s in sucursales]
 
-    # Campos de entrada principales
+    # Entradas del formulario
     numero_boleta = st.text_input("Número de Boleta", max_chars=5, key="numero_boleta")
     nombre_cliente = st.text_input("Nombre del Cliente", key="nombre_cliente")
-    
     col1, col2 = st.columns(2)
     with col1:
         dni = st.text_input("Número de DNI (Opcional)", max_chars=8, key="dni")
     with col2:
         telefono = st.text_input("Teléfono (Opcional)", max_chars=9, key="telefono")
-
     monto = st.number_input("Monto a Pagar", min_value=0.0, format="%.2f", step=0.01, key="monto")
-
-    nombres_sucursales = [sucursal['nombre'] for sucursal in sucursales]
-
     tipo_servicio = st.radio("Tipo de Servicio", ["🏢 Sucursal", "🚚 Delivery"], horizontal=True, key="tipo_servicio")
+
     if "Sucursal" in tipo_servicio:
         sucursal = st.selectbox("Sucursal", nombres_sucursales, key="sucursal")
     else:
@@ -93,11 +98,12 @@ def ingresar_boleta():
                 del st.session_state["cantidades"][articulo]
             st.rerun()
 
-    if "update" in st.session_state and st.session_state["update"]:
+    if st.session_state.get("update", False):
         st.session_state["update"] = False
 
     fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now(), key="fecha_registro")
 
+    # Formulario
     with st.form(key='form_boleta'):
         submit_button = st.form_submit_button(label="💾 Ingresar Boleta")
 
@@ -140,19 +146,10 @@ def ingresar_boleta():
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
 
-            # Limpieza final usando la notación segura
-            st.session_state["cantidades"] = {}
-            st.session_state["numero_boleta"] = ""
-            st.session_state["nombre_cliente"] = ""
-            st.session_state["dni"] = ""
-            st.session_state["telefono"] = ""
-            st.session_state["monto"] = 0.0
-            st.session_state["fecha_registro"] = datetime.now()
-            st.session_state["articulo_seleccionado"] = ""
-            st.session_state["sucursal"] = None
-            st.session_state["tipo_servicio"] = "🏢 Sucursal"
-
+            # En vez de limpiar aquí → activa bandera para siguiente ciclo
+            st.session_state["reset_boleta"] = True
             st.rerun()
+
 
 
 def datos_boletas():
