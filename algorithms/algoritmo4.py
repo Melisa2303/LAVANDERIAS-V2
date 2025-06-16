@@ -131,7 +131,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=60):
         transit_cb_index,
         3600,                # tiempo de espera permitido (slack)
         24 * 3600,           # límite total de ruta
-        True,                # <- fijar el tiempo inicial a 0 (necesario para controlarlo)
+        False,                # <- fijar el tiempo inicial a 0 (necesario para controlarlo)
         "Time"
     )
     time_dimension = routing.GetDimensionOrDie("Time")
