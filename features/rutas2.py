@@ -10,15 +10,12 @@ import requests  # Importar requests A
 from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
-from datetime import datetime, timedelta, time
-import time as tiempo
+from datetime import datetime, timedelta
+import time
 import googlemaps
 from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
-from algorithms.algoritmo1 import optimizar_ruta_algoritmo1, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix
-from algorithms.algoritmo2 import optimizar_ruta_algoritmo2, cargar_pedidos, _crear_data_model, _distancia_duracion_matrix #, agrupar_puntos_aglomerativo
-from algorithms.algoritmo3 import optimizar_ruta_algoritmo3
-from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
+
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
@@ -293,104 +290,3 @@ def datos_ruta():
         )
     else:
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
-
-# ===================== PÁGINA “Ver Ruta Optimizada” =====================
-
-def ver_ruta_optimizada():
-    st.title("🚚 Ver Ruta Optimizada")
-    fecha = st.date_input("Fecha", value=datetime.now().date())
-
-    # Estado persistente
-    if "res" not in st.session_state:
-        st.session_state["res"] = None
-    if "df_final" not in st.session_state:
-        st.session_state["df_final"] = None
-    if "ruta_guardada" not in st.session_state:
-        st.session_state["ruta_guardada"] = False
-    if "leg_0" not in st.session_state:
-        st.session_state["leg_0"] = 0
-
-    # Calcular solo si no está ya en sesión
-    if st.session_state["res"] is None:
-        pedidos = cargar_ruta(fecha)
-        if not pedidos:
-            st.info("No hay pedidos para esa fecha.")
-            return
-
-        # Crear DataFrame
-        df_original = pd.DataFrame(pedidos)
-
-        # Añadir columnas lat y lon si existen coordenadas
-        if "coordenadas" in df_original.columns:
-            df_original["lat"] = df_original["coordenadas"].apply(lambda x: x.get("lat") if isinstance(x, dict) else None)
-            df_original["lon"] = df_original["coordenadas"].apply(lambda x: x.get("lon") if isinstance(x, dict) else None)
-
-        # Insertar depósito manualmente
-        DEP = {
-            "id": "DEP",
-            "operacion": "Depósito",
-            "nombre_cliente": "Depósito",
-            "direccion": "Planta Lavandería",
-            "lat": -16.40904,
-            "lon": -71.53745,
-            "time_start": "08:00",
-            "time_end": "18:00",
-            "demand": 0
-        }
-        df_final = pd.concat([pd.DataFrame([DEP]), df_original], ignore_index=True)
-        st.session_state["df_final"] = df_final.copy()
-
-        # Crear modelo para VRPTW
-        data = _crear_data_model(df_final, vehiculos=1, capacidad_veh=None)
-
-        # Resolver VRPTW
-        t0 = tiempo.time()
-        res = optimizar_ruta_algoritmo2(data, tiempo_max_seg=120)
-        solve_t = tiempo.time() - t0
-        if not res:
-            st.error("😕 Sin solución factible.")
-            return
-
-        st.session_state["res"] = res
-        st.metric("⏱️ Tiempo de cómputo", f"{solve_t:.2f} s")
-        st.metric("📏 Distancia total (km)", f"{res['distance_total_m'] / 1000:.2f}")
-
-        ruta = res["routes"][0]["route"]
-        arr = res["routes"][0]["arrival_sec"]
-
-        df_r = df_final.loc[ruta, ["nombre_cliente", "direccion", "time_start", "time_end"]].copy()
-        df_r["ETA"] = [datetime.utcfromtimestamp(t).strftime("%H:%M") for t in arr]
-        df_r["orden"] = range(len(ruta))
-        st.session_state["df_ruta"] = df_r.copy()
-
-        # Guardar ruta en Firestore (opcional)
-        if not st.session_state["ruta_guardada"]:
-            doc = {
-                "fecha": fecha.strftime("%Y-%m-%d"),
-                "creado_en": firestore.SERVER_TIMESTAMP,
-                "vehiculos": 1,
-                "distancia_total_m": res["distance_total_m"],
-                "paradas": []
-            }
-            for idx, n in enumerate(ruta):
-                doc["paradas"].append({
-                    "orden": idx,
-                    "pedidoId": df_final.loc[n, "id"],
-                    "nombre": df_final.loc[n, "nombre_cliente"],
-                    "direccion": df_final.loc[n, "direccion"],
-                    "lat": df_final.loc[n, "lat"],
-                    "lon": df_final.loc[n, "lon"],
-                    "ETA": datetime.utcfromtimestamp(arr[idx]).strftime("%H:%M")
-                })
-            db.collection("rutas").add(doc)
-            st.session_state["ruta_guardada"] = True
-
-    # Mostrar la tabla
-    df_r = st.session_state["df_ruta"]
-    st.subheader("📋 Orden de visita optimizada")
-    st.dataframe(df_r, use_container_width=True)
-
-    # Botón para reiniciar tramos
-    if st.button("🔄 Reiniciar Tramos"):
-        st.session_state["leg_0"] = 0
-
