@@ -164,11 +164,6 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=60):
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
 
-    # Habilitar operadores LNS (según OR-Tools >= v9.4)
-    search_parameters.local_search_operators.use_path_lns = True
-    search_parameters.local_search_operators.use_inactive_lns = True
-    search_parameters.local_search_operators.use_lns = True
-
     # Metaheurística para explorar soluciones vecinas
     search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.TABU_SEARCH
     search_parameters.time_limit.seconds = tiempo_max_seg
