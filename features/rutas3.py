@@ -17,7 +17,7 @@ from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desd
 from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
 # Algoritmo 3
 # Algoritmo 4
-from algorithms.algoritmo4 import optimizar_ruta_algoritmo4#, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
+from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
