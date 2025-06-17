@@ -45,7 +45,7 @@ def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
     return None  # Placeholder para algoritmos no implementados aún, retorna nada
 #Diccionario de algoritmos para el menú de usuario
 ALG_MAP = {
-    "Algoritmo 1": optimizar_ruta_algoritmo22,
+    "Algoritmo 1 - PCA - GLS": optimizar_ruta_algoritmo22,
     "Algoritmo 2": optimizar_ruta_placeholder,
     "Algoritmo 3": optimizar_ruta_placeholder,
     "Algoritmo 4": optimizar_ruta_algoritmo4,
