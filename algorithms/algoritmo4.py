@@ -301,11 +301,10 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     # Crear DataFrames para cada ruta
     for ruta in best_rutas:
         df_check = pd.DataFrame({
+            "orden": ruta["orden"],
             "nodo_id": ruta["route"],
             "hora_llegada": [tiempo.strftime('%H:%M', tiempo.gmtime(s)) for s in ruta["arrival_sec"]]
         })
-        print(f"Ruta vehículo {ruta['vehicle']}:")
-        print(df_check)
 
     return {
         "routes": best_rutas,
