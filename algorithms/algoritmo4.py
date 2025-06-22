@@ -29,10 +29,17 @@ SHIFT_END_SEC   = 16*3600 +30*60 # 16:30
 db = firestore.client()
 
 def _hora_a_segundos(hhmm):
-    if hhmm is None or pd.isna(hhmm):
+    """Convierte 'HH:MM' o 'HH:MM:SS' a segundos desde medianoche."""
+    if hhmm is None or pd.isna(hhmm) or hhmm == "":
         return None
-    h, m = map(int, str(hhmm).split(":"))
-    return h*3600 + m*60
+    try:
+        parts = str(hhmm).split(":")
+        h = int(parts[0])
+        m = int(parts[1])
+        return h*3600 + m*60
+    except:
+        return None
+
 #Distancia euclidiana - Drones - Emergencia - Botar sí o sí una tabla ordenada considerando distancias, 
 # no tiempo real, sino estimación
 def _haversine_dist_dur(coords, vel_kmh=40.0):
@@ -125,10 +132,6 @@ HORA_RUTA_FIN = 16 * 3600
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-
-    def _hora_a_segundos(hhmm):
-        h, m = map(int, hhmm.split(":"))
-        return h * 3600 + m * 60
 
     def calcular_arrival_times(route):
         arrival = []
