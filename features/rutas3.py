@@ -8,7 +8,6 @@ import time as tiempo
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-import requests
 import googlemaps
 from googlemaps.convert import decode_polyline
 
@@ -31,11 +30,13 @@ from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 # Inicializar cliente de Google Maps
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
+
 def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
     """Placeholder para algoritmos no implementados aún."""
     return None
 
-# Mapa de algoritmos disponibles
+
+# Mapeo de algoritmos disponibles
 ALG_MAP = {
     "Algoritmo 1 - PCA - GLS": optimizar_ruta_algoritmo22,
     "Algoritmo 2": optimizar_ruta_placeholder,
@@ -43,27 +44,35 @@ ALG_MAP = {
     "Algoritmo 4": optimizar_ruta_algoritmo4,
 }
 
-# Funciones auxiliares para la ventana extendida
+
+# ——— Funciones auxiliares para la ventana extendida ———
+
 def _hora_a_segundos(hhmm: str) -> int | None:
+    """Convierte 'HH:MM' a segundos desde medianoche."""
     try:
         h, m = map(int, hhmm.split(":"))
         return h * 3600 + m * 60
     except:
         return None
 
+
 def _segundos_a_hora(segs: int) -> str:
+    """Convierte segundos desde medianoche a 'HH:MM'."""
     h = segs // 3600
     m = (segs % 3600) // 60
     return f"{h:02}:{m:02}"
 
+
 def _ventana_extendida(row: pd.Series) -> str:
+    """Calcula la ventana 'time_start'-'time_end' ± MARGEN."""
     ini = _hora_a_segundos(row["time_start"])
     fin = _hora_a_segundos(row["time_end"])
     if ini is None or fin is None:
         return "No especificado"
     ini_m = max(0, ini - MARGEN)
-    fin_m = min(24*3600, fin + MARGEN)
+    fin_m = min(24 * 3600, fin + MARGEN)
     return f"{_segundos_a_hora(ini_m)} - {_segundos_a_hora(fin_m)}"
+
 
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
@@ -73,7 +82,7 @@ def ver_ruta_optimizada():
     with c2:
         algoritmo = st.selectbox("Algoritmo", list(ALG_MAP.keys()))
 
-    # Reiniciar estado si cambia fecha o algoritmo
+    # Reiniciar estado si cambian fecha o algoritmo
     if (st.session_state.get("fecha_actual") != fecha or
         st.session_state.get("algoritmo_actual") != algoritmo):
         for var in ["res", "df_clusters", "df_etiquetado", "df_final", "df_ruta", "solve_t"]:
@@ -82,28 +91,35 @@ def ver_ruta_optimizada():
         st.session_state["fecha_actual"] = fecha
         st.session_state["algoritmo_actual"] = algoritmo
 
-    # Calcular ruta si aún no existe
+    # Calcular ruta por primera vez
     if st.session_state["res"] is None:
         pedidos = cargar_pedidos(fecha, "Todos")
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
             return
 
+        # DataFrame original y clustering de puntos
         df_original = pd.DataFrame(pedidos)
         df_clusters, df_etiquetado = agrupar_puntos_aglomerativo(df_original, eps_metros=300)
         st.session_state["df_clusters"] = df_clusters.copy()
         st.session_state["df_etiquetado"] = df_etiquetado.copy()
 
-        # Agregar depósito
+        # Punto de depósito
         DEP = {
-            "id": "DEP", "operacion": "Depósito", "nombre_cliente": "Depósito",
-            "direccion": "Planta Lavandería", "lat": -16.40904, "lon": -71.53745,
-            "time_start": "08:00", "time_end": "18:00", "demand": 0
+            "id": "DEP",
+            "operacion": "Depósito",
+            "nombre_cliente": "Depósito",
+            "direccion": "Planta Lavandería",
+            "lat": -16.40904,
+            "lon": -71.53745,
+            "time_start": "08:00",
+            "time_end": "18:00",
+            "demand": 0
         }
         df_final = pd.concat([pd.DataFrame([DEP]), df_clusters], ignore_index=True)
         st.session_state["df_final"] = df_final.copy()
 
-        # Preparar y resolver modelo
+        # Construir y resolver modelo
         data = _crear_data_model(df_final, vehiculos=1)
         alg_fn = ALG_MAP[algoritmo]
         t0 = tiempo.time()
@@ -116,16 +132,20 @@ def ver_ruta_optimizada():
 
         st.session_state["res"] = res
 
-        # Construir df_r con ETA, orden y ventana extendida
+        # Construir df_r con los resultados
         ruta = res["routes"][0]["route"]
         arr = res["routes"][0]["arrival_sec"]
         df_r = df_final.loc[ruta, ["nombre_cliente", "direccion", "time_start", "time_end"]].copy()
+
+        # — Insertar columna de ventana extendida —
         df_r["ventana_con_margen"] = df_r.apply(_ventana_extendida, axis=1)
-        df_r["ETA"]   = [datetime.utcfromtimestamp(t).strftime("%H:%M") for t in arr]
+
+        # ETA y orden
+        df_r["ETA"] = [datetime.utcfromtimestamp(t).strftime("%H:%M") for t in arr]
         df_r["orden"] = range(len(ruta))
         st.session_state["df_ruta"] = df_r.copy()
 
-    # Mostrar orden de visita con ventana
+    # Mostrar orden de visita con la ventana extendida
     df_r = st.session_state["df_ruta"]
     st.subheader("📋 Orden de visita optimizada")
     st.dataframe(
@@ -140,7 +160,7 @@ def ver_ruta_optimizada():
     ruta = st.session_state["res"]["routes"][0]["route"]
     res  = st.session_state["res"]
 
-    # Tramo actual
+    # —— Tramo actual ——
     with tab1:
         leg = st.session_state["leg_0"]
         if leg >= len(ruta) - 1:
@@ -148,9 +168,9 @@ def ver_ruta_optimizada():
             return
 
         n_origen, n_dest = ruta[leg], ruta[leg + 1]
-        nombre_dest   = df_f.loc[n_dest, "nombre_cliente"]
-        direccion_dest= df_f.loc[n_dest, "direccion"]
-        ETA_dest      = df_r.loc[df_r["orden"] == leg + 1, "ETA"].iloc[0]
+        nombre_dest    = df_f.loc[n_dest, "nombre_cliente"]
+        direccion_dest = df_f.loc[n_dest, "direccion"]
+        ETA_dest       = df_r.loc[df_r["orden"] == leg + 1, "ETA"].iloc[0]
 
         st.markdown(
             f"### Próximo → **{nombre_dest}**  \n"
@@ -191,19 +211,21 @@ def ver_ruta_optimizada():
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue",  icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
 
-    # Mapa completo e info general
+    # —— Mapa completo e información general ——
     with tab2:
         st.subheader("🗺️ Mapa de toda la ruta")
         coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
         m = folium.Map(location=coords_final[0], zoom_start=13)
         folium.PolyLine(coords_final, weight=4, opacity=0.7).add_to(m)
+
+        # Depósito
         folium.Marker(
             coords_final[0],
             popup="Depósito",
             icon=folium.Icon(color="green", icon="home", prefix="fa")
         ).add_to(m)
 
-        # Marcadores con popup que incluye ventana extendida
+        # Marcadores de clientes con ventana en el popup
         for idx, (lat, lon) in enumerate(coords_final[1:], start=1):
             ventana = df_r.loc[df_r["orden"] == idx, "ventana_con_margen"].iloc[0]
             folium.Marker(
@@ -216,7 +238,7 @@ def ver_ruta_optimizada():
                 icon=folium.Icon(color="orange", icon="flag", prefix="fa")
             ).add_to(m)
 
-        # Pedidos individuales en rojo
+        # Pedidos individuales
         for _, fila_p in df_et.iterrows():
             folium.CircleMarker(
                 location=(fila_p["lat"], fila_p["lon"]),
