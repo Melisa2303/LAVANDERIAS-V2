@@ -17,7 +17,7 @@ from streamlit_folium import st_folium
 from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY
 
-from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo,MARGEN
+from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo,MARGEN, SHIFT_START_SEC, SHIFT_END_SEC
 from algorithms.algoritmo2 import optimizar_ruta_cw_tabu
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
