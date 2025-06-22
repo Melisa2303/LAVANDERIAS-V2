@@ -124,7 +124,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     def time_cb(from_idx, to_idx):
         i = manager.IndexToNode(from_idx)
         j = manager.IndexToNode(to_idx)
-        travel = data["duration_matrix"][i][j]
+        travel = data["distance_matrix"][i][j]
         service = SERVICE_TIME if i != data["depot"] else 0
         return travel + service
 
@@ -171,6 +171,14 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
                 next_idx = solution.Value(routing.NextVar(idx))
                 dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
                 idx = next_idx
+            # Agregar secuencia: Garage (G) - Depósito (D) - RUTA - D - G
+            # Suponemos que el Garage es el mismo que el depot (0)
+            if route and route[0] != data["depot"]:
+                route.insert(0, data["depot"])
+            if route and route[-1] != data["depot"]:
+                route.append(data["depot"])
+            route.insert(0, data["depot"])  # Garage
+            route.append(data["depot"])     # Garage
             rutas.append({
                 "vehicle": v,
                 "route": route,
@@ -190,22 +198,22 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         ]
 
     def random_removal(rutas, num_remove):
-        flat_nodes = [(r_idx, i, n) for r_idx, ruta in enumerate(rutas) for i, n in enumerate(ruta["route"][1:]) if n != data["depot"]]
+        flat_nodes = [(r_idx, i, n) for r_idx, ruta in enumerate(rutas) for i, n in enumerate(ruta["route"][2:-2]) if n != data["depot"]]
         to_remove = random.sample(flat_nodes, min(num_remove, len(flat_nodes)))
         removed_nodes = [n for _, _, n in to_remove]
 
         new_rutas = safe_copy_rutas(rutas)
         for r_idx, i, _ in sorted(to_remove, key=lambda x: -x[1]):
-            del new_rutas[r_idx]["route"][i+1]
+            del new_rutas[r_idx]["route"][i+2]  # Ajuste por garage-depot
         return new_rutas, removed_nodes
 
     def greedy_repair(rutas, removed):
         for node in removed:
             best_cost = float("inf")
             best_r = 0
-            best_pos = 1
+            best_pos = 2
             for r_idx, ruta in enumerate(rutas):
-                for i in range(1, len(ruta["route"])):
+                for i in range(2, len(ruta["route"])):
                     prev = ruta["route"][i-1]
                     nxt = ruta["route"][i]
                     cost = data["distance_matrix"][prev][node] + data["distance_matrix"][node][nxt] - data["distance_matrix"][prev][nxt]
@@ -240,6 +248,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         "routes": best_rutas,
         "distance_total_m": best_cost
     }
+
 
 # ============= CARGAR PEDIDOS DESDE FIRESTORE =============
 
