@@ -109,6 +109,12 @@ SERVICE_TIME = 10 * 60        # 10 minutos de servicio
 SHIFT_START_SEC = 9 * 3600    # 09:00
 
 import time as tiempo
+from core.constants import PUNTOS_FIJOS_COMPLETOS
+
+# Identificadores fijos para Cochera y Planta
+ID_GARAGE = 0  # PUNTOS_FIJOS_COMPLETOS[0]
+ID_PLANTA = 1  # PUNTOS_FIJOS_COMPLETOS[1]
+
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -117,15 +123,15 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     manager = pywrapcp.RoutingIndexManager(
         len(data["duration_matrix"]),
         data["num_vehicles"],
-        data["depot"]
+        ID_PLANTA
     )
     routing = pywrapcp.RoutingModel(manager)
 
     def time_cb(from_idx, to_idx):
         i = manager.IndexToNode(from_idx)
         j = manager.IndexToNode(to_idx)
-        travel = data["distance_matrix"][i][j]
-        service = SERVICE_TIME if i != data["depot"] else 0
+        travel = data["duration_matrix"][i][j]
+        service = SERVICE_TIME if i != ID_PLANTA else 0
         return travel + service
 
     transit_cb_index = routing.RegisterTransitCallback(time_cb)
@@ -171,18 +177,21 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
                 next_idx = solution.Value(routing.NextVar(idx))
                 dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
                 idx = next_idx
-            # Agregar secuencia: Garage (G) - Depósito (D) - RUTA - D - G
-            # Suponemos que el Garage es el mismo que el depot (0)
-            if route and route[0] != data["depot"]:
-                route.insert(0, data["depot"])
-            if route and route[-1] != data["depot"]:
-                route.append(data["depot"])
-            route.insert(0, data["depot"])  # Garage
-            route.append(data["depot"])     # Garage
+            route.append(manager.IndexToNode(idx))
+            llegada.append(solution.Min(time_dimension.CumulVar(idx)))
+            # Secuencia lógica: Garage - Planta - RUTA - Planta - Garage
+            full_route = [ID_GARAGE, ID_PLANTA] + route + [ID_PLANTA, ID_GARAGE]
+            arrival = [
+                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[0]["hora"]),
+                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[1]["hora"])
+            ] + llegada + [
+                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[4]["hora"]),
+                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[5]["hora"])
+            ]
             rutas.append({
                 "vehicle": v,
-                "route": route,
-                "arrival_sec": llegada
+                "route": full_route,
+                "arrival_sec": arrival
             })
         return rutas, dist_total
 
@@ -198,13 +207,19 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         ]
 
     def random_removal(rutas, num_remove):
-        flat_nodes = [(r_idx, i, n) for r_idx, ruta in enumerate(rutas) for i, n in enumerate(ruta["route"][2:-2]) if n != data["depot"]]
+        flat_nodes = [
+            (r_idx, i, n)
+            for r_idx, ruta in enumerate(rutas)
+            for i, n in enumerate(ruta["route"][2:-2])
+            if n not in [ID_GARAGE, ID_PLANTA]
+        ]
         to_remove = random.sample(flat_nodes, min(num_remove, len(flat_nodes)))
         removed_nodes = [n for _, _, n in to_remove]
 
         new_rutas = safe_copy_rutas(rutas)
         for r_idx, i, _ in sorted(to_remove, key=lambda x: -x[1]):
-            del new_rutas[r_idx]["route"][i+2]  # Ajuste por garage-depot
+            del new_rutas[r_idx]["route"][i + 2]
+            del new_rutas[r_idx]["arrival_sec"][i + 2]
         return new_rutas, removed_nodes
 
     def greedy_repair(rutas, removed):
@@ -213,14 +228,15 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             best_r = 0
             best_pos = 2
             for r_idx, ruta in enumerate(rutas):
-                for i in range(2, len(ruta["route"])):
-                    prev = ruta["route"][i-1]
+                for i in range(2, len(ruta["route"]) - 2):
+                    prev = ruta["route"][i - 1]
                     nxt = ruta["route"][i]
                     cost = data["distance_matrix"][prev][node] + data["distance_matrix"][node][nxt] - data["distance_matrix"][prev][nxt]
                     if cost < best_cost:
                         best_cost = cost
                         best_r, best_pos = r_idx, i
             rutas[best_r]["route"].insert(best_pos, node)
+            rutas[best_r]["arrival_sec"].insert(best_pos, 0)
         return rutas
 
     def calcular_costo_total(rutas):
@@ -248,7 +264,6 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         "routes": best_rutas,
         "distance_total_m": best_cost
     }
-
 
 # ============= CARGAR PEDIDOS DESDE FIRESTORE =============
 
