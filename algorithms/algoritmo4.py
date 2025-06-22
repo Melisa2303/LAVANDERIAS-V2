@@ -111,13 +111,13 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 #Algoritmos diversos
 
 # optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
-# optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
 import random
 
 SERVICE_TIME = 10 * 60        # 10 minutos de servicio
 SHIFT_START_SEC = 9 * 3600    # 09:00
 
 import time as tiempo
+
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -208,12 +208,13 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
                 next_idx = solution.Value(routing.NextVar(idx))
                 dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
                 idx = next_idx
-            arrival = calcular_arrival_times(route)
-            rutas.append({
-                "vehicle": v,
-                "route": route,
-                "arrival_sec": arrival
-            })
+            if route:
+                arrival = calcular_arrival_times(route)
+                rutas.append({
+                    "vehicle": v,
+                    "route": route,
+                    "arrival_sec": arrival
+                })
         return rutas, dist_total
 
     # ========= Paso 2: ALNS =========
