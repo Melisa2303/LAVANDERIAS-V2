@@ -99,7 +99,7 @@ def ver_ruta_optimizada():
             return
 
         t0 = tiempo.time()
-        res = alg_fn(data, tiempo_max_seg=45)
+        res = alg_fn(data, tiempo_max_seg=60)
         solve_t = tiempo.time() - t0
 
         if not res:
