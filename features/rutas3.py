@@ -274,63 +274,47 @@ def ver_ruta_optimizada():
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
 
+        # Mapa completo e info general
     with tab2:
-        st.subheader("🗺️ Mapa de toda la ruta (via API)")
+        st.subheader("🗺️ Mapa de toda la ruta")
+        coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
+        m = folium.Map(location=coords_final[0], zoom_start=13)
+        folium.PolyLine(coords_final, weight=4, opacity=0.7).add_to(m)
 
-        # 1) Definimos origen, destino y waypoints
-        origin = f"{COCHERA['lat']},{COCHERA['lon']}"
-        depot_idx = ruta[0]
-        depot = f"{df_f.loc[depot_idx,'lat']},{df_f.loc[depot_idx,'lon']}"
-        # clientes en medio
-        waypoints = [ depot ] + [
-            f"{df_f.loc[i,'lat']},{df_f.loc[i,'lon']}"
-            for i in ruta[1:]
-        ] + [ depot ]  # pasamos por planta de nuevo
-        # destino final: cochera
-        destination = origin
+        # Depósito
+        folium.Marker(
+            coords_final[0],
+            popup="Depósito",
+            icon=folium.Icon(color="green", icon="home", prefix="fa")
+        ).add_to(m)
 
-        # 2) Llamamos a la Directions API con todos los waypoints
-        directions = gmaps.directions(
-            origin,
-            destination,
-            mode="driving",
-            departure_time=datetime.now(),
-            optimize_waypoints=False,
-            waypoints=waypoints
-        )
-
-        # 3) Extraemos la polilínea y la distancia total
-        overview = directions[0]['overview_polyline']['points']
-        coords = [(p['lat'], p['lng']) for p in decode_polyline(overview)]
-
-        # calcular distancia total sumando cada leg
-        total_m = 0
-        total_s = 0
-        for leg in directions[0]['legs']:
-            total_m += leg['distance']['value']
-            total_s += leg['duration']['value']
-
-        # 4) Dibujamos en Folium
-        m = folium.Map(location=coords[0], zoom_start=13)
-        folium.PolyLine(coords, weight=4, opacity=0.7).add_to(m)
-
-        # marcadores: cochera, planta, clientes…, cochera
-        folium.Marker(coords[0], popup="Cochera", icon=folium.Icon(color="purple", icon="building", prefix="fa")).add_to(m)
-        folium.Marker(coords[1], popup="Planta", icon=folium.Icon(color="green", icon="home", prefix="fa")).add_to(m)
-        # los clientes quedan entre coords[2] y coords[-2]
-        for idx_pt, idx_cl in enumerate(ruta[1:], start=2):
+        # Marcadores de clientes con ventana en popup
+        for idx, (lat, lon) in enumerate(coords_final[1:], start=1):
+            ventana = df_r.loc[df_r["orden"] == idx, "ventana_con_margen"].iloc[0]
             folium.Marker(
-                coords[idx_pt],
-                popup=f"{df_f.loc[idx_cl,'nombre_cliente']}<br>{df_f.loc[idx_cl,'direccion']}",
+                (lat, lon),
+                popup=(
+                    f"{df_f.loc[ruta[idx],'nombre_cliente']}<br>"
+                    f"{df_f.loc[ruta[idx],'direccion']}<br>"
+                    f"Ventana: {ventana}"
+                ),
                 icon=folium.Icon(color="orange", icon="flag", prefix="fa")
             ).add_to(m)
-        folium.Marker(coords[-1], popup="Cochera", icon=folium.Icon(color="purple", icon="building", prefix="fa")).add_to(m)
+
+        # Pedidos individuales
+        for _, fila_p in df_et.iterrows():
+            folium.CircleMarker(
+                location=(fila_p["lat"], fila_p["lon"]),
+                radius=4, color="red", fill=True, fill_opacity=0.7
+            ).add_to(m)
 
         st_folium(m, width=700, height=500)
 
-        # 5) Métricas de ruta real
-        st.markdown("## 🔍 Métricas de la ruta real")
-        st.markdown(f"- Distancia total (Driving): **{total_m/1000:.2f} km**")
-        mins = total_s // 60
-        st.markdown(f"- Duración estimada (Driving): **{mins:.0f} min**")
+        # Métricas finales
+        st.markdown("## 🔍 Métricas Finales")
+        st.markdown(f"- Kilometraje total: **{res['distance_total_m']/1000:.2f} km**")
+        st.markdown(f"- Tiempo de cómputo: **{st.session_state['solve_t']:.2f} s**")
+        tiempo_total_min = (max(res['routes'][0]['arrival_sec']) - 9*3600) / 60
+        st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
+        st.markdown(f"- Puntos visitados: **{len(ruta)}**")
 
