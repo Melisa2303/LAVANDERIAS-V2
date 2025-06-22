@@ -115,9 +115,10 @@ def ver_ruta_optimizada():
         arr = res["routes"][0]["arrival_sec"]
 
         df_r = df_final.loc[ruta, ["nombre_cliente", "direccion", "time_start", "time_end"]].copy()
+        df_r = agregar_ventana_margen(df_r)  # 👈 esto asegura que la columna exista
         df_r["ETA"] = [datetime.utcfromtimestamp(t).strftime("%H:%M") for t in arr]
         df_r["orden"] = range(len(ruta))
-        st.session_state["df_ruta"] = df_r.copy()
+
 
     df_r = st.session_state["df_ruta"]
     st.subheader("📋 Orden de visita optimizada")
