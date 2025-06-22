@@ -102,14 +102,16 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 
 #Algoritmos diversos
-#OR-Tool + LNS + PCA
+# optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
+import random
+
+SERVICE_TIME = 10 * 60        # 10 minutos de servicio
+SHIFT_START_SEC = 9 * 3600    # 09:00
+
+import time as tiempo
+
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
-    """
-    ALNS para VRP con múltiples vehículos, ventanas de tiempo y restricciones de capacidad.
-    Conserva el formato de salida original.
-    """
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-    import time as tiempo
 
     # ========= Paso 1: Solución inicial con OR-Tools =========
     manager = pywrapcp.RoutingIndexManager(
@@ -177,12 +179,22 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         return rutas, dist_total
 
     # ========= Paso 2: ALNS =========
+    def safe_copy_rutas(rutas):
+        return [
+            {
+                "vehicle": r["vehicle"],
+                "route": list(r["route"]),
+                "arrival_sec": list(r["arrival_sec"])
+            }
+            for r in rutas
+        ]
+
     def random_removal(rutas, num_remove):
         flat_nodes = [(r_idx, i, n) for r_idx, ruta in enumerate(rutas) for i, n in enumerate(ruta["route"][1:]) if n != data["depot"]]
         to_remove = random.sample(flat_nodes, min(num_remove, len(flat_nodes)))
         removed_nodes = [n for _, _, n in to_remove]
 
-        new_rutas = copy.deepcopy(rutas)
+        new_rutas = safe_copy_rutas(rutas)
         for r_idx, i, _ in sorted(to_remove, key=lambda x: -x[1]):
             del new_rutas[r_idx]["route"][i+1]
         return new_rutas, removed_nodes
@@ -211,7 +223,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         return total
 
     rutas, dist_total = extract_routes()
-    best_rutas = copy.deepcopy(rutas)
+    best_rutas = safe_copy_rutas(rutas)
     best_cost = dist_total
 
     start = tiempo.time()
@@ -222,7 +234,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
 
         if new_cost < best_cost:
             best_cost = new_cost
-            best_rutas = copy.deepcopy(rutas_tmp)
+            best_rutas = safe_copy_rutas(rutas_tmp)
 
     return {
         "routes": best_rutas,
