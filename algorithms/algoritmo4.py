@@ -111,31 +111,20 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 #Algoritmos diversos
 
 # optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
+# optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
 import random
 
 SERVICE_TIME = 10 * 60        # 10 minutos de servicio
 SHIFT_START_SEC = 9 * 3600    # 09:00
 
 import time as tiempo
-from core.constants import PUNTOS_FIJOS_COMPLETOS
-
-# Identificadores fijos para Cochera y Planta
-ID_GARAGE = 0  # PUNTOS_FIJOS_COMPLETOS[0]
-ID_PLANTA = 1  # PUNTOS_FIJOS_COMPLETOS[1]
-HORA_GARAGE_IN = 8 * 3600
-HORA_GARAGE_OUT = 17 * 3600
-HORA_PLANTA_IN = 8 * 3600 + 30 * 60
-HORA_PLANTA_OUT = 16 * 3600 + 40 * 60
-HORA_RUTA_INICIO = 9 * 3600
-HORA_RUTA_FIN = 16 * 3600
-
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
     def calcular_arrival_times(route):
         arrival = []
-        t = HORA_GARAGE_IN  # comienza en cochera a las 8:00
+        t = SHIFT_START_SEC
         for i in range(len(route)):
             curr = route[i]
             if i == 0:
@@ -151,7 +140,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         return arrival
 
     def es_ruta_factible(route):
-        t = HORA_GARAGE_IN
+        t = SHIFT_START_SEC
         for i in range(1, len(route)):
             prev, curr = route[i - 1], route[i]
             travel = data["duration_matrix"][prev][curr]
@@ -166,7 +155,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     manager = pywrapcp.RoutingIndexManager(
         len(data["duration_matrix"]),
         data["num_vehicles"],
-        ID_PLANTA
+        data["depot"]
     )
     routing = pywrapcp.RoutingModel(manager)
 
@@ -174,7 +163,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         i = manager.IndexToNode(from_idx)
         j = manager.IndexToNode(to_idx)
         travel = data["duration_matrix"][i][j]
-        service = SERVICE_TIME if i not in [ID_PLANTA, ID_GARAGE] else 0
+        service = SERVICE_TIME
         return travel + service
 
     transit_cb_index = routing.RegisterTransitCallback(time_cb)
@@ -185,10 +174,9 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     )
     time_dimension = routing.GetDimensionOrDie("Time")
     for v in range(data["num_vehicles"]):
-        time_dimension.CumulVar(routing.Start(v)).SetRange(HORA_RUTA_INICIO, HORA_RUTA_INICIO)
+        time_dimension.CumulVar(routing.Start(v)).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
     for i, (ini, fin) in enumerate(data["time_windows"]):
-        # aplicar ventanas incluso si ini == fin
         time_dimension.CumulVar(manager.NodeToIndex(i)).SetRange(ini, fin)
 
     if any(data["demands"]):
@@ -216,16 +204,14 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             route = []
             while not routing.IsEnd(idx):
                 node = manager.IndexToNode(idx)
-                if node not in [ID_PLANTA, ID_GARAGE]:
-                    route.append(node)
+                route.append(node)
                 next_idx = solution.Value(routing.NextVar(idx))
                 dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
                 idx = next_idx
-            full_route = [ID_GARAGE, ID_PLANTA] + route + [ID_PLANTA, ID_GARAGE]
-            arrival = calcular_arrival_times(full_route)
+            arrival = calcular_arrival_times(route)
             rutas.append({
                 "vehicle": v,
-                "route": full_route,
+                "route": route,
                 "arrival_sec": arrival
             })
         return rutas, dist_total
@@ -245,16 +231,15 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         flat_nodes = [
             (r_idx, i, n)
             for r_idx, ruta in enumerate(rutas)
-            for i, n in enumerate(ruta["route"][2:-2])
-            if n not in [ID_GARAGE, ID_PLANTA]
+            for i, n in enumerate(ruta["route"])
         ]
         to_remove = random.sample(flat_nodes, min(num_remove, len(flat_nodes)))
         removed_nodes = [n for _, _, n in to_remove]
 
         new_rutas = safe_copy_rutas(rutas)
         for r_idx, i, _ in sorted(to_remove, key=lambda x: -x[1]):
-            del new_rutas[r_idx]["route"][i + 2]
-            del new_rutas[r_idx]["arrival_sec"][i + 2]
+            del new_rutas[r_idx]["route"][i]
+            del new_rutas[r_idx]["arrival_sec"][i]
         return new_rutas, removed_nodes
 
     def greedy_repair(rutas, removed):
@@ -263,7 +248,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             best_r = -1
             best_pos = -1
             for r_idx, ruta in enumerate(rutas):
-                for i in range(2, len(ruta["route"])-2):
+                for i in range(1, len(ruta["route"])):
                     test_route = ruta["route"][:i] + [node] + ruta["route"][i:]
                     if not es_ruta_factible(test_route):
                         continue
