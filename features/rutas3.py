@@ -76,7 +76,7 @@ def ver_ruta_optimizada():
         DEP = {
             "id": "DEP", "operacion": "Depósito", "nombre_cliente": "Depósito",
             "direccion": "Planta Lavandería", "lat": -16.40904, "lon": -71.53745,
-            "time_start": "08:00", "time_end": "18:00", "demand": 0
+            "time_start": "08:00", "time_end": "16:00", "demand": 0
         }
         df_final = pd.concat([pd.DataFrame([DEP]), df_clusters], ignore_index=True)
         st.session_state["df_final"] = df_final.copy()
@@ -110,7 +110,7 @@ def ver_ruta_optimizada():
     df_r = st.session_state["df_ruta"]
     st.subheader("📋 Orden de visita optimizada")
     st.dataframe(
-        df_r[["orden", "nombre_cliente", "direccion", "ventana_con_margen", "ETA"]],
+        df_r[["orden", "nombre_cliente", "direccion", "time_start", "time_end", "ventana_con_margen", "ETA"]],
         use_container_width=True
     )
 
