@@ -17,7 +17,7 @@ from streamlit_folium import st_folium
 from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY
 
-from algorithms.pca_gls import (
+from algorithms.algoritmo22 import (
     optimizar_ruta_algoritmo22,
     cargar_pedidos,
     _crear_data_model,
