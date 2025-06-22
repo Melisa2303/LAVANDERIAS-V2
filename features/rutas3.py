@@ -27,7 +27,7 @@ from algorithms.algoritmo22 import (
 )
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
-# Inicializar cliente de Google Maps
+# Cliente de Google Maps
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 
@@ -36,7 +36,7 @@ def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
     return None
 
 
-# Mapeo de algoritmos disponibles
+# Diccionario de algoritmos disponibles
 ALG_MAP = {
     "Algoritmo 1 - PCA - GLS": optimizar_ruta_algoritmo22,
     "Algoritmo 2": optimizar_ruta_placeholder,
@@ -45,7 +45,7 @@ ALG_MAP = {
 }
 
 
-# ——— Funciones auxiliares para la ventana extendida ———
+# ——— Utilidades para ventana extendida ———
 
 def _hora_a_segundos(hhmm: str) -> int | None:
     """Convierte 'HH:MM' a segundos desde medianoche."""
@@ -82,7 +82,7 @@ def ver_ruta_optimizada():
     with c2:
         algoritmo = st.selectbox("Algoritmo", list(ALG_MAP.keys()))
 
-    # Reiniciar estado si cambian fecha o algoritmo
+    # Reiniciar estado si cambia fecha o algoritmo
     if (st.session_state.get("fecha_actual") != fecha or
         st.session_state.get("algoritmo_actual") != algoritmo):
         for var in ["res", "df_clusters", "df_etiquetado", "df_final", "df_ruta", "solve_t"]:
@@ -91,20 +91,20 @@ def ver_ruta_optimizada():
         st.session_state["fecha_actual"] = fecha
         st.session_state["algoritmo_actual"] = algoritmo
 
-    # Calcular ruta por primera vez
+    # Si aún no hay resultados, calcular
     if st.session_state["res"] is None:
         pedidos = cargar_pedidos(fecha, "Todos")
         if not pedidos:
             st.info("No hay pedidos para esa fecha.")
             return
 
-        # DataFrame original y clustering de puntos
+        # DataFrame original y clustering
         df_original = pd.DataFrame(pedidos)
         df_clusters, df_etiquetado = agrupar_puntos_aglomerativo(df_original, eps_metros=300)
         st.session_state["df_clusters"] = df_clusters.copy()
         st.session_state["df_etiquetado"] = df_etiquetado.copy()
 
-        # Punto de depósito
+        # Punto depósito
         DEP = {
             "id": "DEP",
             "operacion": "Depósito",
@@ -119,7 +119,7 @@ def ver_ruta_optimizada():
         df_final = pd.concat([pd.DataFrame([DEP]), df_clusters], ignore_index=True)
         st.session_state["df_final"] = df_final.copy()
 
-        # Construir y resolver modelo
+        # Preparar y resolver
         data = _crear_data_model(df_final, vehiculos=1)
         alg_fn = ALG_MAP[algoritmo]
         t0 = tiempo.time()
@@ -132,20 +132,16 @@ def ver_ruta_optimizada():
 
         st.session_state["res"] = res
 
-        # Construir df_r con los resultados
+        # Construir df_r y agregar ventana extendida
         ruta = res["routes"][0]["route"]
         arr = res["routes"][0]["arrival_sec"]
         df_r = df_final.loc[ruta, ["nombre_cliente", "direccion", "time_start", "time_end"]].copy()
-
-        # — Insertar columna de ventana extendida —
         df_r["ventana_con_margen"] = df_r.apply(_ventana_extendida, axis=1)
-
-        # ETA y orden
         df_r["ETA"] = [datetime.utcfromtimestamp(t).strftime("%H:%M") for t in arr]
         df_r["orden"] = range(len(ruta))
         st.session_state["df_ruta"] = df_r.copy()
 
-    # Mostrar orden de visita con la ventana extendida
+    # Mostrar orden de visita
     df_r = st.session_state["df_ruta"]
     st.subheader("📋 Orden de visita optimizada")
     st.dataframe(
@@ -153,14 +149,14 @@ def ver_ruta_optimizada():
         use_container_width=True
     )
 
-    # Pestañas: tramo actual y mapa general
+    # Pestañas: tramo actual y mapa completo
     tab1, tab2 = st.tabs(["🚀 Tramo actual", "ℹ️ Info general"])
     df_f = st.session_state["df_final"]
     df_et = st.session_state["df_etiquetado"]
     ruta = st.session_state["res"]["routes"][0]["route"]
     res  = st.session_state["res"]
 
-    # —— Tramo actual ——
+    # Tramo actual
     with tab1:
         leg = st.session_state["leg_0"]
         if leg >= len(ruta) - 1:
@@ -211,7 +207,7 @@ def ver_ruta_optimizada():
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue",  icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
 
-    # —— Mapa completo e información general ——
+    # Mapa completo e info general
     with tab2:
         st.subheader("🗺️ Mapa de toda la ruta")
         coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
@@ -225,14 +221,14 @@ def ver_ruta_optimizada():
             icon=folium.Icon(color="green", icon="home", prefix="fa")
         ).add_to(m)
 
-        # Marcadores de clientes con ventana en el popup
+        # Marcadores de clientes con ventana en popup
         for idx, (lat, lon) in enumerate(coords_final[1:], start=1):
             ventana = df_r.loc[df_r["orden"] == idx, "ventana_con_margen"].iloc[0]
             folium.Marker(
                 (lat, lon),
                 popup=(
-                    f"{df_f.loc[ruta[idx], 'nombre_cliente']}<br>"
-                    f"{df_f.loc[ruta[idx], 'direccion']}<br>"
+                    f"{df_f.loc[ruta[idx],'nombre_cliente']}<br>"
+                    f"{df_f.loc[ruta[idx],'direccion']}<br>"
                     f"Ventana: {ventana}"
                 ),
                 icon=folium.Icon(color="orange", icon="flag", prefix="fa")
