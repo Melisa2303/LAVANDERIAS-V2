@@ -1,206 +1,145 @@
-import os
+# algorithms/algoritmo2
+# clarke-wright_tabu.py
+
 import math
-import time as tiempo
-from datetime import datetime
-import streamlit as st
-import pandas as pd
-import firebase_admin
-from firebase_admin import credentials, firestore
-import googlemaps
-from googlemaps.convert import decode_polyline
-from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-import folium
-from streamlit_folium import st_folium
+import time
+from typing import Dict, List, Any, Tuple
 
-# -------------------- INICIALIZAR FIREBASE --------------------
-if not firebase_admin._apps:
-    cred = credentials.Certificate("lavanderia_key.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
+from algorithms.algoritmo22 import SERVICE_TIME, SHIFT_START_SEC
 
-# -------------------- CONFIG GOOGLE MAPS --------------------
-GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.getenv("GOOGLE_MAPS_API_KEY")
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
+    """Suma de distancias (m) a lo largo de un route (lista de nodos)."""
+    D = data["distance_matrix"]
+    dist = 0.0
+    for u, v in zip(route, route[1:]):
+        dist += D[u][v]
+    return dist
 
-# -------------------- CONSTANTES VRP --------------------
-SERVICE_TIME = 10 * 60
-MAX_ELEMENTS = 100
-SHIFT_START_SEC = 9 * 3600
-SHIFT_END_SEC = 16 * 3600 + 30 * 60
+def _check_feasible_and_time(
+    route: List[int],
+    data: Dict[str, Any]
+) -> Tuple[bool, List[int]]:
+    """
+    Comprueba factibilidad de un route bajo time_windows y SERVICE_TIME.
+    Devuelve (es_factible, tiempos_de_llegada).
+    """
+    T       = data["duration_matrix"]
+    windows = data["time_windows"]
+    depot   = data["depot"]
+    t       = SHIFT_START_SEC
+    arrivals = [t]  # llegada al depósito inicial
 
-# ===================== FUNCIONES AUXILIARES =====================
+    for u, v in zip(route, route[1:]):
+        t += T[u][v]
+        if u != depot:
+            t += SERVICE_TIME
+        w0, w1 = windows[v]
+        if t > w1:
+            return False, []
+        t = max(t, w0)
+        arrivals.append(t)
 
-def _hora_a_segundos(hhmm):
-    if hhmm is None or pd.isna(hhmm) or hhmm == "":
-        return None
-    try:
-        h, m = map(int, str(hhmm).split(":"))
-        return h * 3600 + m * 60
-    except:
-        return None
+    return True, arrivals
 
-def _haversine_dist_dur(coords, vel_kmh=40.0):
-    R = 6371e3
-    n = len(coords)
-    dist = [[0]*n for _ in range(n)]
-    dur = [[0]*n for _ in range(n)]
-    v_ms = vel_kmh * 1000 / 3600
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                continue
-            lat1, lon1 = map(math.radians, coords[i])
-            lat2, lon2 = map(math.radians, coords[j])
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
-            d = 2 * R * math.asin(math.sqrt(a))
-            dist[i][j] = int(d)
-            dur[i][j] = int(d / v_ms)
-    return dist, dur
+def optimizar_ruta_cw_tabu(
+    data: Dict[str, Any],
+    tiempo_max_seg: int = 60
+) -> Dict[str, Any]:
+    """
+    1) Construye solución inicial por Clarke–Wright Savings.
+    2) Refina la solución con Tabu Search (swap de dos nodos) respetando VRPTW.
+    Retorna dict con 'routes' y 'distance_total_m'.
+    """
+    depot = data["depot"]
+    n     = len(data["distance_matrix"])
+    nodes = [i for i in range(n) if i != depot]
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def _distancia_duracion_matrix(coords):
-    if not GOOGLE_MAPS_API_KEY:
-        return _haversine_dist_dur(coords)
-    n = len(coords)
-    dist = [[0]*n for _ in range(n)]
-    dur = [[0]*n for _ in range(n)]
-    batch = max(1, min(n, MAX_ELEMENTS // n))
-    for i0 in range(0, n, batch):
-        resp = gmaps.distance_matrix(
-            origins=coords[i0:i0+batch],
-            destinations=coords,
-            mode="driving",
-            units="metric",
-            departure_time=datetime.now(),
-            traffic_model="best_guess"
-        )
-        for i, row in enumerate(resp["rows"]):
-            for j, el in enumerate(row["elements"]):
-                dist[i0 + i][j] = el.get("distance", {}).get("value", 1)
-                dur[i0 + i][j] = el.get("duration_in_traffic", {}).get(
-                    "value", el.get("duration", {}).get("value", 1)
-                )
-    return dist, dur
+    # 1) Clarke–Wright Savings
+    D = data["distance_matrix"]
+    savings = []
+    for i in nodes:
+        for j in nodes:
+            if i < j:
+                s = D[depot][i] + D[depot][j] - D[i][j]
+                savings.append((s, i, j))
+    savings.sort(reverse=True, key=lambda x: x[0])
 
-def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
-    coords = list(zip(df["lat"], df["lon"]))
-    dist_m, dur_s = _distancia_duracion_matrix(coords)
-    
-    MARGEN = 15 * 60  # 15 minutos en segundos
-    
-    time_windows = []
-    demandas = []
-    for _, row in df.iterrows():
-        ini = _hora_a_segundos(row.get("time_start"))
-        fin = _hora_a_segundos(row.get("time_end"))
-        if ini is None or fin is None:
-            ini, fin = SHIFT_START_SEC, SHIFT_END_SEC
-        else:
-            ini = max(0, ini - MARGEN)
-            fin = min(24*3600, fin + MARGEN)
-        time_windows.append((ini, fin))
-        demandas.append(row.get("demand", 1))
-    
-    return {
-        "distance_matrix": dist_m,
-        "duration_matrix": dur_s,
-        "time_windows": time_windows,
-        "demands": demandas,
-        "num_vehicles": vehiculos,
-        "vehicle_capacities": [capacidad_veh or 10**9] * vehiculos,
-        "depot": 0,
-    }
+    # Inicial: cada nodo en ruta propia [depot, i, depot]
+    parent    = {i: i for i in nodes}
+    start_map = {i: i for i in nodes}
+    end_map   = {i: i for i in nodes}
+    route_map = {i: [depot, i, depot] for i in nodes}
 
-def optimizar_ruta_algoritmo2(data, tiempo_max_seg=120):
-    manager = pywrapcp.RoutingIndexManager(
-        len(data["distance_matrix"]), data["num_vehicles"], data["depot"]
-    )
-    routing = pywrapcp.RoutingModel(manager)
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
 
-    def time_cb(from_index, to_index):
-        i = manager.IndexToNode(from_index)
-        j = manager.IndexToNode(to_index)
-        travel = data["duration_matrix"][i][j]
-        service = SERVICE_TIME if i != data["depot"] else 0
-        return travel + service
-
-    transit_cb_idx = routing.RegisterTransitCallback(time_cb)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_idx)
-
-    routing.AddDimension(
-        transit_cb_idx,
-        slack_max=24*3600,
-        capacity=24*3600,
-        fix_start_cumul_to_zero=False,
-        name="Time"
-    )
-    time_dim = routing.GetDimensionOrDie("Time")
-    depot_idx = manager.NodeToIndex(data["depot"])
-    time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
-    for node, (ini, fin) in enumerate(data["time_windows"]):
-        if node == data["depot"]:
+    for s, i, j in savings:
+        ri = find(i)
+        rj = find(j)
+        if ri == rj:
             continue
-        idx = manager.NodeToIndex(node)
-        time_dim.CumulVar(idx).SetRange(ini, fin)
 
-    if any(data["demands"]):
-        def demand_callback(i_idx):
-            return data["demands"][manager.IndexToNode(i_idx)]
-        dem_cb_idx = routing.RegisterUnaryTransitCallback(demand_callback)
-        routing.AddDimensionWithVehicleCapacity(
-            dem_cb_idx, 0, data["vehicle_capacities"], True, "Capacity"
-        )
+        # Unir solo si i está al final de su ruta y j al inicio de la otra
+        if end_map[ri] == i and start_map[rj] == j:
+            # Merge
+            merged = route_map[ri][:-1] + route_map[rj][1:]
+            parent[rj]     = ri
+            start_map[ri]  = start_map[ri]
+            end_map[ri]    = end_map[rj]
+            route_map[ri]  = merged
 
-    params = pywrapcp.DefaultRoutingSearchParameters()
-    params.time_limit.FromSeconds(tiempo_max_seg)
-    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    # Tomar la ruta combinada
+    inicial = next(iter(route_map.values()))
 
-    sol = routing.SolveWithParameters(params)
-    if not sol:
-        return None
+    # 2) Tabu Search de swaps
+    best_route = inicial[:]
+    best_dist  = _route_distance(best_route, data)
+    tabu_list  = []
+    tabu_size  = 50
+    start_ts   = time.time()
 
-    rutas = []
-    dist_total = 0
-    for v in range(data["num_vehicles"]):
-        idx = routing.Start(v)
-        route, llegada = [], []
-        while not routing.IsEnd(idx):
-            n = manager.IndexToNode(idx)
-            route.append(n)
-            llegada.append(sol.Min(time_dim.CumulVar(idx)))
-            nxt = sol.Value(routing.NextVar(idx))
-            dist_total += routing.GetArcCostForVehicle(idx, nxt, v)
-            idx = nxt
-        rutas.append({"vehicle": v, "route": route, "arrival_sec": llegada})
-    return {"routes": rutas, "distance_total_m": dist_total}
+    while time.time() - start_ts < tiempo_max_seg:
+        improved = False
+        # Generar vecinos por swap de pares
+        L = len(best_route)
+        for i in range(1, L-2):
+            for j in range(i+1, L-1):
+                move = (i, j)
+                if move in tabu_list:
+                    continue
 
-# ============== CARGA DE PEDIDOS (DIRECTO, sin clustering) ==============
-@st.cache_data(ttl=300)
-def cargar_pedidos(fecha):
-    col = db.collection('recogidas')
-    docs = list(col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-           list(col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
-    out = []
-    for d in docs:
-        data = d.to_dict()
-        is_recojo = data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d")
-        op = "Recojo" if is_recojo else "Entrega"
-        coords = data.get(f"coordenadas_{'recojo' if is_recojo else 'entrega'}", {})
-        lat, lon = coords.get("lat"), coords.get("lon")
-        hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
-        ts, te = (hs, hs) if hs else ("08:00", "18:00")
-        out.append({
-            "id": d.id,
-            "operacion": op,
-            "nombre_cliente": data.get("nombre_cliente", ""),
-            "direccion": data.get(f"direccion_{'recojo' if is_recojo else 'entrega'}", ""),
-            "lat": lat,
-            "lon": lon,
-            "time_start": ts,
-            "time_end": te,
-            "demand": 1
-        })
-    return out
+                cand = best_route[:]
+                cand[i], cand[j] = cand[j], cand[i]
+
+                feas, _ = _check_feasible_and_time(cand, data)
+                if not feas:
+                    continue
+
+                dist_c = _route_distance(cand, data)
+                if dist_c + 1e-6 < best_dist:
+                    best_route = cand
+                    best_dist  = dist_c
+                    tabu_list.append(move)
+                    if len(tabu_list) > tabu_size:
+                        tabu_list.pop(0)
+                    improved = True
+                    break
+            if improved:
+                break
+        if not improved:
+            break
+
+    # Reconstruir times de llegada
+    _, arrival = _check_feasible_and_time(best_route, data)
+
+    return {
+        "routes": [{
+            "vehicle":     0,
+            "route":       best_route,
+            "arrival_sec": arrival,
+        }],
+        "distance_total_m": best_dist
+    }
