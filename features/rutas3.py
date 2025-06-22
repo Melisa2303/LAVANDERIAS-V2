@@ -143,11 +143,11 @@ def ver_ruta_optimizada():
         st.write("🔍 ETA de llegada (segundos) =", res["routes"][0]["arrival_sec"])
 
         # — DEBUG: tabla de verificación —
-        """def _seg_a_hhmm(segs: int) -> str:
+        def _seg_a_hhmm(segs: int) -> str:
             h = segs // 3600
             m = (segs % 3600) // 60
             return f"{h:02}:{m:02}"
-      
+      """
         df_check = pd.DataFrame({
             "nodo": list(range(len(data["time_windows"]))),
             "ventana_inicio": [ _seg_a_hhmm(w[0]) for w in data["time_windows"] ],
