@@ -285,6 +285,12 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         if new_cost < best_cost:
             best_cost = new_cost
             best_rutas = safe_copy_rutas(rutas_tmp)
+            
+    for ruta in best_rutas:
+        df_check = pd.DataFrame({
+            "nodo_id": ruta["route"],
+            "hora_llegada": [tiempo.strftime('%H:%M', tiempo.gmtime(s)) for s in ruta["arrival_sec"]]
+        })
 
     return {
         "routes": best_rutas,
