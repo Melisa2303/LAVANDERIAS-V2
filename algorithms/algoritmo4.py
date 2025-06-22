@@ -136,6 +136,8 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             travel = data["duration_matrix"][prev][curr]
             t += travel
             start, end = data["time_windows"][curr]
+            if not (start <= t <= end):
+                return []
             t = max(t, start)
             arrival.append(t)
             t += SERVICE_TIME
