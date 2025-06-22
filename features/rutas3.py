@@ -213,7 +213,7 @@ def ver_ruta_optimizada():
         total_legs = L + 1
         if leg > total_legs:
             st.success("✅ Ruta completada")
-        else:
+        return
 
         if leg == 0:
             orig = (COCHERA["lat"], COCHERA["lon"])
