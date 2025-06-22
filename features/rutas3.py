@@ -274,34 +274,36 @@ def ver_ruta_optimizada():
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
 
-        # Mapa completo e info general
     with tab2:
         st.subheader("🗺️ Mapa de toda la ruta")
-        coords_final = [(df_f.loc[i, "lat"], df_f.loc[i, "lon"]) for i in ruta]
-        m = folium.Map(location=coords_final[0], zoom_start=13)
-        folium.PolyLine(coords_final, weight=4, opacity=0.7).add_to(m)
+        # Construir lista completa de coordenadas
+        coords = [(COCHERA["lat"], COCHERA["lon"])]
+        coords.append((df_f.loc[ruta[0], "lat"], df_f.loc[ruta[0], "lon"]))
+        for idx in ruta[1:]:
+            coords.append((df_f.loc[idx, "lat"], df_f.loc[idx, "lon"]))
+        coords.append((COCHERA["lat"], COCHERA["lon"]))
 
-        # Depósito
-        folium.Marker(
-            coords_final[0],
-            popup="Depósito",
-            icon=folium.Icon(color="green", icon="home", prefix="fa")
+        m = folium.Map(location=coords[0], zoom_start=13)
+        folium.PolyLine(coords, weight=4, opacity=0.7).add_to(m)
+
+        # Marcadores
+        folium.Marker(coords[0], popup="Cochera",
+                      icon=folium.Icon(color="purple", icon="building", prefix="fa")
         ).add_to(m)
-
-        # Marcadores de clientes con ventana en popup
-        for idx, (lat, lon) in enumerate(coords_final[1:], start=1):
-            ventana = df_r.loc[df_r["orden"] == idx, "ventana_con_margen"].iloc[0]
+        folium.Marker(coords[1], popup="Depósito",
+                      icon=folium.Icon(color="green", icon="home", prefix="fa")
+        ).add_to(m)
+        for pt, idx in zip(coords[2:-1], ruta[1:]):
             folium.Marker(
-                (lat, lon),
-                popup=(
-                    f"{df_f.loc[ruta[idx],'nombre_cliente']}<br>"
-                    f"{df_f.loc[ruta[idx],'direccion']}<br>"
-                    f"Ventana: {ventana}"
-                ),
+                pt,
+                popup=f"{df_f.loc[idx, 'nombre_cliente']}<br>{df_f.loc[idx, 'direccion']}",
                 icon=folium.Icon(color="orange", icon="flag", prefix="fa")
             ).add_to(m)
+        folium.Marker(coords[-1], popup="Cochera",
+                      icon=folium.Icon(color="purple", icon="building", prefix="fa")
+        ).add_to(m)
 
-        # Pedidos individuales
+        # Pedidos individuales en rojo
         for _, fila_p in df_et.iterrows():
             folium.CircleMarker(
                 location=(fila_p["lat"], fila_p["lon"]),
@@ -314,7 +316,6 @@ def ver_ruta_optimizada():
         st.markdown("## 🔍 Métricas Finales")
         st.markdown(f"- Kilometraje total: **{res['distance_total_m']/1000:.2f} km**")
         st.markdown(f"- Tiempo de cómputo: **{st.session_state['solve_t']:.2f} s**")
-        tiempo_total_min = (max(res['routes'][0]['arrival_sec']) - 9*3600) / 60
+        tiempo_total_min = (max(res["routes"][0]["arrival_sec"]) - 9*3600) / 60
         st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
         st.markdown(f"- Puntos visitados: **{len(ruta)}**")
-
