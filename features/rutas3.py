@@ -14,7 +14,7 @@ import time as tiempo
 import googlemaps
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 # Algoritmo 1
-from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
+from algorithms.algoritmo22 import agregar_ventana_margen, optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
 # Algoritmo 3
 # Algoritmo 4
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
