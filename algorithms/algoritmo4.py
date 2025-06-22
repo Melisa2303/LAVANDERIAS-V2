@@ -1,4 +1,4 @@
-#Algoritmo 4: OR + PCA + LNS
+#Algoritmo 4: ALNS
 import os
 import math
 import time as tiempo
@@ -102,6 +102,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 
 #Algoritmos diversos
+
 # optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
 import random
 
@@ -118,6 +119,8 @@ HORA_GARAGE_IN = 8 * 3600
 HORA_GARAGE_OUT = 17 * 3600
 HORA_PLANTA_IN = 8 * 3600 + 30 * 60
 HORA_PLANTA_OUT = 16 * 3600 + 40 * 60
+HORA_RUTA_INICIO = 9 * 3600
+HORA_RUTA_FIN = 16 * 3600
 
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
@@ -129,30 +132,28 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
 
     def calcular_arrival_times(route):
         arrival = []
-        t = HORA_PLANTA_IN  # comienza en planta a las 8:30
+        t = HORA_GARAGE_IN  # comienza en cochera a las 8:00
         for i in range(len(route)):
+            curr = route[i]
             if i == 0:
-                arrival.append(HORA_GARAGE_IN)  # llegada al garage a las 08:00
+                arrival.append(t)
                 continue
-            prev, curr = route[i-1], route[i]
+            prev = route[i - 1]
             travel = data["duration_matrix"][prev][curr]
             t += travel
             start, end = data["time_windows"][curr]
             t = max(t, start)
             arrival.append(t)
             t += SERVICE_TIME
-        arrival[-1] = HORA_GARAGE_OUT  # última llegada al garage 17:00
         return arrival
 
     def es_ruta_factible(route):
-        t = HORA_PLANTA_IN
+        t = HORA_GARAGE_IN
         for i in range(1, len(route)):
-            prev, curr = route[i-1], route[i]
+            prev, curr = route[i - 1], route[i]
             travel = data["duration_matrix"][prev][curr]
             t += travel
             start, end = data["time_windows"][curr]
-            if start == end:
-                continue
             if not (start <= t <= end):
                 return False
             t = max(t, start) + SERVICE_TIME
@@ -170,7 +171,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         i = manager.IndexToNode(from_idx)
         j = manager.IndexToNode(to_idx)
         travel = data["duration_matrix"][i][j]
-        service = SERVICE_TIME if i != ID_PLANTA else 0
+        service = SERVICE_TIME if i not in [ID_PLANTA, ID_GARAGE] else 0
         return travel + service
 
     transit_cb_index = routing.RegisterTransitCallback(time_cb)
@@ -181,11 +182,11 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     )
     time_dimension = routing.GetDimensionOrDie("Time")
     for v in range(data["num_vehicles"]):
-        time_dimension.CumulVar(routing.Start(v)).SetRange(HORA_PLANTA_IN, HORA_PLANTA_IN)
+        time_dimension.CumulVar(routing.Start(v)).SetRange(HORA_RUTA_INICIO, HORA_RUTA_INICIO)
 
     for i, (ini, fin) in enumerate(data["time_windows"]):
-        if ini != fin:
-            time_dimension.CumulVar(manager.NodeToIndex(i)).SetRange(ini, fin)
+        # aplicar ventanas incluso si ini == fin
+        time_dimension.CumulVar(manager.NodeToIndex(i)).SetRange(ini, fin)
 
     if any(data["demands"]):
         def demand_cb(index):
