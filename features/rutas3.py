@@ -27,7 +27,7 @@ from algorithms.algoritmo22 import (
 )
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
-# Cliente de Google Maps
+# Inicializar cliente de Google Maps
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 
@@ -91,7 +91,7 @@ def ver_ruta_optimizada():
         st.session_state["fecha_actual"] = fecha
         st.session_state["algoritmo_actual"] = algoritmo
 
-    # Si aún no hay resultados, calcular
+    # Calcular ruta por primera vez
     if st.session_state["res"] is None:
         pedidos = cargar_pedidos(fecha, "Todos")
         if not pedidos:
@@ -143,6 +143,12 @@ def ver_ruta_optimizada():
 
     # Mostrar orden de visita
     df_r = st.session_state["df_ruta"]
+
+    # Asegurar columna ventana_con_margen está presente
+    if "ventana_con_margen" not in df_r.columns:
+        df_r["ventana_con_margen"] = df_r.apply(_ventana_extendida, axis=1)
+        st.session_state["df_ruta"] = df_r.copy()
+
     st.subheader("📋 Orden de visita optimizada")
     st.dataframe(
         df_r[["orden", "nombre_cliente", "direccion", "ventana_con_margen", "ETA"]],
