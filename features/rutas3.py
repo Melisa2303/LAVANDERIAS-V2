@@ -274,7 +274,7 @@ def ver_ruta_optimizada():
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
 
-     with tab2:
+    with tab2:
         st.subheader("🗺️ Mapa de toda la ruta (via API)")
 
         # 1) Definimos origen, destino y waypoints
