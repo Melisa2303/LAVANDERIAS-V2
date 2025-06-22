@@ -64,9 +64,9 @@ def datos_ruta():
             delivery_data = opciones[selected]
 
             st.markdown(f"### Rango de Horario para {delivery_data['operacion']}")
-            horas_sugeridas = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
+            horas_sugeridas = [f"{h:02d}:{m:02d}" for h in range(9, 16) for m in (0, 30)]
             rango_actual = delivery_data.get("hora", "12:00 - 13:00")
-            hora_inicio_default, hora_fin_default = "12:00", "13:00"
+            hora_inicio_default, hora_fin_default = "9:00", "16:00"
             if " - " in rango_actual:
                 partes = rango_actual.split(" - ")
                 if len(partes) == 2:
