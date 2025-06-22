@@ -1,19 +1,15 @@
-# algorithms/algoritmo2
-# clarke-wright_tabu.py
+# algorithms/algoritmo2.py
 
-import math
 import time
-from typing import Dict, List, Any, Tuple
+from typing import List, Dict, Any, Tuple
 
+# Importamos las constantes del algoritmo principal (algoritmo1.py)
 from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
 
 def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
     """Suma de distancias (m) a lo largo de un route (lista de nodos)."""
     D = data["distance_matrix"]
-    dist = 0.0
-    for u, v in zip(route, route[1:]):
-        dist += D[u][v]
-    return dist
+    return sum(D[u][v] for u, v in zip(route, route[1:]))
 
 def _check_feasible_and_time(
     route: List[int],
@@ -27,7 +23,7 @@ def _check_feasible_and_time(
     windows = data["time_windows"]
     depot   = data["depot"]
     t       = SHIFT_START_SEC
-    arrivals = [t]  # llegada al depósito inicial
+    arrivals = [t]
 
     for u, v in zip(route, route[1:]):
         t += T[u][v]
@@ -46,15 +42,14 @@ def optimizar_ruta_cw_tabu(
     tiempo_max_seg: int = 60
 ) -> Dict[str, Any]:
     """
-    1) Construye solución inicial por Clarke–Wright Savings.
-    2) Refina la solución con Tabu Search (swap de dos nodos) respetando VRPTW.
-    Retorna dict con 'routes' y 'distance_total_m'.
+    1) Clarke–Wright Savings para generar ruta inicial.
+    2) Tabu Search (swap de dos nodos) para refinarla respetando VRPTW.
     """
     depot = data["depot"]
     n     = len(data["distance_matrix"])
     nodes = [i for i in range(n) if i != depot]
 
-    # 1) Clarke–Wright Savings
+    # 1) Savings
     D = data["distance_matrix"]
     savings = []
     for i in nodes:
@@ -64,7 +59,7 @@ def optimizar_ruta_cw_tabu(
                 savings.append((s, i, j))
     savings.sort(reverse=True, key=lambda x: x[0])
 
-    # Inicial: cada nodo en ruta propia [depot, i, depot]
+    # Inicial: cada nodo en su propia ruta [depot, i, depot]
     parent    = {i: i for i in nodes}
     start_map = {i: i for i in nodes}
     end_map   = {i: i for i in nodes}
@@ -76,48 +71,40 @@ def optimizar_ruta_cw_tabu(
             i = parent[i]
         return i
 
-    for s, i, j in savings:
+    for _, i, j in savings:
         ri = find(i)
         rj = find(j)
         if ri == rj:
             continue
-
-        # Unir solo si i está al final de su ruta y j al inicio de la otra
         if end_map[ri] == i and start_map[rj] == j:
-            # Merge
             merged = route_map[ri][:-1] + route_map[rj][1:]
             parent[rj]     = ri
             start_map[ri]  = start_map[ri]
             end_map[ri]    = end_map[rj]
             route_map[ri]  = merged
 
-    # Tomar la ruta combinada
-    inicial = next(iter(route_map.values()))
-
-    # 2) Tabu Search de swaps
+    inicial    = next(iter(route_map.values()))
     best_route = inicial[:]
     best_dist  = _route_distance(best_route, data)
-    tabu_list  = []
-    tabu_size  = 50
-    start_ts   = time.time()
+
+    # 2) Tabu Search de swaps
+    tabu_list = []
+    tabu_size = 50
+    start_ts  = time.time()
 
     while time.time() - start_ts < tiempo_max_seg:
         improved = False
-        # Generar vecinos por swap de pares
         L = len(best_route)
-        for i in range(1, L-2):
-            for j in range(i+1, L-1):
-                move = (i, j)
+        for a in range(1, L-2):
+            for b in range(a+1, L-1):
+                move = (a, b)
                 if move in tabu_list:
                     continue
-
                 cand = best_route[:]
-                cand[i], cand[j] = cand[j], cand[i]
-
+                cand[a], cand[b] = cand[b], cand[a]
                 feas, _ = _check_feasible_and_time(cand, data)
                 if not feas:
                     continue
-
                 dist_c = _route_distance(cand, data)
                 if dist_c + 1e-6 < best_dist:
                     best_route = cand
@@ -132,7 +119,7 @@ def optimizar_ruta_cw_tabu(
         if not improved:
             break
 
-    # Reconstruir times de llegada
+    # Reconstruir llegadas
     _, arrival = _check_feasible_and_time(best_route, data)
 
     return {
