@@ -111,12 +111,14 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 #Algoritmos diversos
 
 # optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
+# optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
 import random
 
 SERVICE_TIME = 10 * 60        # 10 minutos de servicio
 SHIFT_START_SEC = 9 * 3600    # 09:00
 
 import time as tiempo
+import pandas as pd
 
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
@@ -234,6 +236,8 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             for r_idx, ruta in enumerate(rutas)
             for i, n in enumerate(ruta["route"])
         ]
+        if len(flat_nodes) < 2:
+            return rutas, []
         to_remove = random.sample(flat_nodes, min(num_remove, len(flat_nodes)))
         removed_nodes = [n for _, _, n in to_remove]
 
@@ -249,7 +253,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             best_r = -1
             best_pos = -1
             for r_idx, ruta in enumerate(rutas):
-                for i in range(1, len(ruta["route"])):
+                for i in range(1, len(ruta["route"])+1):
                     test_route = ruta["route"][:i] + [node] + ruta["route"][i:]
                     if not es_ruta_factible(test_route):
                         continue
@@ -262,7 +266,9 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
                         best_pos = i
             if best_r != -1:
                 rutas[best_r]["route"].insert(best_pos, node)
-                rutas[best_r]["arrival_sec"] = calcular_arrival_times(rutas[best_r]["route"])
+                arrival = calcular_arrival_times(rutas[best_r]["route"])
+                if len(arrival) == len(rutas[best_r]["route"]):
+                    rutas[best_r]["arrival_sec"] = arrival
         return rutas
 
     def calcular_costo_total(rutas):
@@ -285,12 +291,21 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         if new_cost < best_cost:
             best_cost = new_cost
             best_rutas = safe_copy_rutas(rutas_tmp)
-            
+
+    # Validar coherencia de longitudes antes de mostrar
     for ruta in best_rutas:
-        df_check = pd.DataFrame({
-            "nodo_id": ruta["route"],
-            "hora_llegada": [tiempo.strftime('%H:%M', tiempo.gmtime(s)) for s in ruta["arrival_sec"]]
-        })
+        if len(ruta["route"]) != len(ruta["arrival_sec"]):
+            ruta["arrival_sec"] = calcular_arrival_times(ruta["route"])
+
+    # Crear DataFrames para cada ruta
+    for ruta in best_rutas:
+        if len(ruta["route"]) == len(ruta["arrival_sec"]):
+            df_check = pd.DataFrame({
+                "nodo_id": ruta["route"],
+                "hora_llegada": [tiempo.strftime('%H:%M', tiempo.gmtime(s)) for s in ruta["arrival_sec"]]
+            })
+            print(f"Ruta vehículo {ruta['vehicle']}:")
+            print(df_check)
 
     return {
         "routes": best_rutas,
