@@ -114,6 +114,10 @@ from core.constants import PUNTOS_FIJOS_COMPLETOS
 # Identificadores fijos para Cochera y Planta
 ID_GARAGE = 0  # PUNTOS_FIJOS_COMPLETOS[0]
 ID_PLANTA = 1  # PUNTOS_FIJOS_COMPLETOS[1]
+HORA_GARAGE_IN = 8 * 3600
+HORA_GARAGE_OUT = 17 * 3600
+HORA_PLANTA_IN = 8 * 3600 + 30 * 60
+HORA_PLANTA_OUT = 16 * 3600 + 40 * 60
 
 
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
@@ -125,10 +129,10 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
 
     def calcular_arrival_times(route):
         arrival = []
-        t = SHIFT_START_SEC
+        t = HORA_PLANTA_IN  # comienza en planta a las 8:30
         for i in range(len(route)):
             if i == 0:
-                arrival.append(t)
+                arrival.append(HORA_GARAGE_IN)  # llegada al garage a las 08:00
                 continue
             prev, curr = route[i-1], route[i]
             travel = data["duration_matrix"][prev][curr]
@@ -137,10 +141,11 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             t = max(t, start)
             arrival.append(t)
             t += SERVICE_TIME
+        arrival[-1] = HORA_GARAGE_OUT  # última llegada al garage 17:00
         return arrival
 
     def es_ruta_factible(route):
-        t = SHIFT_START_SEC
+        t = HORA_PLANTA_IN
         for i in range(1, len(route)):
             prev, curr = route[i-1], route[i]
             travel = data["duration_matrix"][prev][curr]
@@ -176,7 +181,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     )
     time_dimension = routing.GetDimensionOrDie("Time")
     for v in range(data["num_vehicles"]):
-        time_dimension.CumulVar(routing.Start(v)).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
+        time_dimension.CumulVar(routing.Start(v)).SetRange(HORA_PLANTA_IN, HORA_PLANTA_IN)
 
     for i, (ini, fin) in enumerate(data["time_windows"]):
         if ini != fin:
@@ -207,14 +212,12 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             route = []
             while not routing.IsEnd(idx):
                 node = manager.IndexToNode(idx)
-                route.append(node)
+                if node not in [ID_PLANTA, ID_GARAGE]:
+                    route.append(node)
                 next_idx = solution.Value(routing.NextVar(idx))
                 dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
                 idx = next_idx
-            route.append(manager.IndexToNode(idx))
-            if route[0] != ID_PLANTA:
-                route.insert(0, ID_PLANTA)
-            full_route = [ID_GARAGE, ID_PLANTA] + route[1:-1] + [ID_PLANTA, ID_GARAGE]
+            full_route = [ID_GARAGE, ID_PLANTA] + route + [ID_PLANTA, ID_GARAGE]
             arrival = calcular_arrival_times(full_route)
             rutas.append({
                 "vehicle": v,
