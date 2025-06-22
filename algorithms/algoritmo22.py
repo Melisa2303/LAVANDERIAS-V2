@@ -211,10 +211,10 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
     if not sol:
         return None
 
-    time_dim = routing.GetDimensionOrDie("Time")
-    for idx in range(routing.Size()):
-    var = time_dim.CumulVar(idx)
-    st.write(f"Node {manager.IndexToNode(idx)} window=({var.Lb()}, {var.Ub()}), arr={sol.Value(var)}")
+    #time_dim = routing.GetDimensionOrDie("Time")
+    #for idx in range(routing.Size()):
+    #var = time_dim.CumulVar(idx)
+    #st.write(f"Node {manager.IndexToNode(idx)} window=({var.Lb()}, {var.Ub()}), arr={sol.Value(var)}")
 
 
     # Reconstrucción de rutas
