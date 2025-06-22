@@ -37,7 +37,7 @@ import folium
 import time as tiempo
 import googlemaps
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
-from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo
+from algorithms.algoritmo22 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo, MARGEN
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
@@ -50,6 +50,30 @@ ALG_MAP = {
     "Algoritmo 3": optimizar_ruta_placeholder,
     "Algoritmo 4": optimizar_ruta_algoritmo4,
 }
+
+def _hora_a_segundos(hhmm: str) -> int | None:
+    """Convierte 'HH:MM' a segundos desde medianoche."""
+    try:
+        h, m = map(int, hhmm.split(":"))
+        return h * 3600 + m * 60
+    except:
+        return None
+
+def _segundos_a_hora(segs: int) -> str:
+    """Convierte segundos desde medianoche a 'HH:MM'."""
+    h = segs // 3600
+    m = (segs % 3600) // 60
+    return f"{h:02}:{m:02}"
+    
+def _ventana_extendida(row):
+    ini = _hora_a_segundos(row["time_start"])
+    fin = _hora_a_segundos(row["time_end"])
+    if ini is None or fin is None:
+        return "No especificado"
+    ini_m = max(0, ini - MARGEN)
+    fin_m = min(24*3600, fin + MARGEN)
+    return f"{_segundos_a_hora(ini_m)} - {_segundos_a_hora(fin_m)}"
+
 
 def ver_ruta_optimizada():
     st.title("🚚 Ver Ruta Optimizada")
