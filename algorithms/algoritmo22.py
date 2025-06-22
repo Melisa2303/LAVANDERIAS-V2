@@ -4,7 +4,7 @@
 #   → Firebase Firestore (usando service account JSON)
 #   → Google Maps Distance Matrix & Directions
 #   → OR-Tools VRP-TW con servicio, ventanas, tráfico real
-#   → Se empleó el algoritmo de agrupación: Agglomerative Clustering para agrupar pedidos cercanos en 300m a la redonda.
+#   → Se empleó el algoritmo de agrupación: Agglomerative Clustering para agrupar pedidos cercanos.
 #   → Página única: Ver Ruta Optimizada
 #   → En caso el algoritmo no dé respuesta, usa distancias euclidianas
 ##################################################################################################################
@@ -348,7 +348,7 @@ def _haversine_meters(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
     return 2 * R * math.asin(math.sqrt(a))
 
-def agrupar_puntos_aglomerativo(df, eps_metros=20):
+def agrupar_puntos_aglomerativo(df, eps_metros=5):
     """
     Agrupa pedidos cercanos mediante AgglomerativeClustering. 
     eps_metros: umbral de distancia máxima en metros para que queden en el mismo cluster.
