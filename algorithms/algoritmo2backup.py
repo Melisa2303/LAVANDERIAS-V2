@@ -175,6 +175,10 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
         name="Time"
     )
     time_dim = routing.GetDimensionOrDie("Time")
+
+    time_dim.SetGlobalSpanCostCoefficient(1)
+
+    
     depot_idx = manager.NodeToIndex(data["depot"])
     # Fijar la ventana del depósito
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
