@@ -324,7 +324,7 @@ def cargar_pedidos(fecha, tipo):
         coords = data.get(f"coordenadas_{'recojo' if is_recojo else 'entrega'}",{})
         lat, lon = coords.get("lat"), coords.get("lon")
         hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}","")
-        ts, te = (hs,hs) if hs else ("09:00:00","16:00:00")
+        ts, te = (hs,hs) if hs else ("09:00","16:00")
         out.append({
             "id":d.id,
             "operacion":op,
