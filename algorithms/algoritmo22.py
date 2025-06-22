@@ -48,14 +48,17 @@ MARGEN = 15 * 60  # 15 minutos en segundos
 # ===================== FUNCIONES AUXILIARES =====================
 
 def _hora_a_segundos(hhmm):
-    """Convierte 'HH:MM' a segundos desde medianoche. Si es None o inválido, retorna None."""
+    """Convierte 'HH:MM' o 'HH:MM:SS' a segundos desde medianoche."""
     if hhmm is None or pd.isna(hhmm) or hhmm == "":
         return None
     try:
-        h, m = map(int, str(hhmm).split(":"))
+        parts = str(hhmm).split(":")
+        h = int(parts[0])
+        m = int(parts[1])
         return h*3600 + m*60
     except:
         return None
+
 
 def _haversine_dist_dur(coords, vel_kmh=40.0):
     """
