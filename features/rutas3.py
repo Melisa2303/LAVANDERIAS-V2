@@ -103,7 +103,7 @@ def ver_ruta_optimizada():
             return
 
         df_original = pd.DataFrame(pedidos)
-        df_clusters, df_et = agrupar_puntos_aglomerativo(df_original, eps_metros=300)
+        df_clusters, df_et = agrupar_puntos_aglomerativo(df_original, eps_metros=5)
         st.session_state["df_clusters"] = df_clusters.copy()
         st.session_state["df_etiquetado"] = df_et.copy()
 
