@@ -246,6 +246,46 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
         "distance_total_m": dist_total_m
     }
 
+    # 4) PARÁMETROS DE BÚSQUEDA
+    params = pywrapcp.DefaultRoutingSearchParameters()
+    params.time_limit.FromSeconds(tiempo_max_seg)
+    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
+    params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+
+    # 5) RESOLVER
+    sol = routing.SolveWithParameters(params)
+    if not sol:
+        return None
+
+    # 6) RECONSTRUIR RUTAS y SUMAR DISTANCIA real
+    rutas = []
+    dist_total_m = 0
+    for v in range(data["num_vehicles"]):
+        idx = routing.Start(v)
+        route, llegada = [], []
+        while not routing.IsEnd(idx):
+            n   = manager.IndexToNode(idx)
+            nxt = sol.Value(routing.NextVar(idx))
+            # sumamos metros de la matriz original
+            dest = manager.IndexToNode(nxt)
+            dist_total_m += data["distance_matrix"][n][dest]
+
+            # construimos la ruta y tiempos
+            route.append(n)
+            llegada.append(sol.Min(time_dim.CumulVar(idx)))
+            idx = nxt
+
+        rutas.append({
+            "vehicle":      v,
+            "route":        route,
+            "arrival_sec":  llegada
+        })
+
+    return {
+        "routes":          rutas,
+        "distance_total_m": dist_total_m
+    }
+
     # Parámetros de búsqueda
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.time_limit.FromSeconds(tiempo_max_seg)
