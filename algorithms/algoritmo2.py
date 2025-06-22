@@ -5,7 +5,7 @@ import math
 import time
 from typing import Dict, List, Any, Tuple
 
-from algorithms.algoritmo22 import SERVICE_TIME, SHIFT_START_SEC
+from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
 
 def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
     """Suma de distancias (m) a lo largo de un route (lista de nodos)."""
