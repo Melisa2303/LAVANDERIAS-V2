@@ -18,6 +18,7 @@ from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY
 
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo, MARGEN #PCA-GLS
+from algorithms.algoritmo2 import optimizar_ruta_cw_tabu
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
 # Coordenadas fijas de la cochera
