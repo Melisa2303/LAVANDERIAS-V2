@@ -116,15 +116,22 @@ def ver_ruta_optimizada():
         df_final = pd.concat([pd.DataFrame([DEP]), df_clusters], ignore_index=True)
         st.session_state["df_final"] = df_final.copy()
 
+        # ---------- Preparar y resolver el VRP ----------
         data = _crear_data_model(df_final, vehiculos=1)
+    
+        # DEBUG: ¿qué ventanas le estás pasando realmente?
+        st.write("🔍 Ventanas (segundos) =", data["time_windows"])
+    
         alg_fn = ALG_MAP[algoritmo]
         t0 = tiempo.time()
         res = alg_fn(data, tiempo_max_seg=60)
         st.session_state["solve_t"] = tiempo.time() - t0
-
-        if not res:
-            st.error("😕 Sin solución factible.")
-            return
+    
+        # DEBUG: ¿qué ETA devolvió el solver?
+        if res:
+            st.write("🔍 ETA de llegada (segundos) =", res["routes"][0]["arrival_sec"])
+        else:
+            st.error("😕 No hubo solución factible.")
 
         st.session_state["res"] = res
 
