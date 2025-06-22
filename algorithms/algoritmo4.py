@@ -119,6 +119,40 @@ ID_PLANTA = 1  # PUNTOS_FIJOS_COMPLETOS[1]
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+    def _hora_a_segundos(hhmm):
+        h, m = map(int, hhmm.split(":"))
+        return h * 3600 + m * 60
+
+    def calcular_arrival_times(route):
+        arrival = []
+        t = SHIFT_START_SEC
+        for i in range(len(route)):
+            if i == 0:
+                arrival.append(t)
+                continue
+            prev, curr = route[i-1], route[i]
+            travel = data["duration_matrix"][prev][curr]
+            t += travel
+            start, end = data["time_windows"][curr]
+            t = max(t, start)
+            arrival.append(t)
+            t += SERVICE_TIME
+        return arrival
+
+    def es_ruta_factible(route):
+        t = SHIFT_START_SEC
+        for i in range(1, len(route)):
+            prev, curr = route[i-1], route[i]
+            travel = data["duration_matrix"][prev][curr]
+            t += travel
+            start, end = data["time_windows"][curr]
+            if start == end:
+                continue
+            if not (start <= t <= end):
+                return False
+            t = max(t, start) + SERVICE_TIME
+        return True
+
     # ========= Paso 1: Solución inicial con OR-Tools =========
     manager = pywrapcp.RoutingIndexManager(
         len(data["duration_matrix"]),
@@ -145,7 +179,8 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         time_dimension.CumulVar(routing.Start(v)).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
     for i, (ini, fin) in enumerate(data["time_windows"]):
-        time_dimension.CumulVar(manager.NodeToIndex(i)).SetRange(ini, fin)
+        if ini != fin:
+            time_dimension.CumulVar(manager.NodeToIndex(i)).SetRange(ini, fin)
 
     if any(data["demands"]):
         def demand_cb(index):
@@ -169,25 +204,18 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
         dist_total = 0
         for v in range(data["num_vehicles"]):
             idx = routing.Start(v)
-            route, llegada = [], []
+            route = []
             while not routing.IsEnd(idx):
                 node = manager.IndexToNode(idx)
                 route.append(node)
-                llegada.append(solution.Min(time_dimension.CumulVar(idx)))
                 next_idx = solution.Value(routing.NextVar(idx))
                 dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
                 idx = next_idx
             route.append(manager.IndexToNode(idx))
-            llegada.append(solution.Min(time_dimension.CumulVar(idx)))
-            # Secuencia lógica: Garage - Planta - RUTA - Planta - Garage
-            full_route = [ID_GARAGE, ID_PLANTA] + route + [ID_PLANTA, ID_GARAGE]
-            arrival = [
-                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[0]["hora"]),
-                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[1]["hora"])
-            ] + llegada + [
-                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[4]["hora"]),
-                _hora_a_segundos(PUNTOS_FIJOS_COMPLETOS[5]["hora"])
-            ]
+            if route[0] != ID_PLANTA:
+                route.insert(0, ID_PLANTA)
+            full_route = [ID_GARAGE, ID_PLANTA] + route[1:-1] + [ID_PLANTA, ID_GARAGE]
+            arrival = calcular_arrival_times(full_route)
             rutas.append({
                 "vehicle": v,
                 "route": full_route,
@@ -225,18 +253,23 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     def greedy_repair(rutas, removed):
         for node in removed:
             best_cost = float("inf")
-            best_r = 0
-            best_pos = 2
+            best_r = -1
+            best_pos = -1
             for r_idx, ruta in enumerate(rutas):
-                for i in range(2, len(ruta["route"]) - 2):
-                    prev = ruta["route"][i - 1]
-                    nxt = ruta["route"][i]
-                    cost = data["distance_matrix"][prev][node] + data["distance_matrix"][node][nxt] - data["distance_matrix"][prev][nxt]
+                for i in range(2, len(ruta["route"])-2):
+                    test_route = ruta["route"][:i] + [node] + ruta["route"][i:]
+                    if not es_ruta_factible(test_route):
+                        continue
+                    cost = 0
+                    for j in range(len(test_route)-1):
+                        cost += data["distance_matrix"][test_route[j]][test_route[j+1]]
                     if cost < best_cost:
                         best_cost = cost
-                        best_r, best_pos = r_idx, i
-            rutas[best_r]["route"].insert(best_pos, node)
-            rutas[best_r]["arrival_sec"].insert(best_pos, 0)
+                        best_r = r_idx
+                        best_pos = i
+            if best_r != -1:
+                rutas[best_r]["route"].insert(best_pos, node)
+                rutas[best_r]["arrival_sec"] = calcular_arrival_times(rutas[best_r]["route"])
         return rutas
 
     def calcular_costo_total(rutas):
