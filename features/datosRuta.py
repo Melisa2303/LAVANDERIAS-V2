@@ -111,53 +111,53 @@ def datos_ruta():
             delivery_data = opciones[selected]
 
             # --- Selector de Hora Unificado ---
-st.markdown(f"### Hora de {delivery_data['operacion']}")
+            st.markdown(f"### Hora de {delivery_data['operacion']}")
 
-# Crear una fila con el combobox y botón
-hora_col1, hora_col2 = st.columns([4, 1])
-
-with hora_col1:
-    # Generar opciones de hora (7:00 a 18:00 cada 30 min)
-    horas_sugeridas = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
-    hora_actual = delivery_data.get("hora", "12:00:00")[:5]  # Formato HH:MM
-
-    # Si la hora actual no está en las sugeridas, la agregamos
-    if hora_actual not in horas_sugeridas:
-        horas_sugeridas.append(hora_actual)
-        horas_sugeridas.sort()
-
-    # Combobox unificado
-    nueva_hora = st.selectbox(
-        "Seleccionar o escribir hora (HH:MM):",
-        options=horas_sugeridas,
-        index=horas_sugeridas.index(hora_actual) if hora_actual in horas_sugeridas else 0,
-        key=f"hora_combobox_{delivery_data['id']}"
-    )
-
-with hora_col2:
-    st.write("")  # Espaciado
-    st.write("")  # Espaciado
-    if st.button("💾 Guardar", key=f"guardar_btn_{delivery_data['id']}"):
-        try:
-            # Validar formato HH:MM
-            if len(nueva_hora.split(":")) != 2:
-                raise ValueError
-            hora, minutos = map(int, nueva_hora.split(":"))
-            if not (0 <= hora < 24 and 0 <= minutos < 60):
-                raise ValueError
-
-            campo_hora = "hora_recojo" if delivery_data["operacion"] == "Recojo" else "hora_entrega"
-            db.collection('recogidas').document(delivery_data["id"]).update({
-                campo_hora: f"{hora:02d}:{minutos:02d}:00"
-            })
-            st.success("Hora actualizada")
-            st.cache_data.clear()
-            time.sleep(1)
-            st.rerun()
-        except ValueError:
-            st.error("Formato inválido. Use HH:MM")
-        except Exception as e:
-            st.error(f"Error: {e}")
+            # Crear una fila con el combobox y botón
+            hora_col1, hora_col2 = st.columns([4, 1])
+            
+            with hora_col1:
+                # Generar opciones de hora (7:00 a 18:00 cada 30 min)
+                horas_sugeridas = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
+                hora_actual = delivery_data.get("hora", "12:00:00")[:5]  # Formato HH:MM
+            
+                # Si la hora actual no está en las sugeridas, la agregamos
+                if hora_actual not in horas_sugeridas:
+                    horas_sugeridas.append(hora_actual)
+                    horas_sugeridas.sort()
+            
+                # Combobox unificado
+                nueva_hora = st.selectbox(
+                    "Seleccionar o escribir hora (HH:MM):",
+                    options=horas_sugeridas,
+                    index=horas_sugeridas.index(hora_actual) if hora_actual in horas_sugeridas else 0,
+                    key=f"hora_combobox_{delivery_data['id']}"
+                )
+            
+            with hora_col2:
+                st.write("")  # Espaciado
+                st.write("")  # Espaciado
+                if st.button("💾 Guardar", key=f"guardar_btn_{delivery_data['id']}"):
+                    try:
+                        # Validar formato HH:MM
+                        if len(nueva_hora.split(":")) != 2:
+                            raise ValueError
+                        hora, minutos = map(int, nueva_hora.split(":"))
+                        if not (0 <= hora < 24 and 0 <= minutos < 60):
+                            raise ValueError
+            
+                        campo_hora = "hora_recojo" if delivery_data["operacion"] == "Recojo" else "hora_entrega"
+                        db.collection('recogidas').document(delivery_data["id"]).update({
+                            campo_hora: f"{hora:02d}:{minutos:02d}:00"
+                        })
+                        st.success("Hora actualizada")
+                        st.cache_data.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    except ValueError:
+                        st.error("Formato inválido. Use HH:MM")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
             # Sección de Dirección y Mapa (Versión idéntica a Solicitar Recogida)
           
