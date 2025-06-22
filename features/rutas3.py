@@ -143,11 +143,10 @@ def ver_ruta_optimizada():
         st.write("🔍 ETA de llegada (segundos) =", res["routes"][0]["arrival_sec"])
 
         # — DEBUG: tabla de verificación —
-        def _seg_a_hhmm(segs: int) -> str:
+       """ def _seg_a_hhmm(segs: int) -> str:
             h = segs // 3600
             m = (segs % 3600) // 60
             return f"{h:02}:{m:02}"
-      """
         df_check = pd.DataFrame({
             "nodo": list(range(len(data["time_windows"]))),
             "ventana_inicio": [ _seg_a_hhmm(w[0]) for w in data["time_windows"] ],
@@ -156,16 +155,16 @@ def ver_ruta_optimizada():
         })
         st.table(df_check)"""
 
-                # — DEBUG: tabla de verificación solo para los nodos visitados —
-        ruta       = res["routes"][0]["route"]
-        arrival    = res["routes"][0]["arrival_sec"]
-        twindows   = data["time_windows"]
+        # — DEBUG: tabla de verificación solo para los nodos visitados —
+        ruta    = res["routes"][0]["route"]
+        arrival = res["routes"][0]["arrival_sec"]
+        tw      = data["time_windows"]
         
         df_check = pd.DataFrame({
-            "nodo":             ruta,
-            "ventana_inicio":   [ _seg_a_hhmm(twindows[n][0]) for n in ruta ],
-            "ventana_fin":      [ _seg_a_hhmm(twindows[n][1]) for n in ruta ],
-            "arrival":          [ _seg_a_hhmm(t)            for t in arrival ],
+            "nodo":           ruta,
+            "ventana_inicio": [_segundos_a_hora(tw[n][0]) for n in ruta],
+            "ventana_fin":    [_segundos_a_hora(tw[n][1]) for n in ruta],
+            "arrival":        [_segundos_a_hora(t)         for t   in arrival],
         })
         st.table(df_check)
 
