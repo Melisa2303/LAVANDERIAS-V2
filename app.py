@@ -54,7 +54,7 @@ else:
         from features.recogidas import solicitar_recogida
         solicitar_recogida()
     elif choice == "Datos de Ruta":
-        from features.rutas2 import datos_ruta
+        from features.datosRuta import datos_ruta
         datos_ruta()
     elif choice == "Datos de Boletas":
         from features.boletas import datos_boletas
