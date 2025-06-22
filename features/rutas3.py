@@ -121,8 +121,9 @@ def ver_ruta_optimizada():
 
     df_r = st.session_state["df_ruta"]
     st.subheader("📋 Orden de visita optimizada")
-    st.dataframe(df_r[["orden", "nombre_cliente", "direccion", "time_start", "time_end", "ETA"]], use_container_width=True)
-
+    #st.dataframe(df_r[["orden", "nombre_cliente", "direccion", "time_start", "time_end", "ETA"]], use_container_width=True)
+    st.dataframe(df_r[["orden", "nombre_cliente", "direccion", "ventana_con_margen", "ETA"]], use_container_width=True)
+    
     tab1, tab2 = st.tabs(["🚀 Tramo actual", "ℹ️ Info general"])
     df_f = st.session_state["df_final"]
     df_et = st.session_state["df_etiquetado"]
