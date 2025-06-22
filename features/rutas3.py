@@ -194,6 +194,17 @@ def ver_ruta_optimizada():
             "ventana_con_margen": row["ventana_con_margen"],
             "ETA": row["ETA"]
         })
+    ultima_arrival = arr[-1]  # 'arr' es la lista de arrival_sec que ya tienes arriba
+    final_eta = _segundos_a_hora(ultima_arrival)
+    
+    filas.append({
+        "orden": len(ruta) + 1,
+        "nombre_cliente": COCHERA["direccion"],
+        "direccion": COCHERA["direccion"],
+        "ventana_con_margen": vent_coch,
+        "ETA": final_eta
+    })
+        
     df_display = pd.DataFrame(filas).sort_values("orden").reset_index(drop=True)
 
     st.subheader("📋 Orden de visita optimizada")
@@ -213,7 +224,7 @@ def ver_ruta_optimizada():
         total_legs = L + 1
         if leg > total_legs:
             st.success("✅ Ruta completada")
-            return
+        else:
 
         if leg == 0:
             orig = (COCHERA["lat"], COCHERA["lon"])
