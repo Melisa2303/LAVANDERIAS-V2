@@ -79,7 +79,9 @@ def ver_ruta_optimizada():
             return
 
         df_original = pd.DataFrame(pedidos)
+        df_original = agregar_ventana_margen(df_original)
         df_clusters, df_etiquetado = agrupar_puntos_aglomerativo(df_original, eps_metros=300)
+
         st.session_state["df_clusters"] = df_clusters.copy()
         st.session_state["df_etiquetado"] = df_etiquetado.copy()
 
