@@ -228,6 +228,21 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60):
 
     return {"routes": rutas, "distance_total_m": dist_total}
 
+def agregar_ventana_margen(df, margen_segundos=15*60):
+    def expandir_fila(row):
+        ini = _hora_a_segundos(row["time_start"])
+        fin = _hora_a_segundos(row["time_end"])
+        if ini is None or fin is None:
+            return "No especificado"
+        ini = max(0, ini - margen_segundos)
+        fin = min(24*3600, fin + margen_segundos)
+        h_ini = f"{ini//3600:02}:{(ini%3600)//60:02}"
+        h_fin = f"{fin//3600:02}:{(fin%3600)//60:02}"
+        return f"{h_ini} - {h_fin} h"
+    
+    df["ventana_con_margen"] = df.apply(expandir_fila, axis=1)
+    return df
+
 
 # ===================== FUNCIONES PARA CLUSTERING =====================
 
