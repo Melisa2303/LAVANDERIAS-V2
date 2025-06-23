@@ -40,19 +40,19 @@ def _check_feasible_and_time(
 
 
 def optimizar_ruta_cw_tabu(
-    data: Dict[str, Any],
-    tiempo_max_seg: int = 60
+    data: Dict[str, Any], tiempo_max_seg: int = 60
 ) -> Dict[str, Any]:
     """
-    1) Clarke–Wright Savings para generar mini-rutas.
-    2) Tabu Search para refinar cada mini-ruta.
-    3) Aplasta todo en UNA sola ruta [depot, clientes…] SIN depot al final.
+    1) Clarke–Wright Savings para generar rutas iniciales.
+    2) Tabu Search (swap de dos nodos) para refinar cada mini-ruta.
+    3) Finalmente aplasta TODO en una sola ruta:
+       → [0, ...clientes..., 0]
     """
     depot = data["depot"]
     n     = len(data["distance_matrix"])
     nodes = [i for i in range(n) if i != depot]
 
-    # 1) Savings de Clarke–Wright
+    # 1) Savings
     D = data["distance_matrix"]
     savings = []
     for i in nodes:
@@ -62,7 +62,7 @@ def optimizar_ruta_cw_tabu(
                 savings.append((s, i, j))
     savings.sort(reverse=True, key=lambda x: x[0])
 
-    # Inicial: cada cliente en mini-ruta [0,i,0]
+    # Inicialmente cada cliente en su mini-ruta [0, i, 0]
     parent    = {i: i for i in nodes}
     start_map = {i: i for i in nodes}
     end_map   = {i: i for i in nodes}
@@ -74,28 +74,30 @@ def optimizar_ruta_cw_tabu(
             i = parent[i]
         return i
 
-    # Merge según savings
+    # Merge según savings, sin violar time-windows
     for _, i, j in savings:
         ri, rj = find(i), find(j)
         if ri == rj:
             continue
+        # sólo si i al final de ri y j al inicio de rj
         if end_map[ri] == i and start_map[rj] == j:
             cand = route_map[ri][:-1] + route_map[rj][1:]
             feas, _ = _check_feasible_and_time(cand, data)
             if not feas:
                 continue
-            parent[rj]    = ri
-            end_map[ri]   = end_map[rj]
-            route_map[ri] = cand
+            # hago el merge
+            parent[rj]      = ri
+            end_map[ri]     = end_map[rj]
+            route_map[ri]   = cand
 
-    # Extraer mini-rutas finales
+    # Extraer las mini-rutas resultantes
     roots = {find(i) for i in nodes}
     initial_routes = [route_map[r] for r in roots]
 
-    # 2) Tabu Search sobre cada mini-ruta
-    final_routes = []
-    total_dist   = 0.0
-    start_ts     = time.time()
+    # 2) Tabu Search por cada mini-ruta
+    final_routes: List[Tuple[List[int], List[int], float]] = []
+    total_dist = 0.0
+    t_start = time.time()
 
     for init in initial_routes:
         best_route = init[:]
@@ -103,7 +105,7 @@ def optimizar_ruta_cw_tabu(
         tabu_list  = []
         tabu_size  = 50
 
-        while time.time() - start_ts < tiempo_max_seg:
+        while time.time() - t_start < tiempo_max_seg:
             improved = False
             L = len(best_route)
             for a in range(1, L-2):
@@ -134,21 +136,28 @@ def optimizar_ruta_cw_tabu(
         final_routes.append((best_route, arrival, best_dist))
         total_dist += best_dist
 
-    # 3) Aplastar TODO en UNA sola ruta [depot, clientes…] **sin depot al final**
-    clientes = []
-    for rt, _, _ in final_routes:
-        # quitamos los 0 intermedios y finales
-        clientes.extend(n for n in rt if n != depot)
+    # 3) Aplasto TODO en una sola ruta secuencial
+    all_nodes, all_arrs = [], []
+    for rt, arr, _ in final_routes:
+        all_nodes += rt
+        all_arrs  += arr
 
-    ruta_final = [depot] + clientes
-    feas, llegada_final = _check_feasible_and_time(ruta_final, data)
-    dist_final = _route_distance(ruta_final, data)
+    # Quitar ceros consecutivos intermedios
+    flat_nodes, flat_arrs = [all_nodes[0]], [all_arrs[0]]
+    for u, t in zip(all_nodes[1:], all_arrs[1:]):
+        if not (u == depot and flat_nodes[-1] == depot):
+            flat_nodes.append(u)
+            flat_arrs.append(t)
+    # Asegurar que termina en depósito
+    if flat_nodes[-1] != depot:
+        flat_nodes.append(depot)
+        flat_arrs.append(flat_arrs[-1])
 
     return {
         "routes": [{
-            "vehicle":     0,
-            "route":       ruta_final,
-            "arrival_sec": llegada_final
+            "vehicle":      0,
+            "route":        flat_nodes,
+            "arrival_sec":  flat_arrs,
         }],
-        "distance_total_m": dist_final
+        "distance_total_m": total_dist
     }
