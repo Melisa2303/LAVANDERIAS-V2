@@ -38,10 +38,10 @@ def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
     return None
 
 ALG_MAP = {
-    "Algoritmo 1 - PCA - GLS"       : optimizar_ruta_algoritmo22,
-    "Algoritmo 2 - CW + Tabu Search": optimizar_ruta_cw_tabu,
-    "Algoritmo 3"                   : optimizar_ruta_placeholder,
-    "Algoritmo 4"                   : optimizar_ruta_algoritmo4,
+    "Algoritmo 1 - PCA - GLS"        : optimizar_ruta_algoritmo22,
+    "Algoritmo 2 - CW + Tabu Search" : optimizar_ruta_cw_tabu,
+    "Algoritmo 3 - CP-SAT + OR-Tools":optimizar_ruta_placeholder,
+    "Algoritmo 4"                    : optimizar_ruta_algoritmo4,
 }
 
 def _hora_a_segundos(hhmm: str) -> int | None:
