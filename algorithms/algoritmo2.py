@@ -3,12 +3,10 @@
 import time
 from typing import List, Dict, Any, Tuple
 
-# Importamos las constantes del algoritmo principal
 from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
 
 
 def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
-    """Suma de distancias (m) a lo largo de un route (lista de nodos)."""
     D = data["distance_matrix"]
     return sum(D[u][v] for u, v in zip(route, route[1:]))
 
@@ -16,10 +14,6 @@ def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
 def _check_feasible_and_time(
     route: List[int], data: Dict[str, Any]
 ) -> Tuple[bool, List[int]]:
-    """
-    Comprueba factibilidad de un route bajo time_windows y SERVICE_TIME.
-    Devuelve (es_factible, tiempos_de_llegada).
-    """
     T       = data["duration_matrix"]
     windows = data["time_windows"]
     depot   = data["depot"]
@@ -27,15 +21,12 @@ def _check_feasible_and_time(
     arrivals = [t]
 
     for u, v in zip(route, route[1:]):
-        # Añade viaje
         t += T[u][v]
-        # Añade servicio si no es depósito
         if u != depot:
             t += SERVICE_TIME
         w0, w1 = windows[v]
         if t > w1:
             return False, []
-        # Espera si llegas antes
         t = max(t, w0)
         arrivals.append(t)
 
@@ -45,117 +36,94 @@ def _check_feasible_and_time(
 def optimizar_ruta_cw_tabu(
     data: Dict[str, Any], tiempo_max_seg: int = 60
 ) -> Dict[str, Any]:
-    """
-    1) Clarke–Wright Savings para generar mini-rutas iniciales.
-    2) Tabu Search para refinar cada mini-ruta.
-    3) Aplasta TODO en UNA sola ruta [0, …clientes…, 0] sin depósitos intermedios.
-    """
     depot = data["depot"]
     n     = len(data["distance_matrix"])
-    nodes = [i for i in range(n) if i != depot]
+    clientes = [i for i in range(n) if i != depot]
 
-    # 1) Savings de Clarke–Wright
+    # 1) Clarke–Wright Savings
     D = data["distance_matrix"]
-    savings = []
-    for i in nodes:
-        for j in nodes:
-            if i < j:
-                s = D[depot][i] + D[depot][j] - D[i][j]
-                savings.append((s, i, j))
+    savings = [
+        (D[depot][i] + D[depot][j] - D[i][j], i, j)
+        for i in clientes for j in clientes if i < j
+    ]
     savings.sort(reverse=True, key=lambda x: x[0])
 
-    # Inicial: cada cliente en su propia mini-ruta [0,i,0]
-    parent    = {i: i for i in nodes}
-    start_map = {i: i for i in nodes}
-    end_map   = {i: i for i in nodes}
-    route_map = {i: [depot, i, depot] for i in nodes}
+    # Mini‐rutas iniciales: SOLO clientes (sin depot al final)
+    parent    = {i: i for i in clientes}
+    start_map = {i: i for i in clientes}
+    end_map   = {i: i for i in clientes}
+    route_map = {i: [i] for i in clientes}
 
-    def find(i: int) -> int:
+    def find(i:int):
         while parent[i] != i:
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
 
-    # Merge según savings, respetando ventanas
+    # Merge respetando ventanas
     for _, i, j in savings:
         ri, rj = find(i), find(j)
-        if ri == rj:
+        if ri == rj: 
             continue
-        # sólo si i está al final de ri y j al inicio de rj
         if end_map[ri] == i and start_map[rj] == j:
-            cand = route_map[ri][:-1] + route_map[rj][1:]
-            feas, _ = _check_feasible_and_time(cand, data)
+            cand = route_map[ri] + route_map[rj]
+            # chequeo factibilidad temporal introduciendo depot al inicio y fin
+            test_route = [depot] + cand + [depot]
+            feas, _ = _check_feasible_and_time(test_route, data)
             if not feas:
                 continue
-            parent[rj]    = ri
-            end_map[ri]   = end_map[rj]
-            route_map[ri] = cand
+            parent[rj]     = ri
+            end_map[ri]    = end_map[rj]
+            route_map[ri]  = cand
 
-    # Extraer todas las mini-rutas tras el merge
-    roots = {find(i) for i in nodes}
+    # Extraer las mini‐rutas finales
+    roots = {find(i) for i in clientes}
     initial_routes = [route_map[r] for r in roots]
 
-    # 2) Tabu Search sobre cada mini-ruta
-    final_routes: List[Tuple[List[int], List[int], float]] = []
-    total_dist = 0.0
+    # 2) Tabu Search en cada mini‐ruta (SIN depot dentro)
+    final_customers = []
     t0 = time.time()
-
     for init in initial_routes:
-        best_route = init[:]
-        best_dist  = _route_distance(best_route, data)
-        tabu_list  = []
-        tabu_size  = 50
-
+        best = init[:]
+        best_d = _route_distance([depot]+best+[depot], data)
+        tabu = []
         while time.time() - t0 < tiempo_max_seg:
             improved = False
-            L = len(best_route)
-            for a in range(1, L-2):
-                for b in range(a+1, L-1):
-                    move = (a, b)
-                    if move in tabu_list:
+            L = len(best)
+            for a in range(L):
+                for b in range(a+1, L):
+                    if (a,b) in tabu: 
                         continue
-                    cand = best_route[:]
+                    cand = best[:]
                     cand[a], cand[b] = cand[b], cand[a]
-                    feas, _ = _check_feasible_and_time(cand, data)
+                    test_route = [depot] + cand + [depot]
+                    feas, _ = _check_feasible_and_time(test_route, data)
                     if not feas:
                         continue
-                    dist_c = _route_distance(cand, data)
-                    if dist_c < best_dist - 1e-6:
-                        best_route = cand
-                        best_dist  = dist_c
-                        tabu_list.append(move)
-                        if len(tabu_list) > tabu_size:
-                            tabu_list.pop(0)
+                    dc = _route_distance(test_route, data)
+                    if dc < best_d - 1e-6:
+                        best, best_d = cand, dc
+                        tabu.append((a,b))
+                        if len(tabu) > 50:
+                            tabu.pop(0)
                         improved = True
                         break
                 if improved:
                     break
             if not improved:
                 break
+        final_customers.extend(best)
 
-        # Reconstruir tiempos
-        _, arrival = _check_feasible_and_time(best_route, data)
-        final_routes.append((best_route, arrival, best_dist))
-        total_dist += best_dist
-
-    # 3) Aplastar todo en UNA sola ruta sin depósitos intermedios
-    #   -> [0, cliente1, cliente2, …, clienteK, 0]
-    clientes = []
-    for rt, _, _ in final_routes:
-        # excluyo los ceros de cada mini-ruta
-        clientes.extend(n for n in rt if n != depot)
-
-    ruta_final = [depot] + clientes + [depot]
-    # recalculo factibilidad y tiempos en la ruta aplastada
-    feas, llegada_final = _check_feasible_and_time(ruta_final, data)
-    # recalculo distancia real
-    dist_final = _route_distance(ruta_final, data)
+    # 3) Construir ruta única con depot al inicio y final
+    ruta_final = [depot] + final_customers + [depot]
+    feas, llegada = _check_feasible_and_time(ruta_final, data)
+    dist_final    = _route_distance(ruta_final, data)
 
     return {
         "routes": [{
             "vehicle":     0,
             "route":       ruta_final,
-            "arrival_sec": llegada_final
+            "arrival_sec": llegada
         }],
         "distance_total_m": dist_final
     }
