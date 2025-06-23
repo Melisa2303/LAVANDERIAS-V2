@@ -112,7 +112,7 @@ import time as tiempo
 import pandas as pd
 
 
-def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
+def optimizar_ruta_algoritmo4(data, tiempo_max_seg=60):
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
     def calcular_costo_total(rutas):
