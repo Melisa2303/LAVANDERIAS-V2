@@ -1,10 +1,60 @@
+# algorithms/algoritmo2.py
+
+import time
+from typing import List, Dict, Any, Tuple
+
+# Importamos las constantes del algoritmo principal
+from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
+
+
+def _route_distance(
+    route: List[int],
+    data: Dict[str, Any]
+) -> float:
+    """
+    Suma de distancias (m) a lo largo de un route (lista de nodos).
+    """
+    D = data["distance_matrix"]
+    return sum(D[u][v] for u, v in zip(route, route[1:]))
+
+
+def _check_feasible_and_time(
+    route: List[int],
+    data: Dict[str, Any]
+) -> Tuple[bool, List[int]]:
+    """
+    Comprueba factibilidad de un route bajo time_windows y SERVICE_TIME.
+    Devuelve (es_factible, tiempos_de_llegada).
+    """
+    T       = data["duration_matrix"]
+    windows = data["time_windows"]
+    depot   = data["depot"]
+    t       = SHIFT_START_SEC
+    arrivals = [t]
+
+    for u, v in zip(route, route[1:]):
+        t += T[u][v]
+        # Añadimos tiempo de servicio si no es el depósito
+        if u != depot:
+            t += SERVICE_TIME
+        w0, w1 = windows[v]
+        # Si llegamos después de la ventana, no es factible
+        if t > w1:
+            return False, []
+        # Esperamos hasta el inicio de ventana si llegamos antes
+        t = max(t, w0)
+        arrivals.append(t)
+
+    return True, arrivals
+
+
 def optimizar_ruta_cw_tabu(
     data: Dict[str, Any],
     tiempo_max_seg: int = 60
 ) -> Dict[str, Any]:
     """
     1) Clarke–Wright Savings para generar mini-rutas.
-    2) Tabu Search para refinar cada mini-ruta.
+    2) Tabu Search (swap de dos nodos) para refinar cada mini-ruta.
     3) Aplasta todo en UNA sola ruta [depot, clientes…] SIN depot al final.
     """
     depot = data["depot"]
@@ -21,33 +71,35 @@ def optimizar_ruta_cw_tabu(
                 savings.append((s, i, j))
     savings.sort(reverse=True, key=lambda x: x[0])
 
-    # Inicial: cada cliente en mini-ruta [0,i,0]
+    # Inicial: cada cliente en mini-ruta [depot, i, depot]
     parent    = {i: i for i in nodes}
     start_map = {i: i for i in nodes}
     end_map   = {i: i for i in nodes}
     route_map = {i: [depot, i, depot] for i in nodes}
 
     def find(i: int) -> int:
+        """Find con path-compression para union-find."""
         while parent[i] != i:
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
 
-    # Merge según savings
+    # Merge de rutas según savings
     for _, i, j in savings:
         ri, rj = find(i), find(j)
         if ri == rj:
             continue
+        # Solo unimos si i está al final de ri y j al inicio de rj
         if end_map[ri] == i and start_map[rj] == j:
-            cand = route_map[ri][:-1] + route_map[rj][1:]
-            feas, _ = _check_feasible_and_time(cand, data)
+            merged = route_map[ri][:-1] + route_map[rj][1:]
+            feas, _ = _check_feasible_and_time(merged, data)
             if not feas:
                 continue
-            parent[rj]    = ri
-            end_map[ri]   = end_map[rj]
-            route_map[ri] = cand
+            parent[rj]     = ri
+            end_map[ri]    = end_map[rj]
+            route_map[ri]  = merged
 
-    # Extraer mini-rutas finales
+    # Extraemos todas las mini-rutas finales
     roots = {find(i) for i in nodes}
     initial_routes = [route_map[r] for r in roots]
 
@@ -93,7 +145,7 @@ def optimizar_ruta_cw_tabu(
         final_routes.append((best_route, arrival, best_dist))
         total_dist += best_dist
 
-    # 3) Aplastar TODO en UNA sola ruta [depot, clientes…] **sin depot al final**
+    # 3) Aplastar TODO en UNA sola ruta [depot, clientes…] sin depot al final
     clientes = []
     for rt, _, _ in final_routes:
         # quitamos los 0 intermedios y finales
