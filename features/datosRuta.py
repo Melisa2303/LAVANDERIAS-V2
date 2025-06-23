@@ -1,24 +1,20 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
+import time
 import firebase_admin
 from firebase_admin import credentials, firestore
-from core.firebase import db
+from core.firebase import db, obtener_sucursales
 from core.constants import GOOGLE_MAPS_API_KEY, PUNTOS_FIJOS_COMPLETOS
 import requests  # Importar requests A
 from googlemaps.convert import decode_polyline
 from streamlit_folium import st_folium
 import folium
-from datetime import datetime, timedelta
-import time
 import googlemaps
-from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 
-
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
-
 
 @st.cache_data(ttl=300)
 def cargar_ruta(fecha):
@@ -28,14 +24,16 @@ def cargar_ruta(fecha):
     """
     try:
         query = db.collection('recogidas')
-        docs = list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) + \
-               list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
+        docs = (
+            list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) +
+            list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
+        )
 
         datos = []
         for doc in docs:
             data = doc.to_dict()
             doc_id = doc.id
-            
+
             if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
                 datos.append({
                     "id": doc_id,
@@ -49,7 +47,7 @@ def cargar_ruta(fecha):
                     "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
                     "fecha": data.get("fecha_recojo"),
                 })
-            
+
             if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
                 datos.append({
                     "id": doc_id,
@@ -74,7 +72,10 @@ def datos_ruta():
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
-        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+        st.markdown(
+            "<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>",
+            unsafe_allow_html=True
+        )
     st.title("📋 Ruta del Día")
 
     # Filtro: solo fecha
@@ -82,18 +83,22 @@ def datos_ruta():
 
     # Obtener datos
     datos = cargar_ruta(fecha_seleccionada)
-    # Mostrar Tabla
+
     if datos:
+        # Mostrar Tabla
         tabla_data = []
         for item in datos:
-            nombre_mostrar = item["nombre_cliente"] if item["tipo_solicitud"] == "Cliente Delivery" else item["sucursal"]
-            
+            nombre_mostrar = (
+                item["nombre_cliente"]
+                if item["tipo_solicitud"] == "Cliente Delivery"
+                else item["sucursal"]
+            )
             tabla_data.append({
                 "Operación": item["operacion"],
-                "Cliente/Sucursal": nombre_mostrar if nombre_mostrar else "N/A",
+                "Cliente/Sucursal": nombre_mostrar or "N/A",
                 "Dirección": item["direccion"],
                 "Teléfono": item["telefono"],
-                "Hora": item["hora"] if item["hora"] else "Sin hora",
+                "Hora": item["hora"] or "Sin hora",
             })
 
         df_tabla = pd.DataFrame(tabla_data)
@@ -101,187 +106,173 @@ def datos_ruta():
 
         # Gestión de Deliveries
         deliveries = [item for item in datos if item["tipo_solicitud"] == "Cliente Delivery"]
-        
         if deliveries:
             st.markdown("---")
             st.subheader("🔄 Gestión de Deliveries")
-            
+
             opciones = {f"{item['operacion']} - {item['nombre_cliente']}": item for item in deliveries}
-            selected = st.selectbox("Seleccionar operación:", options=opciones.keys())
+            selected = st.selectbox("Seleccionar operación:", opciones.keys())
             delivery_data = opciones[selected]
 
             # --- Selector de Hora Unificado ---
             st.markdown(f"### Hora de {delivery_data['operacion']}")
-
-            # Crear una fila con el combobox y botón
             hora_col1, hora_col2 = st.columns([4, 1])
-            
             with hora_col1:
-                # Generar opciones de hora (7:00 a 18:00 cada 30 min)
                 horas_sugeridas = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
-                hora_actual = delivery_data.get("hora", "12:00:00")[:5]  # Formato HH:MM
-            
-                # Si la hora actual no está en las sugeridas, la agregamos
+                hora_actual = delivery_data.get("hora", "12:00:00")[:5]
                 if hora_actual not in horas_sugeridas:
                     horas_sugeridas.append(hora_actual)
                     horas_sugeridas.sort()
-            
-                # Combobox unificado
                 nueva_hora = st.selectbox(
                     "Seleccionar o escribir hora (HH:MM):",
                     options=horas_sugeridas,
-                    index=horas_sugeridas.index(hora_actual) if hora_actual in horas_sugeridas else 0,
+                    index=horas_sugeridas.index(hora_actual),
                     key=f"hora_combobox_{delivery_data['id']}"
                 )
-            
             with hora_col2:
-                st.write("")  # Espaciado
-                st.write("")  # Espaciado
+                st.write("")
+                st.write("")
                 if st.button("💾 Guardar", key=f"guardar_btn_{delivery_data['id']}"):
                     try:
-                        # Validar formato HH:MM
-                        if len(nueva_hora.split(":")) != 2:
-                            raise ValueError
                         hora, minutos = map(int, nueva_hora.split(":"))
-                        if not (0 <= hora < 24 and 0 <= minutos < 60):
-                            raise ValueError
-            
-                        campo_hora = "hora_recojo" if delivery_data["operacion"] == "Recojo" else "hora_entrega"
+                        campo_hora = (
+                            "hora_recojo"
+                            if delivery_data["operacion"] == "Recojo"
+                            else "hora_entrega"
+                        )
                         db.collection('recogidas').document(delivery_data["id"]).update({
                             campo_hora: f"{hora:02d}:{minutos:02d}:00"
                         })
                         st.success("Hora actualizada")
                         st.cache_data.clear()
-                        time.sleep(1)
+                        time.sleep(3)
                         st.rerun()
-                    except ValueError:
+                    except:
                         st.error("Formato inválido. Use HH:MM")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
 
-            # Sección de Dirección y Mapa (Versión idéntica a Solicitar Recogida)
-          
+            # Reprogramación de fecha y ubicación
             st.markdown(f"### 📅 Reprogramación de {delivery_data['operacion']}")
             with st.expander("Cambiar fecha y ubicación", expanded=True):
-                # Inicialización independiente (usando prefijo "reprogramar_" en lugar de "delivery_")
-                if "reprogramar_lat" not in st.session_state:
-                    st.session_state.reprogramar_lat = delivery_data["coordenadas"]["lat"]
-                    st.session_state.reprogramar_lon = delivery_data["coordenadas"]["lon"]
-                    st.session_state.reprogramar_direccion = delivery_data["direccion"]
-                    st.session_state.reprogramar_mapa = folium.Map(
-                        location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                # Inicializar en session_state si hace falta
+                key_pref = f"reprogramar_{delivery_data['id']}_"
+                if f"{key_pref}lat" not in st.session_state:
+                    st.session_state[f"{key_pref}lat"] = delivery_data["coordenadas"]["lat"]
+                    st.session_state[f"{key_pref}lon"] = delivery_data["coordenadas"]["lon"]
+                    st.session_state[f"{key_pref}direccion"] = delivery_data["direccion"]
+                    st.session_state[f"{key_pref}mapa"] = folium.Map(
+                        location=[
+                            st.session_state[f"{key_pref}lat"],
+                            st.session_state[f"{key_pref}lon"]
+                        ],
                         zoom_start=15
                     )
-                    st.session_state.reprogramar_marker = folium.Marker(
-                        [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                        tooltip="Punto seleccionado"        
-                    ).add_to(st.session_state.reprogramar_mapa)
+                    folium.Marker(
+                        [
+                            st.session_state[f"{key_pref}lat"],
+                            st.session_state[f"{key_pref}lon"]
+                        ],
+                        tooltip="Punto seleccionado"
+                    ).add_to(st.session_state[f"{key_pref}mapa"])
 
-                # Campo de dirección
+                # Dirección y sugerencias
                 direccion_input = st.text_input(
                     "Dirección",
-                    value=st.session_state.reprogramar_direccion,
-                    key=f"reprogramar_direccion_input_{delivery_data['id']}"
+                    value=st.session_state[f"{key_pref}direccion"],
+                    key=f"{key_pref}direccion_input"
                 )
-
-                # Buscar sugerencias
                 sugerencias = []
-                if direccion_input and direccion_input != st.session_state.reprogramar_direccion:
+                if direccion_input != st.session_state[f"{key_pref}direccion"]:
                     sugerencias = obtener_sugerencias_direccion(direccion_input)
-    
-                direccion_seleccionada = st.selectbox(
+                direccion_sel = st.selectbox(
                     "Sugerencias de Direcciones:",
-                    ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
-                    key=f"reprogramar_sugerencias_{delivery_data['id']}"
+                    (["Seleccione una dirección"] +
+                     [s["display_name"] for s in sugerencias]) if sugerencias else ["No hay sugerencias"],
+                    key=f"{key_pref}sugerencias"
                 )
-
-                # Actualizar al seleccionar sugerencia
-                if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
-                    for sug in sugerencias:
-                        if direccion_seleccionada == sug["display_name"]:
-                            st.session_state.reprogramar_lat = float(sug["lat"])
-                            st.session_state.reprogramar_lon = float(sug["lon"])
-                            st.session_state.reprogramar_direccion = direccion_seleccionada
-                
-                            # Actualizar mapa y marcador
-                            st.session_state.reprogramar_mapa = folium.Map(
-                                location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                if direccion_sel != "Seleccione una dirección":
+                    for s in sugerencias:
+                        if s["display_name"] == direccion_sel:
+                            st.session_state[f"{key_pref}lat"] = float(s["lat"])
+                            st.session_state[f"{key_pref}lon"] = float(s["lon"])
+                            st.session_state[f"{key_pref}direccion"] = direccion_sel
+                            # actualizar mapa
+                            st.session_state[f"{key_pref}mapa"] = folium.Map(
+                                location=[
+                                    st.session_state[f"{key_pref}lat"],
+                                    st.session_state[f"{key_pref}lon"]
+                                ],
                                 zoom_start=15
                             )
-                            st.session_state.reprogramar_marker = folium.Marker(
-                                [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                            folium.Marker(
+                                [
+                                    st.session_state[f"{key_pref}lat"],
+                                    st.session_state[f"{key_pref}lon"]
+                                ],
                                 tooltip="Punto seleccionado"
-                            ).add_to(st.session_state.reprogramar_mapa)
+                            ).add_to(st.session_state[f"{key_pref}mapa"])
                             break
 
-                # Renderizar mapa
+                # Mostrar mapa
                 mapa = st_folium(
-                    st.session_state.reprogramar_mapa,
+                    st.session_state[f"{key_pref}mapa"],
                     width=700,
                     height=500,
-                    key=f"reprogramar_mapa_{delivery_data['id']}"
+                    key=f"{key_pref}mapa_folium"
                 )
-
-                # Actualizar al hacer clic
                 if mapa.get("last_clicked"):
-                    st.session_state.reprogramar_lat = mapa["last_clicked"]["lat"]
-                    st.session_state.reprogramar_lon = mapa["last_clicked"]["lng"]
-                    st.session_state.reprogramar_direccion = obtener_direccion_desde_coordenadas(
-                        st.session_state.reprogramar_lat, st.session_state.reprogramar_lon
-                    )
-        
-                    # Actualizar mapa y marcador
-                    st.session_state.reprogramar_mapa = folium.Map(
-                        location=[st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
+                    lat_c, lon_c = mapa["last_clicked"]["lat"], mapa["last_clicked"]["lng"]
+                    st.session_state[f"{key_pref}lat"] = lat_c
+                    st.session_state[f"{key_pref}lon"] = lon_c
+                    st.session_state[f"{key_pref}direccion"] = obtener_direccion_desde_coordenadas(lat_c, lon_c)
+                    st.session_state[f"{key_pref}mapa"] = folium.Map(
+                        location=[lat_c, lon_c],
                         zoom_start=15
                     )
-                    st.session_state.reprogramar_marker = folium.Marker(
-                        [st.session_state.reprogramar_lat, st.session_state.reprogramar_lon],
-                        tooltip="Punto seleccionado"
-                    ).add_to(st.session_state.reprogramar_mapa)
+                    folium.Marker([lat_c, lon_c], tooltip="Punto seleccionado")\
+                        .add_to(st.session_state[f"{key_pref}mapa"])
                     st.rerun()
 
-                # Mostrar dirección final
                 st.markdown(f"""
                     <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
                         <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
-                        <p style='color: #555; font-size: 16px;'>{st.session_state.reprogramar_direccion}</p>
+                        <p style='color: #555; font-size: 16px;'>{st.session_state[f"{key_pref}direccion"]}</p>
                     </div>
                 """, unsafe_allow_html=True)
 
-                # Selector de fecha (manteniendo tu lógica original)
-                min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
+                # Selector de nueva fecha
+                min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" \
+                    else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
                 nueva_fecha = st.date_input(
                     "Nueva fecha:",
                     value=min_date + timedelta(days=1),
-                    min_value=min_date
+                    min_value=min_date,
+                    key=f"{key_pref}fecha_input"
                 )
 
-                # Botón para guardar cambios
                 if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}"):
                     try:
-                        updates = {
-                            "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
-                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": st.session_state.reprogramar_direccion,
-                            "coordenadas_recojo" if delivery_data["operacion"] == "Recojo" else "coordenadas_entrega": {
-                                "lat": st.session_state.reprogramar_lat,
-                                "lon": st.session_state.reprogramar_lon
+                        field_date = "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega"
+                        field_dir = "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega"
+                        field_coord = "coordenadas_recojo" if delivery_data["operacion"] == "Recojo" else "coordenadas_entrega"
+                        db.collection('recogidas').document(delivery_data["id"]).update({
+                            field_date: nueva_fecha.strftime("%Y-%m-%d"),
+                            field_dir: st.session_state[f"{key_pref}direccion"],
+                            field_coord: {
+                                "lat": st.session_state[f"{key_pref}lat"],
+                                "lon": st.session_state[f"{key_pref}lon"]
                             }
-                        }
-            
-                        db.collection('recogidas').document(delivery_data["id"]).update(updates)
+                        })
                         st.success("¡Reprogramación exitosa!")
                         st.cache_data.clear()
-                        time.sleep(2)
+                        time.sleep(3)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error al guardar: {e}")
 
-        # Botón de Descarga
+        # Botón de descarga
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             df_tabla.to_excel(writer, index=False)
-        
         st.download_button(
             label="Descargar Excel",
             data=excel_buffer.getvalue(),
