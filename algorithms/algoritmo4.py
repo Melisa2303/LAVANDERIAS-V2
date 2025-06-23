@@ -1,4 +1,4 @@
-#Algoritmo 4: ALNS
+#Algoritmo 4: OR + PCA + LNS
 import os
 import math
 import time as tiempo
@@ -29,17 +29,10 @@ SHIFT_END_SEC   = 16*3600 +30*60 # 16:30
 db = firestore.client()
 
 def _hora_a_segundos(hhmm):
-    """Convierte 'HH:MM' o 'HH:MM:SS' a segundos desde medianoche."""
-    if hhmm is None or pd.isna(hhmm) or hhmm == "":
+    if hhmm is None or pd.isna(hhmm):
         return None
-    try:
-        parts = str(hhmm).split(":")
-        h = int(parts[0])
-        m = int(parts[1])
-        return h*3600 + m*60
-    except:
-        return None
-
+    h, m = map(int, str(hhmm).split(":"))
+    return h*3600 + m*60
 #Distancia euclidiana - Drones - Emergencia - Botar sí o sí una tabla ordenada considerando distancias, 
 # no tiempo real, sino estimación
 def _haversine_dist_dur(coords, vel_kmh=40.0):
@@ -109,52 +102,12 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 
 #Algoritmos diversos
-
-# optimizar_ruta_algoritmo4: ALNS multivehicular con soporte para restricciones
-import random
-
-SERVICE_TIME = 10 * 60        # 10 minutos de servicio
-SHIFT_START_SEC = 9 * 3600    # 09:00
-
-import time as tiempo
-import pandas as pd
-
-
+#OR-Tool + LNS + PCA
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
-    from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-
-    def calcular_arrival_times(route):
-        arrival = []
-        t = SHIFT_START_SEC
-        for i in range(len(route)):
-            curr = route[i]
-            if i == 0:
-                arrival.append(t)
-                continue
-            prev = route[i - 1]
-            travel = data["duration_matrix"][prev][curr]
-            t += travel
-            start, end = data["time_windows"][curr]
-            if not (start <= t <= end):
-                return []
-            t = max(t, start)
-            arrival.append(t)
-            t += SERVICE_TIME
-        return arrival
-
-    def es_ruta_factible(route):
-        t = SHIFT_START_SEC
-        for i in range(1, len(route)):
-            prev, curr = route[i - 1], route[i]
-            travel = data["duration_matrix"][prev][curr]
-            t += travel
-            start, end = data["time_windows"][curr]
-            if not (start <= t <= end):
-                return False
-            t = max(t, start) + SERVICE_TIME
-        return True
-
-    # ========= Paso 1: Solución inicial con OR-Tools =========
+    """
+    Adaptación del Algoritmo 1 para usar Large Neighborhood Search (LNS)
+    en lugar de Guided Local Search (GLS)
+    """
     manager = pywrapcp.RoutingIndexManager(
         len(data["duration_matrix"]),
         data["num_vehicles"],
@@ -162,155 +115,86 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     )
     routing = pywrapcp.RoutingModel(manager)
 
+    # Callback de tiempo (duración + tiempo de servicio)
     def time_cb(from_idx, to_idx):
         i = manager.IndexToNode(from_idx)
         j = manager.IndexToNode(to_idx)
         travel = data["duration_matrix"][i][j]
-        service = SERVICE_TIME
+        service = SERVICE_TIME if i != data["depot"] else 0
         return travel + service
 
     transit_cb_index = routing.RegisterTransitCallback(time_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_index)
 
+    # Dimensión de tiempo con inicio fijado a las 08:00
     routing.AddDimension(
-        transit_cb_index, 3600, 24 * 3600, False, "Time"
+        transit_cb_index,
+        3600,                # tiempo de espera permitido (slack)
+        24 * 3600,           # límite total de ruta
+        False,                # <- fijar el tiempo inicial a 0 (necesario para controlarlo)
+        "Time"
     )
     time_dimension = routing.GetDimensionOrDie("Time")
-    for v in range(data["num_vehicles"]):
-        time_dimension.CumulVar(routing.Start(v)).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
-    for i, (ini, fin) in enumerate(data["time_windows"]):
-        time_dimension.CumulVar(manager.NodeToIndex(i)).SetRange(ini, fin)
+    # Fijar salida del depósito a las 08:00
+    for vehicle_id in range(data["num_vehicles"]):
+        start_index = routing.Start(vehicle_id)
+        time_dimension.CumulVar(start_index).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
+    # Aplicar ventanas de tiempo a cada nodo
+    for node_index, (ini, fin) in enumerate(data["time_windows"]):
+        index = manager.NodeToIndex(node_index)
+        time_dimension.CumulVar(index).SetRange(ini, fin)
+
+    # Capacidad (si hay demandas)
     if any(data["demands"]):
         def demand_cb(index):
             return data["demands"][manager.IndexToNode(index)]
 
         demand_cb_index = routing.RegisterUnaryTransitCallback(demand_cb)
         routing.AddDimensionWithVehicleCapacity(
-            demand_cb_index, 0, data["vehicle_capacities"], True, "Capacity"
+            demand_cb_index,
+            0,  # sin capacidad extra
+            data["vehicle_capacities"],
+            True,
+            "Capacity"
         )
 
+    # Parámetros de búsqueda con LNS
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    search_parameters.time_limit.seconds = 10
+
+    # Metaheurística para explorar soluciones vecinas
+    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.TABU_SEARCH
+    search_parameters.time_limit.seconds = tiempo_max_seg
 
     solution = routing.SolveWithParameters(search_parameters)
+
     if not solution:
         return None
 
-    def extract_routes():
-        rutas = []
-        dist_total = 0
-        for v in range(data["num_vehicles"]):
-            idx = routing.Start(v)
-            route = []
-            while not routing.IsEnd(idx):
-                node = manager.IndexToNode(idx)
-                route.append(node)
-                next_idx = solution.Value(routing.NextVar(idx))
-                dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
-                idx = next_idx
-            if route:
-                arrival = calcular_arrival_times(route)
-                if arrival and len(arrival) == len(route):
-                    rutas.append({
-                        "vehicle": v,
-                        "route": route,
-                        "arrival_sec": arrival
-                    })
-        return rutas, dist_total
+    rutas, dist_total = [], 0
+    for v in range(data["num_vehicles"]):
+        idx = routing.Start(v)
+        route, llegada = [], []
+        while not routing.IsEnd(idx):
+            node = manager.IndexToNode(idx)
+            route.append(node)
+            llegada.append(solution.Min(time_dimension.CumulVar(idx)))
+            next_idx = solution.Value(routing.NextVar(idx))
+            dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
+            idx = next_idx
 
-    # ========= Paso 2: ALNS =========
-    def safe_copy_rutas(rutas):
-        return [
-            {
-                "vehicle": r["vehicle"],
-                "route": list(r["route"]),
-                "arrival_sec": list(r["arrival_sec"])
-            }
-            for r in rutas
-        ]
-
-    def random_removal(rutas, num_remove):
-        flat_nodes = [
-            (r_idx, i, n)
-            for r_idx, ruta in enumerate(rutas)
-            for i, n in enumerate(ruta["route"])
-        ]
-        if len(flat_nodes) < 2:
-            return rutas, []
-        to_remove = random.sample(flat_nodes, min(num_remove, len(flat_nodes)))
-        removed_nodes = [n for _, _, n in to_remove]
-
-        new_rutas = safe_copy_rutas(rutas)
-        for r_idx, i, _ in sorted(to_remove, key=lambda x: -x[1]):
-            del new_rutas[r_idx]["route"][i]
-            del new_rutas[r_idx]["arrival_sec"][i]
-        return new_rutas, removed_nodes
-
-    def greedy_repair(rutas, removed):
-        for node in removed:
-            best_cost = float("inf")
-            best_r = -1
-            best_pos = -1
-            for r_idx, ruta in enumerate(rutas):
-                for i in range(1, len(ruta["route"])+1):
-                    test_route = ruta["route"][:i] + [node] + ruta["route"][i:]
-                    if not es_ruta_factible(test_route):
-                        continue
-                    cost = 0
-                    for j in range(len(test_route)-1):
-                        cost += data["distance_matrix"][test_route[j]][test_route[j+1]]
-                    if cost < best_cost:
-                        best_cost = cost
-                        best_r = r_idx
-                        best_pos = i
-            if best_r != -1:
-                new_route = rutas[best_r]["route"][:best_pos] + [node] + rutas[best_r]["route"][best_pos:]
-                arrival = calcular_arrival_times(new_route)
-                if arrival and len(arrival) == len(new_route):
-                    rutas[best_r]["route"] = new_route
-                    rutas[best_r]["arrival_sec"] = arrival
-        return rutas
-
-    def calcular_costo_total(rutas):
-        total = 0
-        for ruta in rutas:
-            for i in range(len(ruta["route"])-1):
-                total += data["distance_matrix"][ruta["route"][i]][ruta["route"][i+1]]
-        return total
-
-    rutas, dist_total = extract_routes()
-    best_rutas = safe_copy_rutas(rutas)
-    best_cost = dist_total
-
-    start = tiempo.time()
-    while tiempo.time() - start < tiempo_max_seg:
-        rutas_tmp, eliminados = random_removal(best_rutas, num_remove=3)
-        rutas_tmp = greedy_repair(rutas_tmp, eliminados)
-        new_cost = calcular_costo_total(rutas_tmp)
-
-        if new_cost < best_cost:
-            best_cost = new_cost
-            best_rutas = safe_copy_rutas(rutas_tmp)
-
-    # Filtrar rutas inválidas antes del retorno
-    best_rutas = [r for r in best_rutas if len(r["route"]) == len(r["arrival_sec"]) > 0]
-
-    # Crear DataFrames para cada ruta
-    for ruta in best_rutas:
-        df_check = pd.DataFrame({
-            "orden": ruta["orden"],
-            "nodo_id": ruta["route"],
-            "hora_llegada": [tiempo.strftime('%H:%M', tiempo.gmtime(s)) for s in ruta["arrival_sec"]]
+        rutas.append({
+            "vehicle": v,
+            "route": route,
+            "arrival_sec": llegada
         })
 
     return {
-        "routes": best_rutas,
-        "distance_total_m": best_cost
+        "routes": rutas,
+        "distance_total_m": dist_total
     }
-
 # ============= CARGAR PEDIDOS DESDE FIRESTORE =============
 
 @st.cache_data(ttl=300)
@@ -330,7 +214,7 @@ def cargar_pedidos(fecha, tipo):
         coords = data.get(f"coordenadas_{'recojo' if is_recojo else 'entrega'}",{})
         lat, lon = coords.get("lat"), coords.get("lon")
         hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}","")
-        ts, te = (hs,hs) if hs else ("09:00","16:00")
+        ts, te = (hs,hs) if hs else ("08:00","18:00")
         out.append({
             "id":d.id,
             "operacion":op,
