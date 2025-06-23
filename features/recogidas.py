@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 import re
 import folium
 from streamlit_folium import st_folium
@@ -34,13 +35,17 @@ def solicitar_recogida():
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
-        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
+        st.markdown(
+            "<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>",
+            unsafe_allow_html=True
+        )
     st.title("🛒 Solicitar Recogida")
 
     def calcular_fecha_entrega(fecha_recojo):
         dia_semana = fecha_recojo.weekday()
-        if dia_semana == 5: return fecha_recojo + timedelta(days=4)
-        elif dia_semana == 3: return fecha_recojo + timedelta(days=4)
+        # Sábado (5) y jueves (3) entregan en +4 días, otros en +3
+        if dia_semana in (5, 3):
+            return fecha_recojo + timedelta(days=4)
         return fecha_recojo + timedelta(days=3)
 
     tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
@@ -75,6 +80,8 @@ def solicitar_recogida():
             try:
                 db.collection('recogidas').add(solicitud)
                 st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
+                # Mantener el mensaje visible unos segundos
+                time.sleep(3)
                 st.session_state["reset_solicitud"] = True
                 st.rerun()
             except Exception as e:
@@ -83,9 +90,18 @@ def solicitar_recogida():
     elif tipo_solicitud == "Cliente Delivery":
         col1, col2 = st.columns(2)
         with col1:
-            nombre_cliente = st.text_input("Nombre del Cliente", value=st.session_state.get("nombre_cliente", ""), key="nombre_cliente")
+            nombre_cliente = st.text_input(
+                "Nombre del Cliente",
+                value=st.session_state.get("nombre_cliente", ""),
+                key="nombre_cliente"
+            )
         with col2:
-            telefono = st.text_input("Teléfono", max_chars=9, value=st.session_state.get("telefono", ""), key="telefono")
+            telefono = st.text_input(
+                "Teléfono",
+                max_chars=9,
+                value=st.session_state.get("telefono", ""),
+                key="telefono"
+            )
 
         direccion_input = st.text_input(
             "Dirección",
@@ -99,7 +115,8 @@ def solicitar_recogida():
 
         direccion_seleccionada = st.selectbox(
             "Sugerencias de Direcciones:",
-            ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
+            (["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias])
+            if sugerencias else ["No hay sugerencias"],
             key="delivery_sugerencias"
         )
 
@@ -109,6 +126,7 @@ def solicitar_recogida():
                     st.session_state["delivery_lat"] = float(sug["lat"])
                     st.session_state["delivery_lon"] = float(sug["lon"])
                     st.session_state["delivery_direccion"] = direccion_seleccionada
+                    # Reconstruir mapa con nuevo marcador
                     st.session_state["delivery_mapa"] = folium.Map(
                         location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
                         zoom_start=15
@@ -130,7 +148,8 @@ def solicitar_recogida():
             st.session_state["delivery_lat"] = mapa["last_clicked"]["lat"]
             st.session_state["delivery_lon"] = mapa["last_clicked"]["lng"]
             st.session_state["delivery_direccion"] = obtener_direccion_desde_coordenadas(
-                st.session_state["delivery_lat"], st.session_state["delivery_lon"]
+                st.session_state["delivery_lat"],
+                st.session_state["delivery_lon"]
             )
             st.session_state["delivery_mapa"] = folium.Map(
                 location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
@@ -181,6 +200,8 @@ def solicitar_recogida():
             try:
                 db.collection('recogidas').add(solicitud)
                 st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
+                # Mantener el mensaje visible unos segundos
+                time.sleep(3)
                 st.session_state["reset_solicitud"] = True
                 st.rerun()
             except Exception as e:
