@@ -18,7 +18,7 @@ from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY
 
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo,MARGEN, SHIFT_START_SEC, SHIFT_END_SEC
-#from algorithms.algoritmo2 import optimizar_ruta_cw_tabu
+from algorithms.algoritmo2 import optimizar_ruta_cw_tabu
 from algorithms.algoritmo4 import optimizar_ruta_algoritmo4
 
 # Coordenadas fijas de la cochera
@@ -38,7 +38,7 @@ def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
 
 ALG_MAP = {
     "Algoritmo 1 - PCA - GLS"       : optimizar_ruta_algoritmo22,
-    #"Algoritmo 2 - CW + Tabu Search": optimizar_ruta_cw_tabu,
+    "Algoritmo 2 - CW + Tabu Search": optimizar_ruta_cw_tabu,
     "Algoritmo 3"                   : optimizar_ruta_placeholder,
     "Algoritmo 4"                   : optimizar_ruta_algoritmo4,
 }
