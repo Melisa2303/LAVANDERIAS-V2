@@ -1,5 +1,5 @@
 # algorithms/algoritmo2.py
-
+# CW + Tabu Search
 import time
 from typing import List, Dict, Any, Tuple
 
