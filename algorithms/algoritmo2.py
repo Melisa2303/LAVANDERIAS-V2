@@ -1,3 +1,44 @@
+# algorithms/algoritmo2.py
+
+import time
+from typing import List, Dict, Any, Tuple
+
+# Importamos las constantes del algoritmo principal (algoritmo1.py)
+from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
+
+
+def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
+    """Suma de distancias (m) a lo largo de un route (lista de nodos)."""
+    D = data["distance_matrix"]
+    return sum(D[u][v] for u, v in zip(route, route[1:]))
+
+
+def _check_feasible_and_time(
+    route: List[int], data: Dict[str, Any]
+) -> Tuple[bool, List[int]]:
+    """
+    Comprueba factibilidad de un route bajo time_windows y SERVICE_TIME.
+    Devuelve (es_factible, tiempos_de_llegada).
+    """
+    T       = data["duration_matrix"]
+    windows = data["time_windows"]
+    depot   = data["depot"]
+    t       = SHIFT_START_SEC
+    arrivals = [t]
+
+    for u, v in zip(route, route[1:]):
+        t += T[u][v]
+        if u != depot:
+            t += SERVICE_TIME
+        w0, w1 = windows[v]
+        if t > w1:
+            return False, []
+        t = max(t, w0)
+        arrivals.append(t)
+
+    return True, arrivals
+
+
 def optimizar_ruta_cw_tabu(
     data: Dict[str, Any],
     tiempo_max_seg: int = 60
