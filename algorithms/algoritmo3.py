@@ -16,6 +16,9 @@ from sklearn.cluster import AgglomerativeClustering
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 # -------------------- INICIALIZAR FIREBASE --------------------
+if not firebase_admin._apps:
+    cred = credentials.Certificate("lavanderia_key.json")
+    firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # -------------------- CONSTANTES VRP --------------------
