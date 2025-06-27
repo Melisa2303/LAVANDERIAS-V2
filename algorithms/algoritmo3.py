@@ -180,9 +180,9 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=45):
 
     # Iniciar a las 9:00 AM
     # Forzar salida desde el depósito exactamente a las 9:00 AM
-    #start_depot = 9 * 3600
-    #index_depot = manager.NodeToIndex(data["depot"])
-    #time_dimension.CumulVar(index_depot).SetRange(start_depot, start_depot)
+    start_depot = 9 * 3600
+    index_depot = manager.NodeToIndex(data["depot"])
+    time_dimension.CumulVar(index_depot).SetRange(start_depot, start_depot)
 
     # Aplicar ventanas a cada nodo
     for location_idx, (start, end) in enumerate(data["time_windows"]):
