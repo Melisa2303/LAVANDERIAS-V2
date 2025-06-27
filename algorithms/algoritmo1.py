@@ -27,10 +27,10 @@ import folium
 from streamlit_folium import st_folium
 
 # -------------------- INICIALIZAR FIREBASE --------------------
-# Usa el JSON de servicio: 'lavanderia_key.json'
-if not firebase_admin._apps:
-    cred = credentials.Certificate("lavanderia_key.json")
-    firebase_admin.initialize_app(cred)
+## Usa el JSON de servicio: 'lavanderia_key.json'
+#if not firebase_admin._apps:
+#    cred = credentials.Certificate("lavanderia_key.json")
+#    firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # -------------------- CONFIG GOOGLE MAPS --------------------
