@@ -17,8 +17,7 @@ from sklearn.cluster import AgglomerativeClustering
 db = firestore.client()
 
 # -------------------- CONFIG GOOGLE MAPS --------------------
-GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.getenv("GOOGLE_MAPS_API_KEY")
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+ gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- INICIALIZAR FIREBASE --------------------
 #if not firebase_admin._apps:
