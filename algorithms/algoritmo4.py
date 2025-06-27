@@ -20,7 +20,7 @@ gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 
 # -------------------- CONSTANTES VRP --------------------
-SERVICE_TIME    = 10 * 60        # 10 minutos de servicio
+SERVICE_TIME    = 60        # 10 minutos de servicio
 MAX_ELEMENTS    = 100            # límite de celdas por petición DM API
 SHIFT_START_SEC =  9 * 3600      # 09:00
 SHIFT_END_SEC   = 16*3600 +30*60 # 16:30
@@ -103,7 +103,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 #Algoritmos diversos
 #OR-Tool + LNS + PCA
-def optimizar_ruta_algoritmo4(data, tiempo_max_seg=60):
+def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     """
     Adaptación del Algoritmo 1 para usar Large Neighborhood Search (LNS)
     en lugar de Guided Local Search (GLS)
