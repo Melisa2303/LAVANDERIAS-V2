@@ -14,6 +14,7 @@ import time
 import googlemaps
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
+import folium
 from streamlit_folium import st_folium
 
 db = firestore.client()
