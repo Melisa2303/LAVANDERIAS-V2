@@ -14,12 +14,17 @@ import googlemaps
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 
-gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
-# -------------------- INICIALIZAR FIREBASE --------------------
-if not firebase_admin._apps:
-    cred = credentials.Certificate("lavanderia_key.json")
-    firebase_admin.initialize_app(cred)
 db = firestore.client()
+
+# -------------------- CONFIG GOOGLE MAPS --------------------
+GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.getenv("GOOGLE_MAPS_API_KEY")
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
+# -------------------- INICIALIZAR FIREBASE --------------------
+#if not firebase_admin._apps:
+ #   cred = credentials.Certificate("lavanderia_key.json")
+ #   firebase_admin.initialize_app(cred)
+#db = firestore.client()
 
 # -------------------- CONSTANTES VRP --------------------
 SERVICE_TIME    = 10 * 60        # 10 minutos de servicio en cada parada (excepto depósito)
