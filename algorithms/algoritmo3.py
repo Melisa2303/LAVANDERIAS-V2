@@ -129,7 +129,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 # Función para obtener geometría de ruta con Directions API
 @st.cache_data(ttl=3600)
 # Algoritmo 3: CP-SAT
-def optimizar_ruta_cp_sat(data, tiempo_max_seg=45):
+def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
     # Si no se definieron tiempos de servicio, asumir 10 minutos por nodo
     if "service_times" not in data:
         data["service_times"] = [10 * 60] * len(data["duration_matrix"])
