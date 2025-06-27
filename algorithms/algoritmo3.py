@@ -258,3 +258,59 @@ def agregar_ventana_margen(df, margen_segundos=15*60):
     
     df["ventana_con_margen"] = df.apply(expandir_fila, axis=1)
     return df
+
+# ===================== CARGAR PEDIDOS DESDE FIRESTORE =====================
+
+@st.cache_data(ttl=300)
+def cargar_pedidos(fecha, tipo):
+    """
+    Lee de Firestore las colecciones 'recogidas' filtradas por fecha de recojo/entrega
+    y tipo de servicio. Retorna una lista de dict con los campos necesarios:
+      - id, operacion, nombre_cliente, direccion, lat, lon, time_start, time_end, demand
+    """
+    col = db.collection('recogidas')
+    docs = []
+    # Todas las recogidas cuya fecha_recojo coincida
+    docs += col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()
+    # Todas las recogidas cuya fecha_entrega coincida
+    docs += col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
+
+    if tipo != "Todos":
+        tf = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
+        docs = [d for d in docs if d.to_dict().get("tipo_solicitud") == tf]
+
+    out = []
+    for d in docs:
+        data = d.to_dict()
+        is_recojo = data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d")
+        op = "Recojo" if is_recojo else "Entrega"
+
+        # Extraer coordenadas y dirección según tipo
+        key_coord = f"coordenadas_{'recojo' if is_recojo else 'entrega'}"
+        key_dir   = f"direccion_{'recojo' if is_recojo else 'entrega'}"
+        coords = data.get(key_coord, {})
+        lat, lon = coords.get("lat"), coords.get("lon")
+        direccion = data.get(key_dir, "") or ""
+
+        # Extraer nombre del cliente o sucursal
+        nombre = data.get("nombre_cliente")
+        if not nombre:
+            nombre = data.get("sucursal", "") or "Sin nombre"
+
+        # Hora de servicio
+        hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
+        ts, te = (hs, hs) if hs else ("09:00", "16:00")
+
+        out.append({
+            "id":             d.id,
+            "operacion":      op,
+            "nombre_cliente": nombre,
+            "direccion":      direccion,
+            "lat":            lat,
+            "lon":            lon,
+            "time_start":     ts,
+            "time_end":       te,
+            "demand":         1
+        })
+
+    return out
