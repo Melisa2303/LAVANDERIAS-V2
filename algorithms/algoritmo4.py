@@ -103,7 +103,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 #Algoritmos diversos
 #OR-Tool + LNS + PCA
-def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
+def optimizar_ruta_algoritmo4(data, tiempo_max_seg=60):
     """
     Adaptación del Algoritmo 1 para usar Large Neighborhood Search (LNS)
     en lugar de Guided Local Search (GLS)
