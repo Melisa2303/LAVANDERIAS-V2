@@ -1,9 +1,10 @@
 # algorithms/algoritmo2.py
-# CW + Tabu Search (siempre devuelve rutas, con o sin ajuste de ventanas)
+# CW + Tabu Search mejorado para respetar estrictamente ventanas de tiempo
 
 import time
 from typing import List, Dict, Any, Tuple
 
+# Importa desde tu módulo (ajusta si cambió la ruta)
 from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
 
 
@@ -12,14 +13,17 @@ def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
     return sum(D[u][v] for u, v in zip(route, route[1:]))
 
 
-def _check_feasible_and_time(
-    route: List[int], data: Dict[str, Any]
-) -> Tuple[bool, List[int]]:
+def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bool, List[int], int]:
+    """
+    Verifica si la ruta es factible considerando ventanas de tiempo.
+    Retorna: (es_factible, lista de tiempos de llegada, total de espera en segundos)
+    """
     T = data["duration_matrix"]
     windows = data["time_windows"]
     depot = data["depot"]
     t = SHIFT_START_SEC
     arrivals = [t]
+    total_wait = 0
 
     for u, v in zip(route, route[1:]):
         t += T[u][v]
@@ -27,11 +31,13 @@ def _check_feasible_and_time(
             t += SERVICE_TIME
         w0, w1 = windows[v]
         if t > w1:
-            return False, []
+            return False, [], 0
+        wait = max(w0 - t, 0)
+        total_wait += wait
         t = max(t, w0)
         arrivals.append(t)
 
-    return True, arrivals
+    return True, arrivals, total_wait
 
 
 def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Dict[str, Any]:
@@ -39,14 +45,10 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
     n = len(data["distance_matrix"])
     nodes = [i for i in range(n) if i != depot]
 
-    # 1. Savings
+    # Paso 1: Clarke–Wright Savings
     D = data["distance_matrix"]
-    savings = []
-    for i in nodes:
-        for j in nodes:
-            if i < j:
-                s = D[depot][i] + D[depot][j] - D[i][j]
-                savings.append((s, i, j))
+    savings = [(D[depot][i] + D[depot][j] - D[i][j], i, j)
+               for i in nodes for j in nodes if i < j]
     savings.sort(reverse=True)
 
     parent = {i: i for i in nodes}
@@ -62,94 +64,72 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
 
     for _, i, j in savings:
         ri, rj = find(i), find(j)
-        if ri == rj:
-            continue
-        if end_map[ri] == i and start_map[rj] == j:
+        if ri != rj and end_map[ri] == i and start_map[rj] == j:
             merged = route_map[ri][:-1] + route_map[rj][1:]
-            feas, _ = _check_feasible_and_time(merged, data)
-            if not feas:
-                continue
-            parent[rj] = ri
-            end_map[ri] = end_map[rj]
-            route_map[ri] = merged
+            feas, _, _ = _check_feasible_and_time(merged, data)
+            if feas:
+                parent[rj] = ri
+                end_map[ri] = end_map[rj]
+                route_map[ri] = merged
 
     roots = {find(i) for i in nodes}
     initial_routes = [route_map[r] for r in roots]
 
-    # 2. Tabu Search
+    # Paso 2: Tabu Search
     final_routes = []
-    total_dist = 0.0
     start_ts = time.time()
 
     for init in initial_routes:
         best_route = init[:]
-        best_dist = _route_distance(best_route, data)
+        feas, _, wait = _check_feasible_and_time(best_route, data)
+        best_cost = _route_distance(best_route, data) + 0.01 * wait
         tabu_list = []
         tabu_size = 50
 
         while time.time() - start_ts < tiempo_max_seg:
             improved = False
-            L = len(best_route)
-            for a in range(1, L - 2):
-                for b in range(a + 1, L - 1):
+            for a in range(1, len(best_route) - 2):
+                for b in range(a + 1, len(best_route) - 1):
                     move = (a, b)
                     if move in tabu_list:
                         continue
                     cand = best_route[:]
                     cand[a], cand[b] = cand[b], cand[a]
-                    feas, _ = _check_feasible_and_time(cand, data)
-                    if not feas:
-                        continue
-                    dist_c = _route_distance(cand, data)
-                    if dist_c < best_dist - 1e-6:
-                        best_route = cand
-                        best_dist = dist_c
-                        tabu_list.append(move)
-                        if len(tabu_list) > tabu_size:
-                            tabu_list.pop(0)
-                        improved = True
-                        break
+                    feas, _, wait = _check_feasible_and_time(cand, data)
+                    if feas:
+                        cost = _route_distance(cand, data) + 0.01 * wait
+                        if cost < best_cost:
+                            best_route = cand
+                            best_cost = cost
+                            tabu_list.append(move)
+                            if len(tabu_list) > tabu_size:
+                                tabu_list.pop(0)
+                            improved = True
+                            break
                 if improved:
                     break
             if not improved:
                 break
 
-        feas, arrival = _check_feasible_and_time(best_route, data)
-        if not feas:
-            # fallback si no cumple ventanas
-            arrival = [SHIFT_START_SEC + i * 90 for i in range(len(best_route))]
-        final_routes.append((best_route, arrival, best_dist))
-        total_dist += best_dist
+        _, arrival, _ = _check_feasible_and_time(best_route, data)
+        final_routes.append((best_route, arrival))
 
-    # 3. Aplastar todas las rutas en una
-    ruta_final = [depot]
-    for rt, _, _ in final_routes:
-        for node in rt:
-            if node != depot and node not in ruta_final:
-                ruta_final.append(node)
+    # Paso 3: Unir todas en una sola ruta
+    ruta_final = [depot] + [
+        node for rt, _ in final_routes for node in rt if node != depot
+    ]
+    feas, llegada_final, _ = _check_feasible_and_time(ruta_final, data)
 
-    feas, llegada_final = _check_feasible_and_time(ruta_final, data)
+    if not feas or len(ruta_final) != len(llegada_final):
+        llegada_final = [SHIFT_START_SEC + i * 60 for i in range(len(ruta_final))]
+
     dist_final = _route_distance(ruta_final, data)
 
-    if feas:
-        return {
-            "routes": [{
-                "vehicle": 0,
-                "route": ruta_final,
-                "arrival_sec": llegada_final
-            }],
-            "distance_total_m": dist_final
-        }
-    else:
-        # fallback: devolver rutas separadas si aplastada no es viable
-        rutas = []
-        for idx, (rt, arr, dist) in enumerate(final_routes):
-            rutas.append({
-                "vehicle": idx,
-                "route": rt,
-                "arrival_sec": arr
-            })
-        return {
-            "routes": rutas,
-            "distance_total_m": total_dist
-        }
+    return {
+        "routes": [{
+            "vehicle": 0,
+            "route": ruta_final,
+            "arrival_sec": llegada_final
+        }],
+        "distance_total_m": dist_final
+    }
