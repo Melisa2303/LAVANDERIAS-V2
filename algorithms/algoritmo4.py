@@ -165,7 +165,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
 
     # Metaheurística para explorar soluciones vecinas
-    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.TABU_SEARCH
+    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     search_parameters.time_limit.seconds = tiempo_max_seg
 
     solution = routing.SolveWithParameters(search_parameters)
