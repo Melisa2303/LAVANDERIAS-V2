@@ -41,7 +41,7 @@ def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
 ALG_MAP = {
     "Algoritmo 1 - PCA - GLS": optimizar_ruta_algoritmo22,
     "Algoritmo 2 - Clarke Wrigth + Tabu Search": optimizar_ruta_cw_tabu,
-    "Algoritmo 3": optimizar_ruta_placeholder,
+    "Algoritmo 3": optimizar_ruta_algoritmo3,
     "Algoritmo 4": optimizar_ruta_algoritmo4,
 }
 
