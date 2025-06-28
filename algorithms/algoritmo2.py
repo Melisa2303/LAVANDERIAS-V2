@@ -1,8 +1,9 @@
 # algorithms/algoritmo2.py
-# CW + Tabu Search
+# CW + Tabu Search con reconstrucción global y ETA válidas
 
 import time
 from typing import List, Dict, Any, Tuple
+from heapq import heappush, heappop
 
 # Importamos las constantes del algoritmo principal
 from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
@@ -35,18 +36,53 @@ def _check_feasible_and_time(
 
     for u, v in zip(route, route[1:]):
         t += T[u][v]
-        # Añadimos tiempo de servicio si no es el depósito
         if u != depot:
             t += SERVICE_TIME
         w0, w1 = windows[v]
-        # Si llegamos después de la ventana, no es factible
         if t > w1:
             return False, []
-        # Esperamos hasta el inicio de ventana si llegamos antes
         t = max(t, w0)
         arrivals.append(t)
 
     return True, arrivals
+
+
+def build_global_feasible_route(data, nodes, depot):
+    """
+    Heurística GreedyTW: construye una única ruta completa
+    respetando ventanas de tiempo y tiempos de servicio.
+    """
+    visited = set()
+    current = depot
+    t_now   = SHIFT_START_SEC
+    route   = [depot]
+    arrival = [t_now]
+
+    while len(visited) < len(nodes):
+        heap = []
+        for nxt in nodes:
+            if nxt in visited:
+                continue
+            t_temp = t_now + data["duration_matrix"][current][nxt]
+            if current != depot:
+                t_temp += SERVICE_TIME
+            w0, w1 = data["time_windows"][nxt]
+            if t_temp <= w1:
+                wait = max(0, w0 - t_temp)
+                score = t_temp + wait
+                heappush(heap, (score, nxt, t_temp + wait))
+
+        if not heap:
+            return None, None  # no factible
+
+        _, chosen, t_arrival = heappop(heap)
+        route.append(chosen)
+        arrival.append(t_arrival)
+        visited.add(chosen)
+        current = chosen
+        t_now = t_arrival
+
+    return route, arrival
 
 
 def optimizar_ruta_cw_tabu(
@@ -56,13 +92,13 @@ def optimizar_ruta_cw_tabu(
     """
     1) Clarke–Wright Savings para generar mini-rutas.
     2) Tabu Search (swap de dos nodos) para refinar cada mini-ruta.
-    3) Aplasta todo en UNA sola ruta [depot, clientes…] SIN depot al final.
+    3) Construye UNA sola ruta factible (respetando ventanas) con ETA realista.
     """
     depot = data["depot"]
     n     = len(data["distance_matrix"])
     nodes = [i for i in range(n) if i != depot]
 
-    # 1) Savings de Clarke–Wright
+    # 1) Clarke–Wright Savings
     D = data["distance_matrix"]
     savings = []
     for i in nodes:
@@ -70,7 +106,7 @@ def optimizar_ruta_cw_tabu(
             if i < j:
                 s = D[depot][i] + D[depot][j] - D[i][j]
                 savings.append((s, i, j))
-    savings.sort(reverse=True, key=lambda x: x[0])
+    savings.sort(reverse=True)
 
     # Inicial: cada cliente en mini-ruta [depot, i, depot]
     parent    = {i: i for i in nodes}
@@ -79,13 +115,11 @@ def optimizar_ruta_cw_tabu(
     route_map = {i: [depot, i, depot] for i in nodes}
 
     def find(i: int) -> int:
-        """Find con path-compression para union-find."""
         while parent[i] != i:
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
 
-    # Merge de rutas según savings
     for _, i, j in savings:
         ri, rj = find(i), find(j)
         if ri == rj:
@@ -99,7 +133,6 @@ def optimizar_ruta_cw_tabu(
             end_map[ri]    = end_map[rj]
             route_map[ri]  = merged
 
-    # Extraemos todas las mini-rutas finales
     roots = {find(i) for i in nodes}
     initial_routes = [route_map[r] for r in roots]
 
@@ -145,18 +178,13 @@ def optimizar_ruta_cw_tabu(
         final_routes.append((best_route, arrival, best_dist))
         total_dist += best_dist
 
-    # 3) Aplastar TODO en UNA sola ruta [depot, clientes…] sin depot al final
-    clientes = []
-    for rt, _, _ in final_routes:
-        clientes.extend(n for n in rt if n != depot)
+    # 3) Unificamos clientes y reconstruimos una sola ruta factible
+    clientes_unicos = list({n for rt, _, _ in final_routes for n in rt if n != depot})
 
-    # Eliminar duplicados del depósito y asegurar orden
-    clientes = [n for n in clientes if n != depot]
-    ruta_final = [depot] + clientes
-    feas, llegada_final = _check_feasible_and_time(ruta_final, data)
+    ruta_final, llegada_final = build_global_feasible_route(data, clientes_unicos, depot)
 
-    if not feas or len(ruta_final) != len(llegada_final):
-        # Fallback en caso de error: arrival artificial en intervalos fijos
+    if ruta_final is None or llegada_final is None:
+        ruta_final = [depot] + clientes_unicos
         llegada_final = [SHIFT_START_SEC + i * 60 for i in range(len(ruta_final))]
 
     dist_final = _route_distance(ruta_final, data)
