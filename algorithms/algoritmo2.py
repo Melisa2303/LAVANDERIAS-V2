@@ -1,6 +1,5 @@
 # algorithms/algoritmo2.py
 # CW + Tabu Search
-
 import time
 from typing import List, Dict, Any, Tuple
 
@@ -118,8 +117,8 @@ def optimizar_ruta_cw_tabu(
         while time.time() - start_ts < tiempo_max_seg:
             improved = False
             L = len(best_route)
-            for a in range(1, L - 2):
-                for b in range(a + 1, L - 1):
+            for a in range(1, L-2):
+                for b in range(a+1, L-1):
                     move = (a, b)
                     if move in tabu_list:
                         continue
@@ -149,16 +148,11 @@ def optimizar_ruta_cw_tabu(
     # 3) Aplastar TODO en UNA sola ruta [depot, clientes…] sin depot al final
     clientes = []
     for rt, _, _ in final_routes:
+        # quitamos los 0 intermedios y finales
         clientes.extend(n for n in rt if n != depot)
 
     ruta_final = [depot] + clientes
     feas, llegada_final = _check_feasible_and_time(ruta_final, data)
-
-    # Validación para asegurar compatibilidad con rutas3.py
-    if not feas or len(ruta_final) != len(llegada_final):
-        # Fallback en caso de error: arrival artificial en intervalos fijos
-        llegada_final = [SHIFT_START_SEC + i * 60 for i in range(len(ruta_final))]
-
     dist_final = _route_distance(ruta_final, data)
 
     return {
