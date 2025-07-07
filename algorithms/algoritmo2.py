@@ -36,16 +36,21 @@ def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
     from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
     import streamlit as st
 
-    # — 1. Priorización de clientes con ventanas que abren más temprano (<11:00 am) —
-    prioritarios = [n for n in nodes if data["time_windows"][n][0] < 11 * 3600]
-    resto = [n for n in nodes if n not in prioritarios]
-    nodes = sorted(prioritarios, key=lambda n: data["time_windows"][n][0]) + resto
-
     visited = set()
     current = depot
     t_now = SHIFT_START_SEC
     route = [depot]
     arrival = [t_now]
+
+    # Ordenar todos los nodos por apertura de ventana (primero los que abren más temprano),
+    # y luego por duración de ventana (más corta = más urgente)
+    nodes = sorted(
+        nodes,
+        key=lambda n: (
+            data["time_windows"][n][0],                           # apertura de ventana
+            (data["time_windows"][n][1] - data["time_windows"][n][0])  # duración
+        )
+    )
 
     while len(visited) < len(nodes):
         heap = []
@@ -53,18 +58,30 @@ def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
             if nxt in visited:
                 continue
 
-            t_temp = t_now + data["duration_matrix"][current][nxt]
+            # Tiempo estimado de llegada
+            t_travel = data["duration_matrix"][current][nxt]
+            t_temp = t_now + t_travel
             if current != depot:
                 t_temp += SERVICE_TIME
 
             w0, w1 = data["time_windows"][nxt]
 
+            # Penalizaciones por restricciones temporales
             wait = max(0, w0 - t_temp)
             lateness = max(0, t_temp - (w1 + tolerancia_seg))
-            prioridad_temprana = max(0, 11*3600 - w0) / 3600  # más peso si empieza más temprano
-            urgencia = 1 / (w1 - w0 + 1)  # ventanas cortas = más prioridad
+            idle_time = wait if wait > 0 else 0
 
+            # Urgencia: ventanas cortas tienen más peso
+            dur_ventana = w1 - w0
+            urgencia = 1 / (dur_ventana + 1)
+            urgencia *= 0.2  # para evitar sobrepriorización
+
+            # Prioridad extra si la ventana abre temprano (antes de 11:00am)
+            prioridad_temprana = max(0, 11*3600 - w0) / 3600
+
+            # Penalización total
             lateness_penalty = 30 * lateness + 0.5 * max(0, t_temp - w0)
+            idle_penalty = 10 * idle_time
 
             score = (
                 t_temp
@@ -72,10 +89,15 @@ def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
                 + lateness_penalty
                 + 300 * urgencia
                 + 50 * prioridad_temprana
+                + idle_penalty
             )
 
+            # Advertencia si está fuera de ventana
             if lateness > 0:
-                st.warning(f"⚠️ Cliente {nxt} será atendido fuera de ventana ({t_temp}s > {w1}s + tolerancia {tolerancia_seg}s)")
+                st.warning(
+                    f"⚠️ Cliente {nxt} será atendido fuera de ventana "
+                    f"({int(t_temp/60)} min > {int(w1/60)} min + {int(tolerancia_seg/60)} min)"
+                )
 
             heappush(heap, (score, nxt, max(t_temp, w0)))
 
@@ -91,9 +113,6 @@ def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
         t_now = t_arrival
 
     return route, arrival, visited
-
-
-
 
 
 
