@@ -209,8 +209,8 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
 
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.time_limit.FromSeconds(tiempo_max_seg)
-    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC #Prioriza distancia, no tiempo
-    #params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION #Este sería en tal caso para la inserción de vehículos
+    #params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC #Prioriza distancia, no tiempo
+    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION #Este sería en tal caso para la inserción de vehículos
     params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
 
     sol = routing.SolveWithParameters(params)
