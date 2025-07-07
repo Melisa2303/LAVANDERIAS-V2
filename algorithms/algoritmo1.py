@@ -193,7 +193,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         if node == data["depot"]:
             continue  # No penalices cochera
         idx = manager.NodeToIndex(node)
-        time_dim.SetCumulVarSoftLowerBound(idx, ini, 2000)  # penaliza espera
+        time_dim.SetCumulVarSoftLowerBound(idx, ini, 200)  # penaliza espera
 
     # 3. Ventana fija para cochera (inicio exacto)
     depot_idx = manager.NodeToIndex(data["depot"])
