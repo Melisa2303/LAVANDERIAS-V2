@@ -183,7 +183,8 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
 
     # 3) Reconstrucción final
     todos_los_clientes = [n for rt, _, _ in final_routes for n in rt if n != depot]
-    ruta_final, llegada_final, usados = build_route_greedy(data, todos_los_clientes, depot, tolerancia_seg=0)
+    #ruta_final, llegada_final, usados = build_route_greedy(data, todos_los_clientes, depot, tolerancia_seg=0)
+    ruta_final, llegada_final, usados = build_route_greedy_force_all(data, todos_los_clientes, depot, tolerancia_seg=0)
     no_asignados = [i for i in todos_los_clientes if i not in usados]
 
     if no_asignados:
