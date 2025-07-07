@@ -1,5 +1,5 @@
 # algorithms/algoritmo2.py
-# CW + Tabu Search + Exclusión de clientes no compatibles con ventana de tiem po
+# CW + Tabu Search (sin exclusión de clientes por ventanas de tiempo)
 
 import time
 from typing import List, Dict, Any, Tuple
@@ -24,13 +24,13 @@ def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bo
             t += SERVICE_TIME
         w0, w1 = windows[v]
         if t > w1:
-            return False, []
+            st.warning(f"⚠️ Cliente {v} atendido fuera de ventana: {t}s > {w1}s")
         t = max(t, w0)
         arrivals.append(t)
 
     return True, arrivals
 
-def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
+def build_route_greedy_force_all(data, nodes, depot):
     visited = set()
     current = depot
     t_now = SHIFT_START_SEC
@@ -48,27 +48,15 @@ def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
                 t_temp += SERVICE_TIME
 
             w0, w1 = data["time_windows"][nxt]
-
             wait = max(0, w0 - t_temp)
-            lateness = max(0, t_temp - (w1 + tolerancia_seg))
+            lateness = max(0, t_temp - w1)
+            urgencia = 1 / (w1 - w0 + 1)
 
-            # Penalización total: tiempo base + espera + tardanza severa + urgencia
-            ventana_duracion = w1 - w0
-            urgencia = 1 / (ventana_duracion + 1)  # más peso a ventanas cortas
-            score = (
-                t_temp
-                + wait
-                + 20 * lateness         # penaliza fuertemente llegar tarde
-                + 300 * urgencia        # prioriza ventanas que cierran pronto
-            )
-
-            if lateness > 0:
-                st.warning(f"⚠️ Cliente {nxt} será atendido fuera de ventana ({t_temp}s > {w1}s + tolerancia {tolerancia_seg}s)")
-
+            score = t_temp + wait + 20 * lateness + 300 * urgencia
             heappush(heap, (score, nxt, max(t_temp, w0)))
 
         if not heap:
-            st.warning("No se pudo asignar más clientes (heap vacío).")
+            st.error("Heap vacío. No se pudo continuar.")
             break
 
         _, chosen, t_arrival = heappop(heap)
@@ -78,11 +66,7 @@ def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
         current = chosen
         t_now = t_arrival
 
-    return route, arrival, visited
-
-
-
-
+    return route, arrival
 
 def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Dict[str, Any]:
     depot = data["depot"]
@@ -116,9 +100,6 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
             continue
         if end_map[ri] == i and start_map[rj] == j:
             merged = route_map[ri][:-1] + route_map[rj][1:]
-            feas, _ = _check_feasible_and_time(merged, data)
-            if not feas:
-                continue
             parent[rj] = ri
             end_map[ri] = end_map[rj]
             route_map[ri] = merged
@@ -147,9 +128,6 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
                         continue
                     cand = best_route[:]
                     cand[a], cand[b] = cand[b], cand[a]
-                    feas, _ = _check_feasible_and_time(cand, data)
-                    if not feas:
-                        continue
                     dist_c = _route_distance(cand, data)
                     if dist_c < best_dist - 1e-6:
                         best_route = cand
@@ -168,14 +146,9 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
         final_routes.append((best_route, arrival, best_dist))
         total_dist += best_dist
 
-    # 3) Reconstrucción final
+    # 3) Reconstrucción final — forzada
     todos_los_clientes = [n for rt, _, _ in final_routes for n in rt if n != depot]
-    ruta_final, llegada_final, usados = build_route_greedy(data, todos_los_clientes, depot, tolerancia_seg=0)
-    no_asignados = [i for i in todos_los_clientes if i not in usados]
-
-    if no_asignados:
-        st.warning(f"Clientes no asignados por ventanas incompatibles: {no_asignados}")
-
+    ruta_final, llegada_final = build_route_greedy_force_all(data, todos_los_clientes, depot)
     dist_final = _route_distance(ruta_final, data)
 
     return {
@@ -185,5 +158,5 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
             "arrival_sec": llegada_final
         }],
         "distance_total_m": dist_final,
-        "clientes_excluidos": no_asignados
+        "clientes_excluidos": []  # ninguno
     }
