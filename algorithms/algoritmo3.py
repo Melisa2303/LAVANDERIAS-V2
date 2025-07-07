@@ -139,10 +139,10 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 # Función para obtener geometría de ruta con Directions API
 @st.cache_data(ttl=3600)
-# Algoritmo 3: CP-SAT
+# Algoritmo 3: CP-SAT + OR-Tools
 def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
     if "service_times" not in data:
-        data["service_times"] = [13 * 60] * len(data["duration_matrix"])
+        data["service_times"] = [5 * 60] * len(data["duration_matrix"])
 
     # Si no hay duración, calcular a partir de distancia
     if all(all(t == 0 for t in fila) for fila in data["duration_matrix"]):
@@ -179,8 +179,8 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
     # Dimensión de tiempo (respetará tiempo de viaje + servicio)
     routing.AddDimension(
         time_callback_index,
-        3 * 60 * 60,   # holgura (buffer entre visitas)
-        24 * 3600,     # tiempo total máximo por ruta
+        5 * 60 * 60,   # holgura (buffer entre visitas)
+        30 * 3600,     # tiempo total máximo por ruta
         False,
         "Time"
     )
@@ -201,7 +201,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
         index = manager.NodeToIndex(i)
         time_dimension.CumulVar(index).SetRange(start, end)
         # ⬇️ Tiempo obligatorio de espera/servicio en ese nodo
-        # time_dimension.SlackVar(index).SetValue(data["service_times"][i])
+        time_dimension.SlackVar(index).SetMin(data["service_times"][i])
         # Penalizar llegar antes del inicio (tiempo muerto)
         time_dimension.SetCumulVarSoftUpperBound(index, start, 5000)
         # Minimizar slack por nodo
