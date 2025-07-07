@@ -48,11 +48,20 @@ def build_route_greedy_force_all(data, nodes, depot):
                 t_temp += SERVICE_TIME
 
             w0, w1 = data["time_windows"][nxt]
+
             wait = max(0, w0 - t_temp)
             lateness = max(0, t_temp - w1)
-            urgencia = 1 / (w1 - w0 + 1)
+            urgencia = 1 / (w1 - w0 + 1)  # penaliza ventanas más cortas
+            prioridad_temprana = w0 / 3600  # penaliza si su ventana comienza muy tarde
 
-            score = t_temp + wait + 20 * lateness + 300 * urgencia
+            score = (
+                t_temp
+                + wait
+                + 20 * lateness
+                + 300 * urgencia
+                + 50 * prioridad_temprana  # penaliza empezar muy tarde
+            )
+
             heappush(heap, (score, nxt, max(t_temp, w0)))
 
         if not heap:
@@ -67,6 +76,7 @@ def build_route_greedy_force_all(data, nodes, depot):
         t_now = t_arrival
 
     return route, arrival
+
 
 def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Dict[str, Any]:
     depot = data["depot"]
