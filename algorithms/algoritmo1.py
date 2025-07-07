@@ -149,6 +149,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
     }
 #
 
+
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     """
     Intenta resolver VRPTW con OR-Tools.
@@ -173,18 +174,28 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
 
     routing.AddDimension(
         transit_cb_idx,
-        24 * 3600,
-        24 * 3600,
-        False,
+        24 * 3600,  # slack max
+        24 * 3600,  # tiempo total máximo
+        False,      # start cumul to zero
         "Time"
     )
+
     time_dim = routing.GetDimensionOrDie("Time")
     time_dim.SetGlobalSpanCostCoefficient(1000)
 
+    # 1. Ventanas estrictas (duros)
     for node, (ini, fin) in enumerate(data["time_windows"]):
         idx = manager.NodeToIndex(node)
         time_dim.CumulVar(idx).SetRange(ini, fin)
 
+    # 2. Penalización por llegar demasiado temprano
+    for node, (ini, _) in enumerate(data["time_windows"]):
+        if node == data["depot"]:
+            continue  # No penalices cochera
+        idx = manager.NodeToIndex(node)
+        time_dim.SetCumulVarSoftLowerBound(idx, ini, 20)  # penaliza espera
+
+    # 3. Ventana fija para cochera (inicio exacto)
     depot_idx = manager.NodeToIndex(data["depot"])
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
@@ -269,8 +280,6 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         "routes": rutas,
         "distance_total_m": dist_total_m
     }
-
-
 
 
 
