@@ -234,6 +234,12 @@ def ver_ruta_optimizada():
         else:
             idx_o = ruta[L - 1]
             orig = (df_f.loc[idx_o,"lat"], df_f.loc[idx_o,"lon"])
+            dest = (DEP["lat"], DEP["lon"])
+            nombre_dest = DEP["direccion"]
+            ETA_dest = "—"
+        else:
+            idx_o = ruta[L - 2]
+            orig = (df_f.loc[idx_o,"lat"], df_f.loc[idx_o,"lon"])
             dest = (COCHERA["lat"], COCHERA["lon"])
             nombre_dest = COCHERA["direccion"]
             ETA_dest = "—"
