@@ -213,91 +213,79 @@ def ver_ruta_optimizada():
 
         # Tramo actual
     with tab1:
-        if "res" not in st.session_state or "df_final" not in st.session_state:
-            st.info("Primero genera una ruta optimizada.")
-            return
-        
-        if "leg_0" not in st.session_state:
-            st.session_state["leg_0"] = 0
-
-        res = st.session_state["res"]
-        df_f = st.session_state["df_final"]
-        df_display = st.session_state["df_ruta"]
-        ruta = res["routes"][0]["route"]
-        L = len(ruta)
+        total_legs = L + 2  # Incluye Planta (descarga) y Cochera
         leg = st.session_state["leg_0"]
 
-        total_legs = L + 2  # Planta descarga y cochera final
-
-        if leg >= total_legs:
+        if leg > total_legs:
             st.success("✅ Ruta completada")
-            return
+        else:
+            if leg == 0:
+                # Cochera → Planta
+                orig = (COCHERA["lat"], COCHERA["lon"])
+                dest_idx = ruta[0]
+                dest = (df_f.loc[dest_idx, "lat"], df_f.loc[dest_idx, "lon"])
+                nombre_dest = df_f.loc[dest_idx, "nombre_cliente"]
+                ETA_dest = df_display.loc[df_display["orden"] == 1, "ETA"].iloc[0]
 
-        # Tramos
-        if leg == 0:
-            orig = (COCHERA["lat"], COCHERA["lon"])
-            dest_idx = ruta[0]
-            dest = (df_f.loc[dest_idx, "lat"], df_f.loc[dest_idx, "lon"])
-            nombre_dest = df_f.loc[dest_idx, "nombre_cliente"]
-            ETA_dest = df_display.loc[df_display["orden"] == 1, "ETA"].iloc[0]
+            elif 1 <= leg < L:
+                # Clientes
+                idx_o = ruta[leg - 1]
+                idx_d = ruta[leg]
+                orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
+                dest = (df_f.loc[idx_d, "lat"], df_f.loc[idx_d, "lon"])
+                nombre_dest = df_f.loc[idx_d, "nombre_cliente"]
+                ETA_dest = df_display.loc[df_display["orden"] == leg + 1, "ETA"].iloc[0]
 
-        elif 1 <= leg < L:
-            idx_o = ruta[leg - 1]
-            idx_d = ruta[leg]
-            orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
-            dest = (df_f.loc[idx_d, "lat"], df_f.loc[idx_d, "lon"])
-            nombre_dest = df_f.loc[idx_d, "nombre_cliente"]
-            ETA_dest = df_display.loc[df_display["orden"] == leg + 1, "ETA"].iloc[0]
+            elif leg == L:
+                # Último cliente → Planta (descarga)
+                idx_o = ruta[-1]
+                orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
+                dest = (-16.40904, -71.53745)
+                nombre_dest = "Depósito"
+                ETA_dest = "—"
 
-        elif leg == L:
-            idx_o = ruta[-1]
-            orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
-            dest = (-16.40904, -71.53745)  # Planta
-            nombre_dest = "Depósito"
-            ETA_dest = "—"
+            elif leg == L + 1:
+                # Planta → Cochera
+                orig = (-16.40904, -71.53745)
+                dest = (COCHERA["lat"], COCHERA["lon"])
+                nombre_dest = COCHERA["direccion"]
+                ETA_dest = "—"
 
-        elif leg == L + 1:
-            orig = (-16.40904, -71.53745)  # Planta
-            dest = (COCHERA["lat"], COCHERA["lon"])
-            nombre_dest = COCHERA["direccion"]
-            ETA_dest = "—"
-
-        # Mostrar tramo
-        st.markdown(
-            f"### Próximo → **{nombre_dest}**  \n"
-            f"📍 {dest[0]:.6f},{dest[1]:.6f} (ETA {ETA_dest})",
-            unsafe_allow_html=True
-        )
-
-        if st.button(f"✅ Llegué a {nombre_dest}"):
-            st.session_state["leg_0"] += 1
-            st.rerun()
-
-        try:
-            directions = gmaps.directions(
-                f"{orig[0]},{orig[1]}",
-                f"{dest[0]},{dest[1]}",
-                mode="driving",
-                departure_time=datetime.now(),
-                traffic_model="best_guess"
+            # Mostrar la información del tramo actual
+            st.markdown(
+                f"### Próximo → **{nombre_dest}**  \n"
+                f"📍 {dest[0]:.6f},{dest[1]:.6f} (ETA {ETA_dest})",
+                unsafe_allow_html=True
             )
-            leg0 = directions[0]["legs"][0]
-            tiempo_traffic = leg0.get("duration_in_traffic", leg0["duration"])["text"]
-            overview = directions[0]["overview_polyline"]["points"]
-            segmento = [(p["lat"], p["lng"]) for p in decode_polyline(overview)]
-        except:
-            tiempo_traffic = None
-            segmento = [orig, dest]
+            if st.button(f"✅ Llegué a {nombre_dest}"):
+                st.session_state["leg_0"] += 1
+                st.rerun()
 
-        m = folium.Map(location=segmento[0], zoom_start=14)
-        folium.PolyLine(
-            segmento,
-            weight=5, opacity=0.8,
-            tooltip=f"⏱ {tiempo_traffic}" if tiempo_traffic else None
-        ).add_to(m)
-        folium.Marker(segmento[0], icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
-        folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
-        st_folium(m, width=700, height=400)
+            try:
+                directions = gmaps.directions(
+                    f"{orig[0]},{orig[1]}",
+                    f"{dest[0]},{dest[1]}",
+                    mode="driving",
+                    departure_time=datetime.now(),
+                    traffic_model="best_guess"
+                )
+                leg0 = directions[0]["legs"][0]
+                tiempo_traffic = leg0.get("duration_in_traffic", leg0["duration"])["text"]
+                overview = directions[0]["overview_polyline"]["points"]
+                segmento = [(p["lat"], p["lng"]) for p in decode_polyline(overview)]
+            except:
+                tiempo_traffic = None
+                segmento = [orig, dest]
+
+            m = folium.Map(location=segmento[0], zoom_start=14)
+            folium.PolyLine(
+                segmento,
+                weight=5, opacity=0.8,
+                tooltip=f"⏱ {tiempo_traffic}" if tiempo_traffic else None
+            ).add_to(m)
+            folium.Marker(segmento[0], icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
+            folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
+            st_folium(m, width=700, height=400)
 
 
     # Info general con API y métricas
