@@ -40,7 +40,7 @@ def optimizar_ruta_placeholder(data, tiempo_max_seg=60):
 
 
 ALG_MAP = {
-    "Algoritmo 1 - PCA - GLS": optimizar_ruta_algoritmo22,
+    "Algoritmo 1 - PCA/PCI - GLS": optimizar_ruta_algoritmo22,
     "Algoritmo 2 - Clarke Wrigth + Tabu Search": optimizar_ruta_cw_tabu,
     "Algoritmo 3 - CP - SAT": optimizar_ruta_cp_sat,
     "Algoritmo 4 - PAC + LNS": optimizar_ruta_algoritmo4,
@@ -105,7 +105,7 @@ def ver_ruta_optimizada():
             return
 
         df_original = pd.DataFrame(pedidos)
-        df_clusters, df_et = agrupar_puntos_aglomerativo(df_original, eps_metros=5)
+        df_clusters, df_et = agrupar_puntos_aglomerativo(df_original, eps_metros=5) #En caso se tenga una misma dirección para ese punto
         st.session_state["df_clusters"] = df_clusters.copy()
         st.session_state["df_etiquetado"] = df_et.copy()
 
