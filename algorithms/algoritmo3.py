@@ -268,7 +268,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
         "distance_total_m": dist_total_m,
         "arrival_sec_all_nodes": arrival_sec_all_nodes
     }
-    
+
 def agregar_ventana_margen(df, margen_segundos=15*60):
     def expandir_fila(row):
         ini = _hora_a_segundos(row["time_start"])
