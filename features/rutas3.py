@@ -211,17 +211,16 @@ def ver_ruta_optimizada():
     leg     = st.session_state["leg_0"]
     L       = len(ruta)
 
-       # Tramo actual
         # Tramo actual
     with tab1:
-        total_legs = L + 2  # Incluye Depósito (descarga) y Cochera final
+        total_legs = L + 2  # Incluye Planta (descarga) y Cochera
         leg = st.session_state["leg_0"]
 
         if leg > total_legs:
             st.success("✅ Ruta completada")
         else:
             if leg == 0:
-                # Cochera → Planta (recojo)
+                # Cochera → Planta
                 orig = (COCHERA["lat"], COCHERA["lon"])
                 dest_idx = ruta[0]
                 dest = (df_f.loc[dest_idx, "lat"], df_f.loc[dest_idx, "lon"])
@@ -229,7 +228,7 @@ def ver_ruta_optimizada():
                 ETA_dest = df_display.loc[df_display["orden"] == 1, "ETA"].iloc[0]
 
             elif 1 <= leg < L:
-                # Cliente anterior → Cliente siguiente
+                # Clientes
                 idx_o = ruta[leg - 1]
                 idx_d = ruta[leg]
                 orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
@@ -241,18 +240,18 @@ def ver_ruta_optimizada():
                 # Último cliente → Planta (descarga)
                 idx_o = ruta[-1]
                 orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
-                dest = (-16.40904, -71.53745)  # Coordenadas fijas del DEP
+                dest = (-16.40904, -71.53745)
                 nombre_dest = "Depósito"
                 ETA_dest = "—"
 
             elif leg == L + 1:
                 # Planta → Cochera
-                orig = (-16.40904, -71.53745)  # Coordenadas fijas del DEP
+                orig = (-16.40904, -71.53745)
                 dest = (COCHERA["lat"], COCHERA["lon"])
                 nombre_dest = COCHERA["direccion"]
                 ETA_dest = "—"
 
-            # Mostrar tramo actual
+            # Mostrar la información del tramo actual
             st.markdown(
                 f"### Próximo → **{nombre_dest}**  \n"
                 f"📍 {dest[0]:.6f},{dest[1]:.6f} (ETA {ETA_dest})",
