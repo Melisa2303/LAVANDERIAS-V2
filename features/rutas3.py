@@ -213,16 +213,28 @@ def ver_ruta_optimizada():
 
         # Tramo actual
     with tab1:
-        total_legs = L + 2  # Incluye Planta (descarga) y Cochera
+        if "res" not in st.session_state or "df_final" not in st.session_state:
+            st.info("Primero genera una ruta optimizada.")
+            return
+        
+        if "leg_0" not in st.session_state:
+            st.session_state["leg_0"] = 0
+
+        res = st.session_state["res"]
+        df_f = st.session_state["df_final"]
+        df_display = st.session_state["df_ruta"]
+        ruta = res["routes"][0]["route"]
+        L = len(ruta)
         leg = st.session_state["leg_0"]
 
-        if leg > total_legs:
-            st.success("✅ Ruta completada")
-            return  # ← 🔒 Esto asegura que el resto NO se ejecuta
+        total_legs = L + 2  # Planta descarga y cochera final
 
-        # Tramos intermedios
+        if leg >= total_legs:
+            st.success("✅ Ruta completada")
+            return
+
+        # Tramos
         if leg == 0:
-            # Cochera → Planta
             orig = (COCHERA["lat"], COCHERA["lon"])
             dest_idx = ruta[0]
             dest = (df_f.loc[dest_idx, "lat"], df_f.loc[dest_idx, "lon"])
@@ -230,7 +242,6 @@ def ver_ruta_optimizada():
             ETA_dest = df_display.loc[df_display["orden"] == 1, "ETA"].iloc[0]
 
         elif 1 <= leg < L:
-            # Clientes
             idx_o = ruta[leg - 1]
             idx_d = ruta[leg]
             orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
@@ -239,26 +250,25 @@ def ver_ruta_optimizada():
             ETA_dest = df_display.loc[df_display["orden"] == leg + 1, "ETA"].iloc[0]
 
         elif leg == L:
-            # Último cliente → Planta (descarga)
             idx_o = ruta[-1]
             orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
-            dest = (-16.40904, -71.53745)
+            dest = (-16.40904, -71.53745)  # Planta
             nombre_dest = "Depósito"
             ETA_dest = "—"
 
         elif leg == L + 1:
-            # Planta → Cochera
-            orig = (-16.40904, -71.53745)
+            orig = (-16.40904, -71.53745)  # Planta
             dest = (COCHERA["lat"], COCHERA["lon"])
             nombre_dest = COCHERA["direccion"]
             ETA_dest = "—"
 
-        # Mostrar la información del tramo actual
+        # Mostrar tramo
         st.markdown(
             f"### Próximo → **{nombre_dest}**  \n"
             f"📍 {dest[0]:.6f},{dest[1]:.6f} (ETA {ETA_dest})",
             unsafe_allow_html=True
         )
+
         if st.button(f"✅ Llegué a {nombre_dest}"):
             st.session_state["leg_0"] += 1
             st.rerun()
@@ -288,7 +298,6 @@ def ver_ruta_optimizada():
         folium.Marker(segmento[0], icon=folium.Icon(color="green", icon="play", prefix="fa")).add_to(m)
         folium.Marker(segmento[-1], icon=folium.Icon(color="blue", icon="flag", prefix="fa")).add_to(m)
         st_folium(m, width=700, height=400)
-
 
 
     # Info general con API y métricas
