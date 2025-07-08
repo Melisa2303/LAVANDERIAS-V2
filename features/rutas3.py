@@ -235,7 +235,7 @@ def ver_ruta_optimizada():
             nombre_dest = df_f.loc[idx_d, "nombre_cliente"]
             ETA_dest = df_display.loc[df_display["orden"] == leg + 1, "ETA"].iloc[0]
 
-        elif leg == L+1:
+        elif leg == L:
             # Último cliente → planta (descarga)
             idx_o = ruta[-1]
             orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
@@ -244,7 +244,7 @@ def ver_ruta_optimizada():
             nombre_dest = "Depósito (Descarga)"
             ETA_dest = df_display.loc[df_display["orden"] == leg + 1, "ETA"].iloc[0]
 
-        elif leg == L + 2:
+        elif leg == L + 1:
             # Planta → cochera (final)
             planta_idx = ruta[0]
             orig = (df_f.loc[planta_idx, "lat"], df_f.loc[planta_idx, "lon"])
