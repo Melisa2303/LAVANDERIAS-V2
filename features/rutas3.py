@@ -211,29 +211,41 @@ def ver_ruta_optimizada():
     leg     = st.session_state["leg_0"]
     L       = len(ruta)
 
-    # Tramo actual
+       # Tramo actual
     with tab1:
-        total_legs = L + 1
+        total_legs = L + 2  # Incluye regreso a depósito y cochera
         if leg > total_legs:
             st.success("✅ Ruta completada")
             return
 
         if leg == 0:
+            # Cochera → Planta (recojo)
             orig = (COCHERA["lat"], COCHERA["lon"])
             dest_idx = ruta[0]
-            dest = (df_f.loc[dest_idx,"lat"], df_f.loc[dest_idx,"lon"])
-            nombre_dest = df_f.loc[dest_idx,"nombre_cliente"]
+            dest = (df_f.loc[dest_idx, "lat"], df_f.loc[dest_idx, "lon"])
+            nombre_dest = df_f.loc[dest_idx, "nombre_cliente"]
             ETA_dest = df_display.loc[df_display["orden"] == 1, "ETA"].iloc[0]
+
         elif 1 <= leg < L:
+            # Cliente anterior → Cliente siguiente
             idx_o = ruta[leg - 1]
             idx_d = ruta[leg]
-            orig = (df_f.loc[idx_o,"lat"], df_f.loc[idx_o,"lon"])
-            dest = (df_f.loc[idx_d,"lat"], df_f.loc[idx_d,"lon"])
-            nombre_dest = df_f.loc[idx_d,"nombre_cliente"]
+            orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
+            dest = (df_f.loc[idx_d, "lat"], df_f.loc[idx_d, "lon"])
+            nombre_dest = df_f.loc[idx_d, "nombre_cliente"]
             ETA_dest = df_display.loc[df_display["orden"] == leg + 1, "ETA"].iloc[0]
-        else:
-            idx_o = ruta[L - 1]
-            orig = (df_f.loc[idx_o,"lat"], df_f.loc[idx_o,"lon"])
+
+        elif leg == L:
+            # Último cliente → Planta (descarga)
+            idx_o = ruta[-1]
+            orig = (df_f.loc[idx_o, "lat"], df_f.loc[idx_o, "lon"])
+            dest = (-16.40904, -71.53745)  # Coordenadas fijas del DEP
+            nombre_dest = "Depósito"
+            ETA_dest = "—"
+
+        elif leg == L + 1:
+            # Planta → Cochera
+            orig = (-16.40904, -71.53745)  # Coordenadas fijas del DEP
             dest = (COCHERA["lat"], COCHERA["lon"])
             nombre_dest = COCHERA["direccion"]
             ETA_dest = "—"
