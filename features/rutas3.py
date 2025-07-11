@@ -267,7 +267,7 @@ def ver_ruta_optimizada():
                     f"{dest[0]},{dest[1]}",
                     mode="driving",
                     departure_time=datetime.now(),
-                    traffic_model="optimistic"
+                    traffic_model="best_guest"
                 )
                 leg0 = directions[0]["legs"][0]
                 tiempo_traffic = leg0.get("duration_in_traffic", leg0["duration"])["text"]
