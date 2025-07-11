@@ -42,7 +42,7 @@ gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
 SERVICE_TIME    = 10 * 60        # 10 minutos de servicio en cada parada (excepto depósito)
-MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matrix API
+MAX_ELEMENTS    = 200            # límite de celdas por petición Distance Matrix API
 SHIFT_START_SEC =  9 * 3600      # 09:00 en segundos
 SHIFT_END_SEC   = 16*3600 +30*60 # 16:30 en segundos
 MARGEN = 15 * 60  # 15 minutos en segundos
