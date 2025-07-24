@@ -139,7 +139,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 # Función para obtener geometría de ruta con Directions API
 @st.cache_data(ttl=3600)
-# Algoritmo 3: CP-SAT + OR-Tools
+# Algoritmo 3: CP-SAT
 def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
     if "service_times" not in data:
         data["service_times"] = [5 * 60] * len(data["duration_matrix"])
@@ -268,7 +268,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
         "distance_total_m": dist_total_m,
         "arrival_sec_all_nodes": arrival_sec_all_nodes
     }
-
+    
 def agregar_ventana_margen(df, margen_segundos=15*60):
     def expandir_fila(row):
         ini = _hora_a_segundos(row["time_start"])
