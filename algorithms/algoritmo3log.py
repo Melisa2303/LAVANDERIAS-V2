@@ -97,93 +97,81 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
     }
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
-    n = len(data["distance_matrix"])
-    depot = data["depot"]
-    service_times = data.get("service_times", [SERVICE_TIME] * n)
-    time_windows = data["time_windows"]
-    duration_matrix = data["duration_matrix"]
+    manager = pywrapcp.RoutingIndexManager(len(data["duration_matrix"]), data["num_vehicles"], data["depot"])
+    routing = pywrapcp.RoutingModel(manager)
 
-    model = cp_model.CpModel()
+    def distance_callback(from_index, to_index):
+        from_node = manager.IndexToNode(from_index)
+        to_node = manager.IndexToNode(to_index)
+        return data["distance_matrix"][from_node][to_node]
 
-    # Variables binarias: visita de i a j
-    visit = {}
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                visit[i, j] = model.NewBoolVar(f"visit_{i}_{j}")
+    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-    # Tiempos de llegada
-    horizon = SHIFT_END_SEC + SERVICE_TIME
-    arrival = [model.NewIntVar(0, horizon, f"arrival_{i}") for i in range(n)]
+    def time_callback(from_index, to_index):
+        from_node = manager.IndexToNode(from_index)
+        to_node = manager.IndexToNode(to_index)
+        return data["duration_matrix"][from_node][to_node] + data["service_times"][from_node]
 
-    # Entrada/salida única (flujo)
-    for j in range(1, n):
-        model.Add(sum(visit[i, j] for i in range(n) if i != j) == 1)
-        model.Add(sum(visit[j, k] for k in range(n) if k != j) == 1)
+    time_callback_index = routing.RegisterTransitCallback(time_callback)
+    routing.AddDimension(
+        time_callback_index,
+        12 * 3600,
+        30 * 3600,
+        False,
+        "Time"
+    )
+    time_dimension = routing.GetDimensionOrDie("Time")
 
-    # Ventanas de tiempo
-    for i in range(n):
-        ini, fin = time_windows[i]
-        model.Add(arrival[i] >= ini)
-        model.Add(arrival[i] <= fin)
+    index_depot = manager.NodeToIndex(data["depot"])
+    time_dimension.CumulVar(index_depot).SetRange(SHIFT_START_SEC, SHIFT_START_SEC + 900)
 
-    # Restricciones de tiempo acumulado
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                travel = duration_matrix[i][j]
-                service = service_times[i]
-                model.Add(arrival[j] >= arrival[i] + travel + service).OnlyEnforceIf(visit[i, j])
+    for i, (start, end) in enumerate(data["time_windows"]):
+        index = manager.NodeToIndex(i)
+        time_dimension.CumulVar(index).SetRange(start, end)
+        time_dimension.SetCumulVarSoftLowerBound(index, start, 1000)
+        time_dimension.SetCumulVarSoftUpperBound(index, end, 1000)
 
-    # Eliminar subtours
-    order = [model.NewIntVar(0, n - 1, f"order_{i}") for i in range(n)]
-    for i in range(1, n):
-        for j in range(1, n):
-            if i != j:
-                model.Add(order[i] + 1 <= order[j]).OnlyEnforceIf(visit[i, j])
+    for i in range(len(data["duration_matrix"])):
+        index = manager.NodeToIndex(i)
+        routing.AddVariableMinimizedByFinalizer(time_dimension.CumulVar(index))
+        routing.AddVariableMinimizedByFinalizer(time_dimension.SlackVar(index))
 
-    # Objetivo: minimizar duración total
-    total_dist = model.NewIntVar(0, sum(sum(row) for row in duration_matrix), "total_distance")
-    model.Add(total_dist == sum(
-        visit[i, j] * duration_matrix[i][j]
-        for i in range(n) for j in range(n) if i != j
-    ))
-    model.Minimize(total_dist)
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+    search_parameters.time_limit.seconds = tiempo_max_seg
+    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
+    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    search_parameters.log_search = True
 
-    # Resolver
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = tiempo_max_seg
-    status = solver.Solve(model)
+    solution = routing.SolveWithParameters(search_parameters)
+    if not solution:
+        st.error("🚫 No se encontró una solución factible.")
+        return None
 
-    if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        return {"routes": [], "distance_total_m": None, "arrival_sec_all_nodes": []}
+    rutas = []
+    dist_total = 0
+    arrival_sec_all_nodes = [None] * len(data["distance_matrix"])
 
-    # Reconstruir solución
-    route = [depot]
-    arrival_times = [solver.Value(arrival[depot])]
-    current = depot
-    while True:
-        next_node = None
-        for j in range(n):
-            if j != current and (current, j) in visit and solver.Value(visit[current, j]):
-                next_node = j
-                break
-        if next_node is None or next_node == depot:
-            break
-        route.append(next_node)
-        arrival_times.append(solver.Value(arrival[next_node]))
-        current = next_node
+    for v in range(data["num_vehicles"]):
+        idx = routing.Start(v)
+        route, llegada = [], []
+        while not routing.IsEnd(idx):
+            n = manager.IndexToNode(idx)
+            nxt = solution.Value(routing.NextVar(idx))
+            dest = manager.IndexToNode(nxt)
+            dist_total += data["distance_matrix"][n][dest]
+            arrival = solution.Value(time_dimension.CumulVar(idx))
+            arrival_sec_all_nodes[n] = arrival
+            route.append(n)
+            llegada.append(arrival)
+            idx = nxt
+        rutas.append({"vehicle": v, "route": route, "arrival_sec": llegada})
 
     return {
-        "routes": [{
-            "vehicle": 0,
-            "route": route,
-            "arrival_sec": arrival_times
-        }],
-        "distance_total_m": solver.Value(total_dist),
-        "arrival_sec_all_nodes": [solver.Value(arrival[i]) for i in range(n)]
+        "routes": rutas,
+        "distance_total_m": dist_total,
+        "arrival_sec_all_nodes": arrival_sec_all_nodes
     }
-
 def agregar_ventana_margen(df, margen_segundos=15*60):
     def expandir_fila(row):
         ini = _hora_a_segundos(row["time_start"])
