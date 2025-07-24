@@ -20,7 +20,7 @@ gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 
 # -------------------- CONSTANTES VRP --------------------
-SERVICE_TIME    = 30        # 10 minutos de servicio
+SERVICE_TIME    = 600       # 10 minutos de servicio
 MAX_ELEMENTS    = 100            # límite de celdas por petición DM API
 SHIFT_START_SEC =  9 * 3600      # 09:00
 SHIFT_END_SEC   = 16*3600 +30*60 # 16:30
@@ -35,7 +35,7 @@ def _hora_a_segundos(hhmm):
     return h*3600 + m*60
 #Distancia euclidiana - Drones - Emergencia - Botar sí o sí una tabla ordenada considerando distancias, 
 # no tiempo real, sino estimación
-def _haversine_dist_dur(coords, vel_kmh=40.0):
+def _haversine_dist_dur(coords, vel_kmh=30.0):
     R = 6371e3
     n = len(coords)
     dist = [[0]*n for _ in range(n)]
@@ -104,10 +104,6 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 #Algoritmos diversos
 #OR-Tool + LNS + PCA
 def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
-    """
-    Adaptación del Algoritmo 1 para usar Large Neighborhood Search (LNS)
-    en lugar de Guided Local Search (GLS)
-    """
     manager = pywrapcp.RoutingIndexManager(
         len(data["duration_matrix"]),
         data["num_vehicles"],
@@ -144,6 +140,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
     # Aplicar ventanas de tiempo a cada nodo
     for node_index, (ini, fin) in enumerate(data["time_windows"]):
         index = manager.NodeToIndex(node_index)
+        time_dimension.SetCumulVarSoftLowerBound(index, 600, 1500)
         time_dimension.CumulVar(index).SetRange(ini, fin)
 
     # Capacidad (si hay demandas)
@@ -182,7 +179,7 @@ def optimizar_ruta_algoritmo4(data, tiempo_max_seg=120):
             route.append(node)
             llegada.append(solution.Min(time_dimension.CumulVar(idx)))
             next_idx = solution.Value(routing.NextVar(idx))
-            dist_total += routing.GetArcCostForVehicle(idx, next_idx, v)
+            dist_total += data["distance_matrix"][node][manager.IndexToNode(next_idx)]
             idx = next_idx
 
         rutas.append({
