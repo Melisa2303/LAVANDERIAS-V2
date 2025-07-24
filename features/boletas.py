@@ -1,12 +1,16 @@
 # Lógica para ingreso y visualización de boletas
 
 import streamlit as st
-import time
 import re
 from datetime import datetime
 from core.firebase import obtener_articulos, obtener_sucursales, verificar_unicidad_boleta, db
 import pandas as pd
 from io import BytesIO
+
+import streamlit as st
+import re
+from datetime import datetime
+from core.firebase import obtener_articulos, obtener_sucursales, verificar_unicidad_boleta, db
 
 def ingresar_boleta():
     # ✅ Reinicio seguro al detectar bandera de reseteo
@@ -38,10 +42,7 @@ def ingresar_boleta():
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
-        st.markdown(
-            "<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📝 Ingresar Boleta")
 
     # Obtener datos necesarios
@@ -76,10 +77,10 @@ def ingresar_boleta():
         st.markdown("<h4>Artículos Seleccionados</h4>", unsafe_allow_html=True)
         articulos_a_eliminar = []
         for articulo, cantidad in st.session_state["cantidades"].items():
-            c1, c2, c3 = st.columns([2, 1, 0.3])
-            with c1:
+            col1, col2, col3 = st.columns([2, 1, 0.3])
+            with col1:
                 st.markdown(f"<b>{articulo}</b>", unsafe_allow_html=True)
-            with c2:
+            with col2:
                 nueva_cantidad = st.number_input(
                     f"Cantidad de {articulo}",
                     min_value=1,
@@ -87,7 +88,7 @@ def ingresar_boleta():
                     key=f"cantidad_{articulo}"
                 )
                 st.session_state["cantidades"][articulo] = nueva_cantidad
-            with c3:
+            with col3:
                 if st.button("🗑️", key=f"eliminar_{articulo}"):
                     articulos_a_eliminar.append(articulo)
                     st.session_state["update"] = True
@@ -100,11 +101,7 @@ def ingresar_boleta():
     if st.session_state.get("update", False):
         st.session_state["update"] = False
 
-    fecha_registro = st.date_input(
-        "Fecha de Registro (AAAA/MM/DD)",
-        value=datetime.now(),
-        key="fecha_registro"
-    )
+    fecha_registro = st.date_input("Fecha de Registro (AAAA/MM/DD)", value=datetime.now(), key="fecha_registro")
 
     # Formulario
     with st.form(key='form_boleta'):
@@ -148,11 +145,11 @@ def ingresar_boleta():
 
             db.collection('boletas').add(boleta)
             st.success("Boleta ingresada correctamente.")
-            # Mantener el mensaje visible unos segundos
-            time.sleep(3)
+
             # En vez de limpiar aquí → activa bandera para siguiente ciclo
             st.session_state["reset_boleta"] = True
             st.rerun()
+
 
 
 def datos_boletas():
@@ -160,10 +157,7 @@ def datos_boletas():
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
-        st.markdown(
-            "<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📋 Datos de Boletas")
 
     tipo_servicio = st.radio(
@@ -175,15 +169,18 @@ def datos_boletas():
     # Filtro de sucursal (solo si se elige "Sucursal")
     sucursal_seleccionada = None
     if tipo_servicio == "Sucursal":
-        sucursales = obtener_sucursales()
+        sucursales = obtener_sucursales()  # Usa la caché de session_state
         nombres_sucursales = ["Todas"] + [s["nombre"] for s in sucursales]
-        sucursal_seleccionada = st.selectbox("Seleccionar Sucursal", nombres_sucursales)
+        sucursal_seleccionada = st.selectbox(
+            "Seleccionar Sucursal", 
+            nombres_sucursales
+        )
 
     # Filtro de fechas
-    c1, c2 = st.columns(2)
-    with c1:
+    col1, col2 = st.columns(2)
+    with col1:
         fecha_inicio = st.date_input("Fecha de Inicio")
-    with c2:
+    with col2:
         fecha_fin = st.date_input("Fecha de Fin")
 
     # Consulta optimizada a Firebase
@@ -215,6 +212,7 @@ def datos_boletas():
         articulos = boleta.get("articulos", {})
         articulos_lavados = "\n".join([f"{k}: {v}" for k, v in articulos.items()])
 
+        # Formatear tipo de servicio (igual que antes)
         tipo_servicio_formateado = boleta.get("tipo_servicio", "N/A")
         if tipo_servicio_formateado == "🏢 Sucursal":
             nombre_sucursal_boleta = boleta.get("sucursal", "Sin Nombre")
@@ -234,15 +232,15 @@ def datos_boletas():
     if datos:
         st.write("📋 Resultados Filtrados:")
         st.dataframe(
-            datos,
-            width=1000,
+            datos, 
+            width=1000, 
             height=600,
             column_config={
                 "Artículos Lavados": st.column_config.TextColumn(width="large")
             }
         )
 
-        # Botón de descarga en Excel
+        # Botón de descarga en Excel (opcional)
         df = pd.DataFrame(datos)
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
@@ -255,3 +253,5 @@ def datos_boletas():
         )
     else:
         st.info("No hay boletas que coincidan con los filtros seleccionados.")
+
+  
