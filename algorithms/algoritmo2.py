@@ -30,27 +30,12 @@ def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bo
 
     return True, arrivals
 
-
-def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
-    from heapq import heappush, heappop
-    from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC
-    import streamlit as st
-
+def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
     visited = set()
     current = depot
     t_now = SHIFT_START_SEC
     route = [depot]
     arrival = [t_now]
-
-    # Ordenar todos los nodos por apertura de ventana (primero los que abren más temprano),
-    # y luego por duración de ventana (más corta = más urgente)
-    nodes = sorted(
-        nodes,
-        key=lambda n: (
-            data["time_windows"][n][0],                           # apertura de ventana
-            (data["time_windows"][n][1] - data["time_windows"][n][0])  # duración
-        )
-    )
 
     while len(visited) < len(nodes):
         heap = []
@@ -58,46 +43,27 @@ def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
             if nxt in visited:
                 continue
 
-            # Tiempo estimado de llegada
-            t_travel = data["duration_matrix"][current][nxt]
-            t_temp = t_now + t_travel
+            t_temp = t_now + data["duration_matrix"][current][nxt]
             if current != depot:
                 t_temp += SERVICE_TIME
 
             w0, w1 = data["time_windows"][nxt]
 
-            # Penalizaciones por restricciones temporales
             wait = max(0, w0 - t_temp)
             lateness = max(0, t_temp - (w1 + tolerancia_seg))
-            idle_time = wait if wait > 0 else 0
 
-            # Urgencia: ventanas cortas tienen más peso
-            dur_ventana = w1 - w0
-            urgencia = 1 / (dur_ventana + 1)
-            urgencia *= 0.2  # para evitar sobrepriorización
-
-            # Prioridad extra si la ventana abre temprano (antes de 11:00am)
-            prioridad_temprana = max(0, 11*3600 - w0) / 3600
-
-            # Penalización total
-            lateness_penalty = 30 * lateness + 0.5 * max(0, t_temp - w0)
-            idle_penalty = 10 * idle_time
-
+            # Penalización total: tiempo base + espera + tardanza severa + urgencia
+            ventana_duracion = w1 - w0
+            urgencia = 1 / (ventana_duracion + 1)  # más peso a ventanas cortas
             score = (
                 t_temp
                 + wait
-                + lateness_penalty
-                + 300 * urgencia
-                + 50 * prioridad_temprana
-                + idle_penalty
+                + 20 * lateness         # penaliza fuertemente llegar tarde
+                + 300 * urgencia        # prioriza ventanas que cierran pronto
             )
 
-            # Advertencia si está fuera de ventana
             if lateness > 0:
-                st.warning(
-                    f"⚠️ Cliente {nxt} será atendido fuera de ventana "
-                    f"({int(t_temp/60)} min > {int(w1/60)} min + {int(tolerancia_seg/60)} min)"
-                )
+                st.warning(f"⚠️ Cliente {nxt} será atendido fuera de ventana ({t_temp}s > {w1}s + tolerancia {tolerancia_seg}s)")
 
             heappush(heap, (score, nxt, max(t_temp, w0)))
 
@@ -113,6 +79,8 @@ def build_route_greedy_force_all(data, nodes, depot, tolerancia_seg=900):
         t_now = t_arrival
 
     return route, arrival, visited
+
+
 
 
 
@@ -202,8 +170,7 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
 
     # 3) Reconstrucción final
     todos_los_clientes = [n for rt, _, _ in final_routes for n in rt if n != depot]
-    #ruta_final, llegada_final, usados = build_route_greedy(data, todos_los_clientes, depot, tolerancia_seg=0)
-    ruta_final, llegada_final, usados = build_route_greedy_force_all(data, todos_los_clientes, depot, tolerancia_seg=0)
+    ruta_final, llegada_final, usados = build_route_greedy(data, todos_los_clientes, depot, tolerancia_seg=0)
     no_asignados = [i for i in todos_los_clientes if i not in usados]
 
     if no_asignados:
