@@ -42,7 +42,7 @@ gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
 SERVICE_TIME    = 10 * 60        # 10 minutos de servicio en cada parada (excepto depósito)
-MAX_ELEMENTS    = 200            # límite de celdas por petición Distance Matrix API
+MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matrix API
 SHIFT_START_SEC =  9 * 3600      # 09:00 en segundos
 SHIFT_END_SEC   = 16*3600 +30*60 # 16:30 en segundos
 MARGEN = 15 * 60  # 15 minutos en segundos
@@ -122,11 +122,11 @@ def _distancia_duracion_matrix(coords):
 def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
     coords = list(zip(df["lat"], df["lon"]))
     dist_m, dur_s = _distancia_duracion_matrix(coords)
-    
-    MARGEN = 15 * 60  # 15 minutos en segundos
-    
+
     time_windows = []
     demandas = []
+    service_times = []
+
     for _, row in df.iterrows():
         ini = _hora_a_segundos(row.get("time_start"))
         fin = _hora_a_segundos(row.get("time_end"))
@@ -137,7 +137,16 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
             fin = min(24*3600, fin + MARGEN)
         time_windows.append((ini, fin))
         demandas.append(row.get("demand", 1))
-    
+
+        # ← NUEVO: tiempo de servicio personalizado
+        tipo = row.get("tipo", "").strip()
+        if tipo == "Sucursal":
+            service_times.append(5 * 60)  # 5 minutos
+        elif tipo == "Planta":
+            service_times.append(60 * 60)  # 30 minutos
+        else:
+            service_times.append(10 * 60)  # Cliente Delivery o indefinido
+
     return {
         "distance_matrix": dist_m,
         "duration_matrix": dur_s,
@@ -146,9 +155,10 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         "num_vehicles": vehiculos,
         "vehicle_capacities": [capacidad_veh or 10**9] * vehiculos,
         "depot": 0,
+        "service_times": service_times  # ← nuevo
     }
-#
 
+#
 
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     """
@@ -166,7 +176,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         i = manager.IndexToNode(from_index)
         j = manager.IndexToNode(to_index)
         travel = data["duration_matrix"][i][j]
-        service = SERVICE_TIME if i != data["depot"] else 0
+        service = 0 if i == data["depot"] else data["service_times"][i]
         return travel + service
 
     transit_cb_idx = routing.RegisterTransitCallback(time_cb)
@@ -174,28 +184,18 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
 
     routing.AddDimension(
         transit_cb_idx,
-        24 * 3600,  # slack max
-        24 * 3600,  # tiempo total máximo
-        False,      # start cumul to zero
+        24 * 3600,
+        24 * 3600,
+        False,
         "Time"
     )
-
     time_dim = routing.GetDimensionOrDie("Time")
     time_dim.SetGlobalSpanCostCoefficient(1000)
 
-    # 1. Ventanas estrictas (duros)
     for node, (ini, fin) in enumerate(data["time_windows"]):
         idx = manager.NodeToIndex(node)
         time_dim.CumulVar(idx).SetRange(ini, fin)
 
-    # 2. Penalización por llegar demasiado temprano
-    for node, (ini, _) in enumerate(data["time_windows"]):
-        if node == data["depot"]:
-            continue  # No penalices cochera
-        idx = manager.NodeToIndex(node)
-        time_dim.SetCumulVarSoftLowerBound(idx, ini, 200)  # penaliza espera
-
-    # 3. Ventana fija para cochera (inicio exacto)
     depot_idx = manager.NodeToIndex(data["depot"])
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
@@ -209,8 +209,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
 
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.time_limit.FromSeconds(tiempo_max_seg)
-    #params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC #Prioriza distancia, no tiempo
-    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION #Este sería en tal caso para la inserción de vehículos
+    params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
     params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
 
     sol = routing.SolveWithParameters(params)
@@ -281,6 +280,8 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         "routes": rutas,
         "distance_total_m": dist_total_m
     }
+
+
 
 
 
@@ -373,7 +374,8 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
         agrupados.append({
             "id":             f"cluster_{clus}",
             "operacion":      "Agrupado",
-            "nombre_cliente": f"Grupo {clus}: {nombre_desc}",
+            #"nombre_cliente": f"Grupo {clus}: {nombre_desc}",
+            "nombre_cliente": nombre_desc,
             "direccion":      direccion_desc,
             "lat":            centro_lat,
             "lon":            centro_lon,
@@ -436,7 +438,8 @@ def cargar_pedidos(fecha, tipo):
             "lon":            lon,
             "time_start":     ts,
             "time_end":       te,
-            "demand":         1
+            "demand":         1,
+            "tipo":           data.get("tipo_solicitud", "").strip()  
         })
 
     return out
