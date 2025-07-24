@@ -1,5 +1,4 @@
 import streamlit as st
-import time
 import re
 import folium
 from streamlit_folium import st_folium
@@ -20,10 +19,7 @@ def ingresar_sucursal():
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
-        st.markdown(
-            "<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>",
-            unsafe_allow_html=True
-        )
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📝 Ingresar Sucursal")
 
     # Campos del formulario
@@ -31,7 +27,7 @@ def ingresar_sucursal():
         "Nombre de la Sucursal",
         value=st.session_state.get("nombre_sucursal", "")
     )
-
+    
     direccion_input = st.text_input(
         "Dirección",
         value=st.session_state.get("ingresar_sucursal_direccion", "Arequipa, Perú"),
@@ -42,11 +38,10 @@ def ingresar_sucursal():
     sugerencias = []
     if direccion_input and direccion_input != st.session_state["ingresar_sucursal_direccion"]:
         sugerencias = obtener_sugerencias_direccion(direccion_input)
-
+    
     direccion_seleccionada = st.selectbox(
         "Sugerencias de Direcciones:",
-        (["Seleccione una dirección"] + [s["display_name"] for s in sugerencias])
-        if sugerencias else ["No hay sugerencias"],
+        ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
         key="ingresar_sucursal_sugerencias"
     )
 
@@ -60,13 +55,11 @@ def ingresar_sucursal():
 
                 # Actualizar mapa
                 st.session_state["ingresar_sucursal_mapa"] = folium.Map(
-                    location=[st.session_state["ingresar_sucursal_lat"],
-                              st.session_state["ingresar_sucursal_lon"]],
+                    location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
                     zoom_start=15
                 )
                 folium.Marker(
-                    [st.session_state["ingresar_sucursal_lat"],
-                     st.session_state["ingresar_sucursal_lon"]],
+                    [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
                     tooltip="Punto seleccionado"
                 ).add_to(st.session_state["ingresar_sucursal_mapa"])
                 break
@@ -74,13 +67,11 @@ def ingresar_sucursal():
     # Inicializar el mapa si no está
     if "ingresar_sucursal_mapa" not in st.session_state:
         st.session_state["ingresar_sucursal_mapa"] = folium.Map(
-            location=[st.session_state["ingresar_sucursal_lat"],
-                      st.session_state["ingresar_sucursal_lon"]],
+            location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
             zoom_start=15
         )
         folium.Marker(
-            [st.session_state["ingresar_sucursal_lat"],
-             st.session_state["ingresar_sucursal_lon"]],
+            [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
             tooltip="Punto seleccionado"
         ).add_to(st.session_state["ingresar_sucursal_mapa"])
 
@@ -113,19 +104,11 @@ def ingresar_sucursal():
     # Otros campos
     col1, col2 = st.columns(2)
     with col1:
-        encargado = st.text_input(
-            "Encargado (Opcional)",
-            value=st.session_state.get("encargado", "")
-        )
+        encargado = st.text_input("Encargado (Opcional)", value=st.session_state.get("encargado", ""))
     with col2:
-        telefono = st.text_input(
-            "Teléfono (Opcional)",
-            value=st.session_state.get("telefono", ""),
-            max_chars=9
-        )
+        telefono = st.text_input("Teléfono (Opcional)", value=st.session_state.get("telefono", ""), max_chars=9)
 
     if st.button("💾 Ingresar Sucursal"):
-        # Validaciones
         if not nombre_sucursal:
             st.error("El nombre de la sucursal es obligatorio.")
             return
@@ -141,30 +124,25 @@ def ingresar_sucursal():
                     "lat": st.session_state["ingresar_sucursal_lat"],
                     "lon": st.session_state["ingresar_sucursal_lon"]
                 },
-                "encargado": encargado or None,
-                "telefono": telefono or None,
+                "encargado": encargado if encargado else None,
+                "telefono": telefono if telefono else None,
             })
 
-            # Mostrar mensaje y esperar unos segundos
             st.success("✅ Sucursal registrada correctamente")
-            time.sleep(3)
 
-            # Limpiar posibles cachés y campos
-            for key in [
-                "sucursales",
-                "sucursales_mapa",
-                "ingresar_sucursal_mapa"
-            ]:
+            # Limpiar posibles cachés relacionadas
+            for key in ["sucursales", "sucursales_mapa"]:
                 if key in st.session_state:
                     del st.session_state[key]
 
+            # Resetear campos visibles
             st.session_state.update({
                 "nombre_sucursal": "",
                 "encargado": "",
                 "telefono": "",
                 "ingresar_sucursal_direccion": "Arequipa, Perú",
                 "ingresar_sucursal_lat": -16.409047,
-                "ingresar_sucursal_lon": -71.537451,
+                "ingresar_sucursal_lon": -71.537451
             })
 
             st.rerun()
