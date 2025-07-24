@@ -1,7 +1,7 @@
 
 #################################################################################################################
 # :) –  Streamlit App Integrado:
-#   → GLS + PCA + OR-Tools
+#   → GLS + PCI + OR-Tools
 #   → Firebase Firestore (usando service account JSON)
 #   → Google Maps Distance Matrix & Directions
 #   → OR-Tools VRP-TW con servicio, ventanas, tráfico real
