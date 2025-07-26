@@ -18,8 +18,6 @@ db = firestore.client()
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
- 
-
 # Conversión HH:MM -> segundos
 def _hora_a_segundos(hhmm):
     try:
@@ -49,6 +47,10 @@ def _haversine_dist_dur(coords, vel_kmh=40.0):
             dist[i][j] = int(d)
             dur[i][j] = int(d / v_ms)
     return dist, dur
+
+from ortools.sat.python import cp_model
+import numpy as np
+
 SERVICE_TIME_DEFAULT = 10 * 60
 BIG_M = 10**6
 TOLERANCIA_RETRASO = 30 * 60  # 30 minutos
@@ -132,6 +134,7 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
         }],
         "distance_total_m": distancia_total
     }
+
 # Expandir ventanas de tiempo
 def _expandir_ventanas(df):
     ventanas = []
