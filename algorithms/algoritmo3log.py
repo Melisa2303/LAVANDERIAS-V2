@@ -2,63 +2,65 @@ from ortools.sat.python import cp_model
 import numpy as np
 
 SERVICE_TIME_DEFAULT = 10 * 60
-TOLERANCIA_RETRASO = 30 * 60  # 30 minutos
-HORARIO_MAX = 24 * 3600
+BIG_M = 10**6
+TOLERANCIA_RETRASO = 5 * 60  # Hasta 5 minutos fuera de la ventana permitida
 
-def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
-    dur = data["duration_matrix"]
+def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     dist = data["distance_matrix"]
+    dur = data["duration_matrix"]
     ventanas = data["time_windows"]
     service_times = data.get("service_times", [SERVICE_TIME_DEFAULT] * len(ventanas))
 
     n = len(ventanas)
+
     model = cp_model.CpModel()
 
-    # Variables de decisión
-    x = {(i, j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(n) if i != j}
-    t = [model.NewIntVar(0, HORARIO_MAX, f"t_{i}") for i in range(n)]
-    retraso = [model.NewIntVar(0, TOLERANCIA_RETRASO, f"ret_{i}") for i in range(n)]
+    # Variables
+    x = {(i,j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(n) if i != j}
+    t = [model.NewIntVar(0, 86400, f"t_{i}") for i in range(n)]
+    visited = [model.NewBoolVar(f"visit_{i}") for i in range(n)]
+    retraso = [model.NewIntVar(0, TOLERANCIA_RETRASO, f"retraso_{i}") for i in range(n)]
 
-    # Flujo: entrar y salir una vez de cada nodo (excepto depósito)
+    # Flujo
     for j in range(1, n):
-        model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
+        model.Add(sum(x[i, j] for i in range(n) if i != j) == visited[j])
     for i in range(1, n):
-        model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
+        model.Add(sum(x[i, j] for j in range(n) if i != j) == visited[i])
 
-    # Flujo del depósito
+    # Depósito
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
+    model.Add(visited[0] == 1)
 
-    # Ventanas de tiempo + retraso tolerado
+    # Ventanas de tiempo suaves con retraso permitido
     for i in range(n):
         ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + retraso[i])
 
-    # Secuencia temporal
+    # Restricciones de secuencia
     for i in range(n):
         for j in range(n):
             if i != j:
-                model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
+                travel = dur[i][j]
+                model.Add(t[j] >= t[i] + service_times[i] + travel).OnlyEnforceIf(x[i, j])
 
-    # Objetivo: minimizar distancia total y retrasos
-    model.Minimize(
-        sum(dist[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j) +
-        sum(retraso[i] * 20 for i in range(n))  # penalización por llegar tarde
-    )
+    # Penalización por retrasos y saltos
+    penalizacion = sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
+    penalizacion += sum(retraso[i] * 100 for i in range(n))  # penaliza tardanza
+    penalizacion += sum((1 - visited[i]) * BIG_M for i in range(1, n))  # evitar nodos no visitados
 
-    # Resolver
+    model.Minimize(penalizacion)
+
+    # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        return {
-            "routes": [],
-            "distance_total_m": 0
-        }
+        return None
 
-    # Reconstruir ruta desde el nodo 0
+    # Reconstrucción de ruta
     ruta = [0]
     actual = 0
     while True:
@@ -73,7 +75,6 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
         actual = siguiente
 
     llegada = [solver.Value(t[i]) for i in ruta]
-    distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
 
     return {
         "routes": [{
@@ -81,5 +82,5 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
             "route": ruta,
             "arrival_sec": llegada
         }],
-        "distance_total_m": distancia_total
+        "distance_total_m": int(sum(dist[i][j] for i, j in zip(ruta, ruta[1:])))
     }
