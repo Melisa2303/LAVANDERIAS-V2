@@ -1,53 +1,71 @@
 # algorithms/algoritmo3log.py
-
 from ortools.sat.python import cp_model
+import pandas as pd
 import numpy as np
 
-SERVICE_TIME = 10 * 60
-SLACK_TOLERANCIA = 5 * 60
+SERVICE_TIME = 600  # 10 minutos
+SHIFT_START_SEC = 9 * 3600
+SHIFT_END_SEC = 16 * 3600 + 1800
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=120):
-    n = len(data["distance_matrix"])
-    dist = np.array(data["distance_matrix"])
-    dur = np.array(data["duration_matrix"])
+    dist = data["distance_matrix"]
+    dur = data["duration_matrix"]
     ventanas = data["time_windows"]
-    demandas = data["demands"]
-    capacidad = data.get("vehicle_capacities", [999])[0]
+    demandas = data.get("demands", [1] * len(dist))
+    n = len(dist)
 
     model = cp_model.CpModel()
+
+    # Variables binarias de recorrido
     x = {}
     for i in range(n):
         for j in range(n):
             if i != j:
-                x[i, j] = model.NewBoolVar(f"x_{i}_{j}")
+                x[i, j] = model.NewBoolVar(f'x_{i}_{j}')
 
-    t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
+    # Variables de tiempo de llegada
+    t = [model.NewIntVar(0, 86400, f't_{i}') for i in range(n)]
 
-    # Entradas y salidas únicas
+    # Cada nodo tiene una entrada y una salida
     for j in range(1, n):
         model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
     for i in range(1, n):
         model.Add(sum(x[i, j] for j in range(n) if j != i) == 1)
 
-    # Depósito
+    # Salida y retorno desde depósito
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
-    # Ventanas de tiempo con tolerancia
-    for i, (ini, fin) in enumerate(ventanas):
-        if ini is not None and fin is not None:
-            model.Add(t[i] >= ini)
-            model.Add(t[i] <= fin + SLACK_TOLERANCIA)
+    # Ventanas de tiempo como restricciones suaves
+    penalidad = 1000  # peso de penalización
+    penalizaciones = []
 
-    # Restricción de tiempo de llegada
+    for i, (ini, fin) in enumerate(ventanas):
+        earliness = model.NewIntVar(0, 86400, f'early_{i}')
+        lateness = model.NewIntVar(0, 86400, f'late_{i}')
+
+        model.Add(earliness >= ini - t[i])
+        model.Add(earliness >= 0)
+
+        model.Add(lateness >= t[i] - fin)
+        model.Add(lateness >= 0)
+
+        penalizaciones.append(earliness)
+        penalizaciones.append(lateness)
+
+    # Restricciones de tiempo de llegada según las rutas
     for i in range(n):
         for j in range(n):
             if i != j:
-                model.Add(t[j] >= t[i] + SERVICE_TIME + dur[i][j]).OnlyEnforceIf(x[i, j])
+                model.Add(t[j] >= t[i] + dur[i][j] + SERVICE_TIME).OnlyEnforceIf(x[i, j])
 
-    # Objetivo: minimizar duración total
-    model.Minimize(sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j))
+    # Objetivo: minimizar duración total y penalizaciones
+    model.Minimize(
+        sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j)
+        + penalidad * sum(penalizaciones)
+    )
 
+    # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
@@ -55,30 +73,31 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=120):
     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         return None
 
-    # Reconstruir ruta
+    # Reconstruir la ruta
     ruta = [0]
     actual = 0
-    while True:
+    visitados = set(ruta)
+    while len(ruta) < n:
         siguiente = None
         for j in range(n):
-            if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
+            if j != actual and (actual, j) in x and solver.Value(x[actual, j]) == 1:
                 siguiente = j
                 break
-        if siguiente is None or siguiente == 0:
+        if siguiente is None or siguiente in visitados:
             break
         ruta.append(siguiente)
+        visitados.add(siguiente)
         actual = siguiente
 
     llegada = [solver.Value(t[i]) for i in ruta]
 
-    rutas = [{
-        "vehicle": 0,
-        "route": ruta,
-        "arrival_sec": llegada
-    }]
-
+    # Formato de respuesta compatible con rutas3.py
     return {
-        "routes": rutas,
-        "distance_total_m": int(sum(dist[i][j] for i, j in zip(ruta[:-1], ruta[1:]))),
-        "arrival_sec_all_nodes": [solver.Value(t[i]) for i in range(n)]
+        "routes": [{
+            "vehicle": 0,
+            "route": ruta,
+            "arrival_sec": llegada
+        }],
+        "distance_total_m": sum(dist[ruta[i]][ruta[i+1]] for i in range(len(ruta)-1)),
+        "arrival_sec_all_nodes": [solver.Value(t[i]) for i in range(n)],
     }
