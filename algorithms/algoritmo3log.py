@@ -88,9 +88,6 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
             "distance_total_m": distancia_total
         }
 
-    # ------------------------ 🔁 Fallback: Ruta aproximada ------------------------
-
-    # Heurística: ordenar por inicio de ventana y cercanía
     restantes = set(range(1, n))
     ruta = [0]
     llegada = [ventanas[0][0]]
