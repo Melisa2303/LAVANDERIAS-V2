@@ -44,7 +44,7 @@ def _dist_dur_matrix(coords, vel_kmh=40):
 
 SERVICE_TIME_DEFAULT = 10 * 60
 BIG_M = 10**6
-TOLERANCIA_RETRASO = 5 * 60  # Hasta 5 minutos fuera de la ventana permitida
+TOLERANCIA_RETRASO = 15 * 60  # Hasta 5 minutos fuera de la ventana permitida
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
     dist = data["distance_matrix"]
