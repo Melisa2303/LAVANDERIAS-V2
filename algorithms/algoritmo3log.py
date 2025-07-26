@@ -48,46 +48,45 @@ def _dist_dur_matrix(coords, vel_kmh=40):
     return dist, dur
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
-    import pandas as pd
-
-    df = data["df"]
-    coords = list(zip(df["lat"], df["lon"]))
-    n = len(coords)
-    dist, dur = _dist_dur_matrix(coords)
-    ventanas = _expandir_ventanas(df)
+    n = len(data["locations"])
+    dur = np.array(data["duration_matrix"])
+    dist = np.array(data["distance_matrix"])
+    ventanas = data["time_windows"]
 
     model = cp_model.CpModel()
 
-    x = {(i,j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(n) if i != j}
-    t = [model.NewIntVar(0, 86400, f"t_{i}") for i in range(n)]
-    visited = [model.NewBoolVar(f"visit_{i}") for i in range(n)]
+    # Variables
+    x = {(i, j): model.NewBoolVar(f'x_{i}_{j}') for i in range(n) for j in range(n) if i != j}
+    t = [model.NewIntVar(0, 86400, f't_{i}') for i in range(n)]
+    visitado = [model.NewBoolVar(f'visit_{i}') for i in range(n)]
 
+    # Restricciones de flujo
     for j in range(1, n):
-        model.Add(sum(x[i,j] for i in range(n) if i != j) == visited[j])
+        model.Add(sum(x[i, j] for i in range(n) if i != j) == visitado[j])
     for i in range(1, n):
-        model.Add(sum(x[i,j] for j in range(n) if i != j) == visited[i])
+        model.Add(sum(x[i, j] for j in range(n) if i != j) == visitado[i])
+    model.Add(visitado[0] == 1)
+    model.Add(sum(x[0, j] for j in range(1, n)) == 1)
+    model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
-    model.Add(sum(x[0,j] for j in range(1, n)) == 1)
-    model.Add(sum(x[i,0] for i in range(1, n)) == 1)
-    model.Add(visited[0] == 1)
+    # Ventanas de tiempo con tolerancia
+    tolerancia = 5 * 60  # 5 minutos de tolerancia
+    for i, (ini, fin) in enumerate(ventanas):
+        model.Add(t[i] >= max(0, ini - tolerancia))
+        model.Add(t[i] <= min(86400, fin + tolerancia))
 
-    for i in range(n):
-        ini, fin = ventanas[i]
-        model.Add(t[i] >= ini)
-        model.Add(t[i] <= fin)
-
+    # Secuenciación temporal
     for i in range(n):
         for j in range(n):
             if i != j:
-                model.Add(t[j] >= t[i] + SERVICE_TIME + dur[i][j]).OnlyEnforceIf(x[i,j])
+                model.Add(t[j] >= t[i] + SERVICE_TIME + dur[i][j]).OnlyEnforceIf(x[i, j])
 
-    BIG_M = 100000
-    penalty_not_visited = BIG_M
-    model.Minimize(
-        sum(x[i,j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
-        + sum((1 - visited[i]) * penalty_not_visited for i in range(1, n))
-    )
+    # Objetivo: minimizar duración + penalización por no visitar
+    penalidad = sum((1 - visitado[i]) * BIG_M for i in range(1, n))
+    duracion_total = sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
+    model.Minimize(duracion_total + penalidad)
 
+    # Resolver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
@@ -95,18 +94,19 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
         return None
 
+    # Reconstruir ruta
     ruta = [0]
     actual = 0
     while True:
-        found = False
+        siguiente = None
         for j in range(n):
-            if actual != j and (actual,j) in x and solver.Value(x[actual,j]) == 1:
-                ruta.append(j)
-                actual = j
-                found = True
+            if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
+                siguiente = j
                 break
-        if not found:
+        if siguiente is None or siguiente == 0:
             break
+        ruta.append(siguiente)
+        actual = siguiente
 
     llegada = [solver.Value(t[i]) for i in ruta]
 
@@ -116,5 +116,5 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
             "route": ruta,
             "arrival_sec": llegada
         }],
-        "distance_total_m": int(sum(dist[i][j] for i,j in zip(ruta, ruta[1:])))
+        "distance_total_m": int(sum(dist[i][j] for i, j in zip(ruta, ruta[1:])))
     }
