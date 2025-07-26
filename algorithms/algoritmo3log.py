@@ -68,37 +68,46 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
     x = {(i, j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(n) if i != j}
     t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
     retraso = [model.NewIntVar(0, TOLERANCIA_RETRASO, f"ret_{i}") for i in range(n)]
+    visited = [model.NewBoolVar(f"visit_{i}") for i in range(n)]
 
-    # Flujo: entrar y salir una vez de cada nodo (excepto depósito)
+    # Flujo: cada nodo tiene una entrada/salida solo si se visita
     for j in range(1, n):
-        model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
+        model.Add(sum(x[i, j] for i in range(n) if i != j) == visited[j])
     for i in range(1, n):
-        model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
+        model.Add(sum(x[i, j] for j in range(n) if i != j) == visited[i])
 
-    # Flujo del depósito
+    # Depósito (nodo 0)
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
+    model.Add(visited[0] == 1)
 
-    # Ventanas de tiempo con retraso tolerado
+    # Ventanas de tiempo suaves con retraso permitido
     for i in range(n):
         ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + retraso[i])
 
-    # Secuencia de tiempo: si voy de i a j, entonces t[j] ≥ t[i] + travel + service
+    # Restricción de secuencia temporal si se viaja de i a j
     for i in range(n):
         for j in range(n):
             if i != j:
-                travel = dur[i][j]
-                model.Add(t[j] >= t[i] + service_times[i] + travel).OnlyEnforceIf(x[i, j])
+                model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
 
-    # Función objetivo: minimizar duración + retraso + evitar saltos largos
+    # Eliminar subciclos pequeños (solo cuando hay más de 3 nodos)
+    if n > 3:
+        from itertools import combinations
+        for s in range(2, n):
+            for subset in combinations(range(1, n), s):
+                model.Add(sum(x[i, j] for i in subset for j in subset if i != j) <= len(subset) - 1)
+
+    # Objetivo: minimizar duración + retraso + penalización por nodos no visitados
     model.Minimize(
         sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j) +
-        sum(retraso[i] * 10 for i in range(n))  # Penalización por llegar tarde
+        sum(retraso[i] * 5 for i in range(n)) +
+        sum((1 - visited[i]) * BIG_M for i in range(1, n))  # penaliza nodos no visitados
     )
 
-    # Resolver
+    # Solver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
@@ -109,13 +118,13 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
             "distance_total_m": 0
         }
 
-    # Reconstruir la ruta desde el depósito
+    # Reconstrucción de ruta
     ruta = [0]
     actual = 0
     while True:
         siguiente = None
         for j in range(n):
-            if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
+            if actual != j and (actual, j) in x and solver.Value(x[actual, j]):
                 siguiente = j
                 break
         if siguiente is None or siguiente == 0:
@@ -134,7 +143,6 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
         }],
         "distance_total_m": distancia_total
     }
-
 # Expandir ventanas de tiempo
 def _expandir_ventanas(df):
     ventanas = []
