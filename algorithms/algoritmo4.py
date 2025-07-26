@@ -4,10 +4,10 @@ import math
 from datetime import datetime
 
 # Configuración de la ruta
-SERVICE_TIME = 10 * 60  # 10 minutos en segundos
+SERVICE_TIME = 13 * 60  # 10 minutos en segundos
 SHIFT_START_SEC = 9 * 3600  # 9:00 AM
 SHIFT_END_SEC = 16.5 * 3600  # 4:30 PM
-MAX_TIEMPO_ENTRE_PUNTOS = 35 * 60
+MAX_TIEMPO_ENTRE_PUNTOS = 25 * 60
 PENALIZACION_SALTOS_LARGOS = 50
 
 class LNSOptimizer:
@@ -34,125 +34,143 @@ class LNSOptimizer:
         self.hora_inicio = SHIFT_START_SEC
         self.hora_fin = SHIFT_END_SEC
 
-    def calcular_costo_ruta(self, ruta):
+    def calcular_costo_ruta(self, ruta, strict=False):
         if len(ruta) < 1:
             return float('inf')
-        
+    
         costo = 0
+        penalizacion = 0
         tiempo_actual = self.hora_inicio
         
         for i in range(len(ruta)):
-            # Primer punto de la ruta
-            if i == 0:
-                tw_start, tw_end = self.time_windows[ruta[i]]
-                tiempo_actual = max(tiempo_actual, tw_start)  # Respetar ventana
-            # Puntos subsiguientes
-            else:
-                tiempo_viaje = self.dur_matrix[ruta[i-1]][ruta[i]]
-                tw_start, tw_end = self.time_windows[ruta[i]]
-                tiempo_actual += tiempo_viaje
-                tiempo_actual = max(tiempo_actual, tw_start)
-                
-                if tiempo_actual > tw_end:
-                    return float('inf')
-                
-                costo += tiempo_viaje
+            punto = ruta[i]
+            tw_start, tw_end = self.time_windows[punto]
             
+            # Tiempo de llegada al punto
+            if i > 0:
+                tiempo_viaje = self.dur_matrix[ruta[i-1]][punto]
+                tiempo_actual += tiempo_viaje
+                costo += tiempo_viaje
+                
+                # Penalizar saltos largos
+                if tiempo_viaje > MAX_TIEMPO_ENTRE_PUNTOS:
+                    penalizacion += PENALIZACION_SALTOS_LARGOS
+            
+            # Verificar ventana de tiempo
+            if tiempo_actual < tw_start:
+                tiempo_actual = tw_start
+            elif tiempo_actual > tw_end:
+                if strict:
+                    return float('inf')
+                penalizacion += (tiempo_actual - tw_end) * 10
+            
+            # Tiempo de servicio
             tiempo_actual += self.tiempo_servicio
+            
+            # Verificar fin de jornada
+            if tiempo_actual > self.hora_fin:
+                if strict:
+                    return float('inf')
+                penalizacion += (tiempo_actual - self.hora_fin) * 5
         
-        return costo
+        return costo + penalizacion
     
     def construir_solucion_inicial(self):
-        """Asigna puntos aleatoriamente a vehículos, todos tratados igual"""
-        puntos = list(range(self.n))  # Todos los puntos son normales
+        puntos = list(range(self.n))
         random.shuffle(puntos)
         
-        # Dividir equitativamente entre vehículos
         rutas = []
         puntos_por_vehiculo = math.ceil(len(puntos) / self.vehiculos)
         
         for i in range(self.vehiculos):
             inicio = i * puntos_por_vehiculo
             fin = min((i + 1) * puntos_por_vehiculo, len(puntos))
-            ruta = puntos[inicio:fin]  # No hay depósito inicial/final
+            ruta = puntos[inicio:fin]
             rutas.append(ruta)
         
         return rutas
-    
 
     def destruir_solucion(self, solucion):
-        """Destrucción que prioriza puntos con saltos largos"""
+        """Versión robusta de destrucción que evita errores de índice"""
         solucion_dest = copy.deepcopy(solucion)
         removidos = []
         
-        # Identificar puntos problemáticos
+        # 1. Identificar puntos problemáticos de manera segura
         problematicos = []
-        for ruta in solucion:
-            for i in range(1, len(ruta)-1):
-                tiempo_viaje = self.dur_matrix[ruta[i-1]][ruta[i]]
-                if tiempo_viaje > MAX_TIEMPO_ENTRE_PUNTOS:
-                    problematicos.append(ruta[i])
-        
-        # Destruir primero los problemáticos
+        for i_ruta, ruta in enumerate(solucion):
+            if len(ruta) < 2:  # Saltar rutas demasiado cortas
+                continue
+            for i in range(1, len(ruta)):
+                try:
+                    if self.dur_matrix[ruta[i-1]][ruta[i]] > MAX_TIEMPO_ENTRE_PUNTOS:
+                        problematicos.append((i_ruta, i))
+                except IndexError:
+                    continue  # Si hay error en la matriz, saltar este punto
+    
+        # 2. Remover puntos problemáticos de manera controlada
         if problematicos:
             num_remover = min(len(problematicos), int(len(problematicos) * 0.7))
-            for punto in random.sample(problematicos, num_remover):
-                for ruta in solucion_dest:
-                    if punto in ruta:
-                        idx = ruta.index(punto)
-                        if 0 < idx < len(ruta)-1:
-                            removidos.append(ruta.pop(idx))
-                        break
+            for i_ruta, idx in random.sample(problematicos, num_remover):
+                try:
+                    if 0 <= idx < len(solucion_dest[i_ruta]):
+                        removidos.append(solucion_dest[i_ruta].pop(idx))
+                except (IndexError, TypeError):
+                    continue  # Si falla, continuar con el siguiente
+    
+        # 3. Destrucción aleatoria complementaria con verificación
+        puntos_disponibles = []
+        for i_ruta, ruta in enumerate(solucion_dest):
+            if len(ruta) > 1:  # Solo rutas con múltiples puntos
+                puntos_disponibles.extend((i_ruta, i) for i in range(len(ruta)))
         
-        # Destrucción aleatoria complementaria
-        for ruta in solucion_dest:
-            if len(ruta) > 2:
-                num_remover = max(1, int(len(ruta) * self.porcentaje_destruccion/2))
-                indices = random.sample(range(1, len(ruta)-1), min(num_remover, len(ruta)-2))
-                for idx in sorted(indices, reverse=True):
-                    removidos.append(ruta.pop(idx))
-        
+        if puntos_disponibles:
+            num_aleatorio = max(1, int(self.n * self.porcentaje_destruccion/3))
+            num_aleatorio = min(num_aleatorio, len(puntos_disponibles))
+            
+            for i_ruta, idx in random.sample(puntos_disponibles, num_aleatorio):
+                try:
+                    if 0 <= idx < len(solucion_dest[i_ruta]):
+                        removidos.append(solucion_dest[i_ruta].pop(idx))
+                except (IndexError, TypeError):
+                    continue
+    
         return solucion_dest, removidos
 
     def reparar_solucion(self, solucion, removidos):
         for punto in removidos:
             mejor_costo = float('inf')
-            mejor_posicion = None
+            mejor_posicion = (0, 0)  # Posición por defecto
             
             for i_ruta, ruta in enumerate(solucion):
-                for j in range(len(ruta) + 1):  # Permite insertar al inicio/final
+                for j in range(len(ruta) + 1):
                     ruta_temp = ruta[:j] + [punto] + ruta[j:]
-                    costo = self.calcular_costo_ruta(ruta_temp)
+                    costo = self.calcular_costo_ruta(ruta_temp, strict=False)
                     
                     if costo < mejor_costo:
                         mejor_costo = costo
                         mejor_posicion = (i_ruta, j)
             
-            if mejor_posicion:
-                solucion[mejor_posicion[0]].insert(mejor_posicion[1], punto)
+            # Insertar en la mejor posición encontrada
+            solucion[mejor_posicion[0]].insert(mejor_posicion[1], punto)
         
         return solucion
 
     def optimizar(self):
-        """Algoritmo LNS mejorado"""
-        # Construir solución inicial
+        """Algoritmo LNS con garantía de cobertura completa"""
         solucion_actual = self.construir_solucion_inicial()
-        costo_actual = sum(self.calcular_costo_ruta(r) for r in solucion_actual)
+        costo_actual = sum(self.calcular_costo_ruta(r, strict=False) for r in solucion_actual)
         
         self.mejor_solucion = copy.deepcopy(solucion_actual)
         self.mejor_costo = costo_actual
         
-        # Búsqueda LNS
         inicio = datetime.now()
         iteracion = 0
         
         while (datetime.now() - inicio).seconds < self.tiempo_max and iteracion < self.iteraciones:
-            # Destruir y reparar
             solucion_dest, removidos = self.destruir_solucion(solucion_actual)
             nueva_solucion = self.reparar_solucion(solucion_dest, removidos)
-            nuevo_costo = sum(self.calcular_costo_ruta(r) for r in nueva_solucion)
+            nuevo_costo = sum(self.calcular_costo_ruta(r, strict=False) for r in nueva_solucion)
             
-            # Criterio de aceptación
             if nuevo_costo < costo_actual or random.random() < 0.1:
                 solucion_actual = nueva_solucion
                 costo_actual = nuevo_costo
@@ -163,27 +181,59 @@ class LNSOptimizer:
             
             iteracion += 1
         
+        # Verificación final de cobertura
+        puntos_cubiertos = {p for ruta in self.mejor_solucion for p in ruta}
+        if len(puntos_cubiertos) != self.n:
+            puntos_faltantes = set(range(self.n)) - puntos_cubiertos
+            for punto in puntos_faltantes:
+                self._insertar_punto_forzado(punto)
+        
         return self._formatear_solucion()
 
+
+    def _insertar_punto_forzado(self, punto):
+        """Inserta un punto en la posición menos mala (último recurso)"""
+        mejor_costo = float('inf')
+        mejor_posicion = (0, 0)
+        
+        for i_ruta, ruta in enumerate(self.mejor_solucion):
+            for j in range(len(ruta) + 1):
+                ruta_temp = ruta[:j] + [punto] + ruta[j:]
+                costo = self.calcular_costo_ruta(ruta_temp, strict=False)
+                
+                if costo < mejor_costo:
+                    mejor_costo = costo
+                    mejor_posicion = (i_ruta, j)
+        
+        self.mejor_solucion[mejor_posicion[0]].insert(mejor_posicion[1], punto)
+        self.mejor_costo += mejor_costo  # Ajustar costo total
+
+
     def _formatear_solucion(self):
-        """Formatea la solución para la aplicación"""
-        if not self.mejor_solucion:
-            return None
-            
+        """Formatea la solución garantizando estructura consistente"""
+        if not self.mejor_solucion or all(len(r) == 0 for r in self.mejor_solucion):
+            return {
+                'routes': [],
+                'total_distance': 0,
+                'distance_total_m': 0,
+                'error': 'No se pudo generar una solución válida'
+            }
+        
         rutas_formateadas = []
         distancia_total = 0
         
         for i, ruta in enumerate(self.mejor_solucion):
+            if not ruta:  # Si la ruta está vacía
+                continue
+                
             tiempos = []
             tiempo_actual = self.hora_inicio
             
             for j in range(len(ruta)):
-                # Todos los puntos (incluido el primero) calculan su tiempo
+                # Calcular tiempo de llegada
                 if j > 0:
-                    distancia = self.dist_matrix[ruta[j-1]][ruta[j]]
-                    tiempo_viaje = self.dur_matrix[ruta[j-1]][ruta[j]]
-                    tiempo_actual += tiempo_viaje
-                    distancia_total += distancia
+                    distancia_total += self.dist_matrix[ruta[j-1]][ruta[j]]
+                    tiempo_actual += self.dur_matrix[ruta[j-1]][ruta[j]]
                 
                 tw_start, _ = self.time_windows[ruta[j]]
                 tiempo_actual = max(tiempo_actual, tw_start)
@@ -193,13 +243,14 @@ class LNSOptimizer:
             rutas_formateadas.append({
                 'vehicle': i,
                 'route': ruta,
-                'arrival_sec': tiempos
+                'arrival_sec': tiempos,
+                'num_points': len(ruta)
             })
         
         return {
             'routes': rutas_formateadas,
             'total_distance': distancia_total,
-            'distance_total_m': distancia_total
+            'distance_total_m': distancia_total,
         }
 
 def optimizar_ruta_lns(data, tiempo_max_seg=120):
