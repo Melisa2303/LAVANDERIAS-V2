@@ -1,47 +1,48 @@
+# algorithms/algoritmo3.py
+
 from ortools.sat.python import cp_model
 import numpy as np
-from typing import Dict, Any, List
 
-def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Dict[str, Any]:
+SERVICE_TIME_DEFAULT = 10 * 60       # 10 minutos
+TOLERANCIA_RETRASO = 30 * 60         # 30 minutos
+
+def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     dur = data["duration_matrix"]
     dist = data["distance_matrix"]
     ventanas = data["time_windows"]
-    service_times = data.get("service_times", [600] * len(ventanas))  # Default 10min
+    service_times = data.get("service_times", [SERVICE_TIME_DEFAULT] * len(ventanas))
 
     n = len(ventanas)
     model = cp_model.CpModel()
-    BIG_M = 10**6
-    TOLERANCIA_RETRASO = 30 * 60
 
     # Variables
     x = {(i, j): model.NewBoolVar(f"x_{i}_{j}")
          for i in range(n) for j in range(n) if i != j}
-    t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
+    t = [model.NewIntVar(0, 24*3600, f"t_{i}") for i in range(n)]
     retraso = [model.NewIntVar(0, TOLERANCIA_RETRASO, f"ret_{i}") for i in range(n)]
 
-    # Flujo: entrar y salir una vez de cada nodo (excepto depósito)
+    # Flujo
     for j in range(1, n):
         model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
     for i in range(1, n):
         model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
 
-    # Flujo desde y hacia el depósito
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
-    # Ventanas de tiempo con retraso tolerado
+    # Ventanas de tiempo (flexibles con retraso)
     for i in range(n):
         ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + retraso[i])
 
-    # Secuencia temporal
+    # Restricción temporal
     for i in range(n):
         for j in range(n):
             if i != j:
                 model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
 
-    # Subtour elimination (MTZ)
+    # Subtours (MTZ)
     u = [model.NewIntVar(0, n - 1, f"u_{i}") for i in range(n)]
     for i in range(1, n):
         for j in range(1, n):
@@ -54,7 +55,6 @@ def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Di
         sum(retraso[i] * 10 for i in range(n))
     )
 
-    # Solve
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
@@ -65,7 +65,7 @@ def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Di
             "distance_total_m": 0
         }
 
-    # Reconstruir ruta desde depósito
+    # Reconstrucción de la ruta
     ruta = [0]
     actual = 0
     visitados = set(ruta)
