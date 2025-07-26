@@ -59,29 +59,38 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
-    if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+        # Reconstrucción de la ruta
+        ruta = [0]
+        actual = 0
+        visitados = set(ruta)
+        while True:
+            siguiente = None
+            for j in range(n):
+                if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
+                    siguiente = j
+                    break
+            if siguiente is None or siguiente in visitados:
+                break
+            ruta.append(siguiente)
+            visitados.add(siguiente)
+            actual = siguiente
+
+        llegada = [solver.Value(t[i]) for i in ruta]
+        distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
+
         return {
-            "routes": [],
-            "distance_total_m": 0
+            "routes": [{
+                "vehicle": 0,
+                "route": ruta,
+                "arrival_sec": llegada
+            }],
+            "distance_total_m": distancia_total
         }
 
-    # Reconstrucción de la ruta
-    ruta = [0]
-    actual = 0
-    visitados = set(ruta)
-    while True:
-        siguiente = None
-        for j in range(n):
-            if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
-                siguiente = j
-                break
-        if siguiente is None or siguiente in visitados:
-            break
-        ruta.append(siguiente)
-        visitados.add(siguiente)
-        actual = siguiente
-
-    llegada = [solver.Value(t[i]) for i in ruta]
+    # 🚨 Fallback: retorna secuencia directa sin optimizar
+    ruta = list(range(n))
+    llegada = [ventanas[i][0] + service_times[i] for i in ruta]
     distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
 
     return {
