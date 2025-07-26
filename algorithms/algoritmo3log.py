@@ -48,45 +48,51 @@ def _dist_dur_matrix(coords, vel_kmh=40):
     return dist, dur
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
-    n = len(data["locations"])
-    dur = np.array(data["duration_matrix"])
-    dist = np.array(data["distance_matrix"])
+    dur = data["duration_matrix"]
+    n = len(dur)
     ventanas = data["time_windows"]
+    service_times = data.get("service_times", [600] * n)  # por defecto 10 min
+    depot = data.get("depot", 0)
 
     model = cp_model.CpModel()
 
     # Variables
     x = {(i, j): model.NewBoolVar(f'x_{i}_{j}') for i in range(n) for j in range(n) if i != j}
     t = [model.NewIntVar(0, 86400, f't_{i}') for i in range(n)]
-    visitado = [model.NewBoolVar(f'visit_{i}') for i in range(n)]
+    visited = [model.NewBoolVar(f'visit_{i}') for i in range(n)]
 
     # Restricciones de flujo
     for j in range(1, n):
-        model.Add(sum(x[i, j] for i in range(n) if i != j) == visitado[j])
+        model.Add(sum(x[i, j] for i in range(n) if i != j) == visited[j])
     for i in range(1, n):
-        model.Add(sum(x[i, j] for j in range(n) if i != j) == visitado[i])
-    model.Add(visitado[0] == 1)
-    model.Add(sum(x[0, j] for j in range(1, n)) == 1)
-    model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
+        model.Add(sum(x[i, j] for j in range(n) if i != j) == visited[i])
+    model.Add(sum(x[depot, j] for j in range(n) if j != depot) == 1)
+    model.Add(sum(x[i, depot] for i in range(n) if i != depot) == 1)
+    model.Add(visited[depot] == 1)
 
-    # Ventanas de tiempo con tolerancia
-    tolerancia = 5 * 60  # 5 minutos de tolerancia
-    for i, (ini, fin) in enumerate(ventanas):
-        model.Add(t[i] >= max(0, ini - tolerancia))
-        model.Add(t[i] <= min(86400, fin + tolerancia))
+    # Ventanas de tiempo (flexible)
+    soft_limit = 300  # 5 minutos de tolerancia
+    for i in range(n):
+        ini, fin = ventanas[i]
+        over_late = model.NewIntVar(0, 86400, f"late_{i}")
+        model.Add(t[i] >= ini)
+        model.Add(t[i] <= fin + soft_limit + over_late)
+        # Penalizamos llegar tarde más allá del margen
+        model.AddPenaltyTerm(over_late, 100)
 
-    # Secuenciación temporal
     for i in range(n):
         for j in range(n):
             if i != j:
-                model.Add(t[j] >= t[i] + SERVICE_TIME + dur[i][j]).OnlyEnforceIf(x[i, j])
+                model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
 
-    # Objetivo: minimizar duración + penalización por no visitar
-    penalidad = sum((1 - visitado[i]) * BIG_M for i in range(1, n))
-    duracion_total = sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
-    model.Minimize(duracion_total + penalidad)
+    # Objetivo: minimizar tiempo total + penalidad por no visitar
+    BIG_M = 100000
+    penalty_not_visited = BIG_M
+    model.Minimize(
+        sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
+        + sum((1 - visited[i]) * penalty_not_visited for i in range(1, n))
+    )
 
-    # Resolver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
@@ -95,20 +101,21 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
         return None
 
     # Reconstruir ruta
-    ruta = [0]
-    actual = 0
+    ruta = [depot]
+    actual = depot
     while True:
-        siguiente = None
+        found = False
         for j in range(n):
-            if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
-                siguiente = j
+            if actual != j and (actual, j) in x and solver.Value(x[actual, j]):
+                ruta.append(j)
+                actual = j
+                found = True
                 break
-        if siguiente is None or siguiente == 0:
+        if not found:
             break
-        ruta.append(siguiente)
-        actual = siguiente
 
     llegada = [solver.Value(t[i]) for i in ruta]
+    distancia_total = sum(data["distance_matrix"][i][j] for i, j in zip(ruta, ruta[1:]))
 
     return {
         "routes": [{
@@ -116,5 +123,5 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
             "route": ruta,
             "arrival_sec": llegada
         }],
-        "distance_total_m": int(sum(dist[i][j] for i, j in zip(ruta, ruta[1:])))
+        "distance_total_m": int(distancia_total)
     }
