@@ -2,12 +2,13 @@ from ortools.sat.python import cp_model
 import numpy as np
 import math
 
+# Constantes
 SERVICE_TIME_DEFAULT = 10 * 60
 BIG_M = 10**6
-TOLERANCIA_RETRASO = 15 * 60  # 15 minutos
+TOLERANCIA_RETRASO = 15 * 60
 SHIFT_START_SEC = 9 * 3600
 SHIFT_END_SEC = 16 * 3600 + 30 * 60
-MARGEN = 15 * 60  # márgenes para extender ventana
+MARGEN = 15 * 60
 
 def _hora_a_segundos(hora):
     try:
@@ -19,22 +20,22 @@ def _hora_a_segundos(hora):
 def _expandir_ventanas(ventanas_raw):
     ventanas = []
     for ini, fin in ventanas_raw:
-        ini = ini if ini is not None else SHIFT_START_SEC
-        fin = fin if fin is not None else SHIFT_END_SEC
-        ventanas.append((
-            max(0, ini - MARGEN),
-            min(86400, fin + MARGEN)
-        ))
+        if ini is None or fin is None:
+            ini, fin = SHIFT_START_SEC, SHIFT_END_SEC
+        else:
+            ini = max(0, ini - MARGEN)
+            fin = min(86400, fin + MARGEN)
+        ventanas.append((ini, fin))
     return ventanas
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
     dist = data["distance_matrix"]
     dur = data["duration_matrix"]
     ventanas_raw = data["time_windows"]
-    service_times = data.get("service_times", [SERVICE_TIME_DEFAULT] * len(ventanas_raw))
-
-    n = len(ventanas_raw)
     ventanas = _expandir_ventanas(ventanas_raw)
+    service_times = data.get("service_times", [SERVICE_TIME_DEFAULT] * len(ventanas))
+
+    n = len(ventanas)
 
     model = cp_model.CpModel()
 
@@ -55,24 +56,24 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
     model.Add(visited[0] == 1)
 
-    # Ventanas de tiempo con retraso suave
+    # Ventanas de tiempo suaves
     for i in range(n):
         ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + retraso[i])
 
-    # Secuencias con tiempo de viaje y servicio
+    # Secuencia
     for i in range(n):
         for j in range(n):
             if i != j:
                 model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
 
-    # Función objetivo
-    model.Minimize(
-        sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
-        + sum(retraso[i] * 100 for i in range(n))
-        + sum((1 - visited[i]) * BIG_M for i in range(1, n))
-    )
+    # Penalización
+    penalizacion = sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j)
+    penalizacion += sum(retraso[i] * 100 for i in range(n))
+    penalizacion += sum((1 - visited[i]) * BIG_M for i in range(1, n))
+
+    model.Minimize(penalizacion)
 
     # Resolver
     solver = cp_model.CpSolver()
@@ -80,7 +81,6 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
     status = solver.Solve(model)
 
     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        # No se halló solución, devolver algo no vacío
         return {
             "routes": [{
                 "vehicle": 0,
@@ -104,8 +104,7 @@ def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
         ruta.append(siguiente)
         actual = siguiente
 
-    if len(ruta) == 1:
-        # No se visitó ningún nodo más allá del depósito
+    if len(ruta) <= 1:
         return {
             "routes": [{
                 "vehicle": 0,
