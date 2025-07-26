@@ -65,7 +65,7 @@ def _expandir_ventanas(df):
     return ventanas
 
 SERVICE_TIME_DEFAULT = 10 * 60
-BIG_M = 10**6
+BIG_M = 100*6
 TOLERANCIA_RETRASO = 15 * 60  # 30 minutos
 
 def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
