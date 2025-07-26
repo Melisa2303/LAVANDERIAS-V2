@@ -5,7 +5,7 @@ SERVICE_TIME_DEFAULT = 10 * 60
 BIG_M = 10**6
 TOLERANCIA_RETRASO = 30 * 60  # 30 minutos
 
-def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
+def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     dur = data["duration_matrix"]
     dist = data["distance_matrix"]
     ventanas = data["time_windows"]
