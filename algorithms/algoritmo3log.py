@@ -10,7 +10,7 @@ from ortools.sat.python import cp_model
 
 SERVICE_TIME_DEFAULT = 10 * 60
 TOLERANCIA_RETRASO = 30 * 60  # 30 min de tolerancia máxima
-MAX_TIEMPO_TOTAL = 24 * 3600
+MAX_TIEMPO_TOTAL = 30 * 3600
 
 # Inicializar Firebase
 if not firebase_admin._apps:
