@@ -18,11 +18,7 @@ db = firestore.client()
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-# Constantes
-SERVICE_TIME = 10 * 60
-SHIFT_START_SEC = 9 * 3600
-SHIFT_END_SEC = 16 * 3600 + 30 * 60
-MARGEN = 15 * 60
+ 
 
 # Conversión HH:MM -> segundos
 def _hora_a_segundos(hhmm):
@@ -68,55 +64,65 @@ def _expandir_ventanas(df):
         ventanas.append((ini, fin))
     return ventanas
 
-# CP-SAT puro
-def optimizar_cp_sat_puro(df, vehiculos=1, capacidad=999, timeout=60):
-    coords = list(zip(df["lat"], df["lon"]))
-    n = len(coords)
-    dist, dur = _haversine_dist_dur(coords)
-    ventanas = _expandir_ventanas(df)
-    demandas = df["demand"].fillna(1).astype(int).tolist()
+SERVICE_TIME_DEFAULT = 10 * 60
+BIG_M = 10**6
+TOLERANCIA_RETRASO = 15 * 60  # 30 minutos
 
+def optimizar_ruta_cp_sat_puro(data, tiempo_max_seg=60):
+    dur = data["duration_matrix"]
+    dist = data["distance_matrix"]
+    ventanas = data["time_windows"]
+    service_times = data.get("service_times", [SERVICE_TIME_DEFAULT] * len(ventanas))
+
+    n = len(ventanas)
     model = cp_model.CpModel()
 
-    x = {}
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                x[i, j] = model.NewBoolVar(f'x_{i}_{j}')
+    # Variables
+    x = {(i, j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(n) if i != j}
+    t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
+    retraso = [model.NewIntVar(0, TOLERANCIA_RETRASO, f"ret_{i}") for i in range(n)]
 
-    t = [model.NewIntVar(0, 86400, f't_{i}') for i in range(n)]
-
-    # Restricción: cada nodo entrante y saliente (excepto depósito)
+    # Flujo: entrar y salir una vez de cada nodo (excepto depósito)
     for j in range(1, n):
         model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
     for i in range(1, n):
-        model.Add(sum(x[i, j] for j in range(n) if j != i) == 1)
+        model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
 
-    # Depósito
+    # Flujo del depósito
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
-    # Ventanas de tiempo
-    for i, (ini, fin) in enumerate(ventanas):
+    # Ventanas de tiempo con retraso tolerado
+    for i in range(n):
+        ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
-        model.Add(t[i] <= fin)
+        model.Add(t[i] <= fin + retraso[i])
 
+    # Secuencia de tiempo: si voy de i a j, entonces t[j] ≥ t[i] + travel + service
     for i in range(n):
         for j in range(n):
             if i != j:
                 travel = dur[i][j]
-                model.Add(t[j] >= t[i] + SERVICE_TIME + travel).OnlyEnforceIf(x[i, j])
+                model.Add(t[j] >= t[i] + service_times[i] + travel).OnlyEnforceIf(x[i, j])
 
-    # Objetivo: minimizar tiempo total
-    model.Minimize(sum(x[i, j] * dur[i][j] for i in range(n) for j in range(n) if i != j))
+    # Función objetivo: minimizar duración + retraso + evitar saltos largos
+    model.Minimize(
+        sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j) +
+        sum(retraso[i] * 10 for i in range(n))  # Penalización por llegar tarde
+    )
 
+    # Resolver
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = timeout
+    solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        return None
+        return {
+            "routes": [],
+            "distance_total_m": 0
+        }
 
+    # Reconstruir la ruta desde el depósito
     ruta = [0]
     actual = 0
     while True:
@@ -131,23 +137,17 @@ def optimizar_cp_sat_puro(df, vehiculos=1, capacidad=999, timeout=60):
         actual = siguiente
 
     llegada = [solver.Value(t[i]) for i in ruta]
+    distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
 
-    # Enviar a Firebase
-    salida = []
-    for i, idx in enumerate(ruta):
-        item = df.iloc[idx].to_dict()
-        item.update({
-            "orden": i,
-            "llegada_seg": llegada[i],
-            "llegada_hora": f"{llegada[i]//3600:02}:{(llegada[i]%3600)//60:02}"
-        })
-        salida.append(item)
+    return {
+        "routes": [{
+            "vehicle": 0,
+            "route": ruta,
+            "arrival_sec": llegada
+        }],
+        "distance_total_m": distancia_total
+    }
 
-    # Guardar en colección
-    for item in salida:
-        db.collection("rutas_cp_sat").add(item)
-
-    return pd.DataFrame(salida)
 def agregar_ventana_margen(df, margen_segundos=15*60):
     def expandir_fila(row):
         ini = _hora_a_segundos(row["time_start"])
