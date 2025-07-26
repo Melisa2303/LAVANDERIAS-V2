@@ -2,7 +2,7 @@ from ortools.sat.python import cp_model
 import numpy as np
 
 SERVICE_TIME_DEFAULT = 10 * 60        # 10 minutos
-TOLERANCIA_RETRASO = 30 * 60          # 30 minutos
+TOLERANCIA_RETRASO = 45 * 60          # 30 minutos
 
 def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     dur = data["duration_matrix"]
