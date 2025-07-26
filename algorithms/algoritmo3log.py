@@ -69,7 +69,7 @@ def _expandir_ventanas(df):
     return ventanas
 
 # CP-SAT puro
-def optimizar_cp_sat_puro(df, vehiculos=1, capacidad=999, timeout=60):
+def optimizar_ruta_cp_sat_puro(df, vehiculos=1, capacidad=999, timeout=60):
     coords = list(zip(df["lat"], df["lon"]))
     n = len(coords)
     dist, dur = _haversine_dist_dur(coords)
