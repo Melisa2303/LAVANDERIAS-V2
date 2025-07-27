@@ -1,82 +1,91 @@
 # algorithms/algoritmo3log.py
+# CP-SAT puro con penalización de jornada extendida y fallback robusto
 
 from ortools.sat.python import cp_model
 import numpy as np
 
-SERVICE_TIME_DEFAULT = 600  # 10 minutos
+SERVICE_TIME = 600  # 10 minutos
 SHIFT_START = 9 * 3600
-SHIFT_END   = 16 * 3600 + 15 * 60
-TOL_RETRASO = 45 * 60
+SHIFT_END = 16 * 3600 + 15 * 60
 
-PESO_RETRASO       = 30
-PESO_ANTICIPO      = 5
-PESO_ESPERA        = 2
-PESO_JORNADA_EXT   = 50
+PESO_RETRASO = 15
+PESO_ANTICIPO = 5
+PESO_ESPERA = 1
+PESO_JORNADA_EXT = 20
 
 def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
-    dur = data["duration_matrix"]
-    dist = data["distance_matrix"]
+    D = data["distance_matrix"]
+    T = data["duration_matrix"]
     ventanas = data["time_windows"]
-    service_times = data.get("service_times", [SERVICE_TIME_DEFAULT] * len(ventanas))
+    n = len(D)
 
-    n = len(ventanas)
     model = cp_model.CpModel()
-
-    # Variables
-    x = {(i, j): model.NewBoolVar(f"x_{i}_{j}")
-         for i in range(n) for j in range(n) if i != j}
     t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
-    retraso  = [model.NewIntVar(0, TOL_RETRASO, f"ret_{i}") for i in range(n)]
-    anticipo = [model.NewIntVar(0, 3600, f"ant_{i}") for i in range(n)]
-    espera   = [model.NewIntVar(0, 3600, f"espera_{i}") for i in range(n)]
-
-    # Flujo
-    for j in range(1, n):
-        model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
-    for i in range(1, n):
-        model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
-    model.Add(sum(x[0, j] for j in range(1, n)) == 1)
-    model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
-
-    # Ventanas y penalizaciones
-    for i in range(n):
-        ini, fin = ventanas[i]
-        model.Add(t[i] >= ini)
-        model.Add(t[i] <= fin + retraso[i])
-        model.Add(espera[i] == ini - t[i]).OnlyEnforceIf(model.NewBoolVar(f"espera_b_{i}"))
-        model.Add(anticipo[i] == ini - t[i]).OnlyEnforceIf(t[i] < ini)
-        model.Add(retraso[i] == t[i] - fin).OnlyEnforceIf(t[i] > fin)
-
-    # Restricción temporal
+    x = {}
     for i in range(n):
         for j in range(n):
             if i != j:
-                model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
+                x[i, j] = model.NewBoolVar(f"x_{i}_{j}")
 
-    # Subtours (MTZ)
-    u = [model.NewIntVar(0, n - 1, f"u_{i}") for i in range(n)]
-    for i in range(1, n):
-        for j in range(1, n):
+    for i in range(n):
+        model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
+        model.Add(sum(x[j, i] for j in range(n) if i != j) == 1)
+
+    for i in range(n):
+        for j in range(n):
             if i != j:
-                model.Add(u[i] + 1 <= u[j] + (n - 1) * (1 - x[i, j]))
+                model.Add(t[j] >= t[i] + T[i][j] + SERVICE_TIME).OnlyEnforceIf(x[i, j])
+
+    espera = []
+    anticipo = []
+    retraso = []
+    for i in range(n):
+        ini, fin = ventanas[i]
+        ini = max(SHIFT_START, ini)
+        fin = min(SHIFT_END, fin)
+        ventana_i = max(1, fin - ini)
+
+        # Variables de espera, anticipo y retraso
+        espera_i = model.NewIntVar(0, 6 * 3600, f"espera_{i}")
+        anticipo_i = model.NewIntVar(0, 6 * 3600, f"anticipo_{i}")
+        retraso_i = model.NewIntVar(0, 6 * 3600, f"retraso_{i}")
+        espera.append(espera_i)
+        anticipo.append(anticipo_i)
+        retraso.append(retraso_i)
+
+        b_espera = model.NewBoolVar(f"b_espera_{i}")
+        b_retraso = model.NewBoolVar(f"b_retraso_{i}")
+
+        model.Add(t[i] < ini).OnlyEnforceIf(b_espera)
+        model.Add(t[i] >= ini).OnlyEnforceIf(b_espera.Not())
+        model.Add(anticipo_i == ini - t[i]).OnlyEnforceIf(b_espera)
+        model.Add(anticipo_i == 0).OnlyEnforceIf(b_espera.Not())
+
+        model.Add(t[i] > fin).OnlyEnforceIf(b_retraso)
+        model.Add(t[i] <= fin).OnlyEnforceIf(b_retraso.Not())
+        model.Add(retraso_i == t[i] - fin).OnlyEnforceIf(b_retraso)
+        model.Add(retraso_i == 0).OnlyEnforceIf(b_retraso.Not())
+
+        model.Add(espera_i == anticipo_i)
 
     # Jornada extendida
-    end_time = model.NewIntVar(0, 24 * 3600, "fin_jornada")
+    end_time = model.NewIntVar(0, 24 * 3600, "end_time")
     model.AddMaxEquality(end_time, t)
-    delta_ext = model.NewIntVar(0, 3600 * 4, "delta_ext")
-    extendida = model.NewBoolVar("es_jornada_ext")
-    model.Add(delta_ext == end_time - SHIFT_END)
-    model.Add(delta_ext > 0).OnlyEnforceIf(extendida)
-    model.Add(delta_ext <= 0).OnlyEnforceIf(extendida.Not())
+    delta_ext = model.NewIntVar(0, 8 * 3600, "delta_ext")
+    ext_bool = model.NewBoolVar("ext_bool")
+    model.Add(end_time > SHIFT_END).OnlyEnforceIf(ext_bool)
+    model.Add(end_time <= SHIFT_END).OnlyEnforceIf(ext_bool.Not())
+    model.Add(delta_ext == end_time - SHIFT_END).OnlyEnforceIf(ext_bool)
+    model.Add(delta_ext == 0).OnlyEnforceIf(ext_bool.Not())
 
     # Objetivo
     obj_terms = []
     for i in range(n):
-        ancho = max(1, ventanas[i][1] - ventanas[i][0])
-        obj_terms.append(PESO_RETRASO * retraso[i] // ancho)
-        obj_terms.append(PESO_ANTICIPO * anticipo[i])
-        obj_terms.append(PESO_ESPERA * espera[i])
-
+        ini, fin = ventanas[i]
+        ventana_i = max(1, fin - ini)
+        obj_terms.append(PESO_RETRASO * retraso[i] // ventana_i)
+        obj_terms.append(PESO_ANTICIPO * anticipo[i] // ventana_i)
+        obj_terms.append(PESO_ESPERA * espera[i] // ventana_i)
     obj_terms.append(PESO_JORNADA_EXT * delta_ext)
     model.Minimize(sum(obj_terms))
 
@@ -85,81 +94,34 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     status = solver.Solve(model)
 
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+        # reconstrucción de ruta
+        llegada = [solver.Value(t[i]) for i in range(n)]
+        visitados = set()
         ruta = [0]
-        actual = 0
-        visitados = set(ruta)
-        while True:
-            siguiente = None
+        while len(ruta) < n:
+            ult = ruta[-1]
             for j in range(n):
-                if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
-                    siguiente = j
-                    break
-            if siguiente is None or siguiente in visitados:
+                if ult != j and (ult, j) in x and solver.Value(x[ult, j]):
+                    if j not in visitados:
+                        ruta.append(j)
+                        visitados.add(j)
+                        break
+            else:
                 break
-            ruta.append(siguiente)
-            visitados.add(siguiente)
-            actual = siguiente
 
-        if len(ruta) >= n // 2:
-            llegada = [solver.Value(t[i]) for i in ruta]
-            distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
-            return {
-                "routes": [{
-                    "vehicle": 0,
-                    "route": ruta,
-                    "arrival_sec": llegada
-                }],
-                "distance_total_m": distancia_total
-            }
-
-    # --- Fallback Nearest Insertion ---
-    def fallback_ni():
-        nodos = list(range(n))
-        ruta = [0]
-        llegada = [ventanas[0][0]]
-
-        pendientes = set(nodos) - {0}
-        while pendientes:
-            best_node = None
-            best_idx = None
-            best_eta = None
-            best_delta = float("inf")
-            for u in pendientes:
-                for i in range(len(ruta)):
-                    for j in range(i + 1, len(ruta) + 1):
-                        temp_ruta = ruta[:i+1] + [u] + ruta[j:]
-                        temp_eta = [ventanas[temp_ruta[0]][0]]
-                        ok = True
-                        for k in range(1, len(temp_ruta)):
-                            prev = temp_ruta[k - 1]
-                            curr = temp_ruta[k]
-                            t_est = temp_eta[-1] + service_times[prev] + dur[prev][curr]
-                            ini, fin = ventanas[curr]
-                            if t_est > fin + TOL_RETRASO:
-                                ok = False
-                                break
-                            temp_eta.append(max(ini, t_est))
-                        if ok:
-                            costo = sum(dist[temp_ruta[k]][temp_ruta[k+1]] for k in range(len(temp_ruta)-1))
-                            if costo < best_delta:
-                                best_node = u
-                                best_idx = j
-                                best_eta = temp_eta
-                                best_delta = costo
-            if best_node is None:
-                break
-            ruta.insert(best_idx - 1, best_node)
-            llegada = best_eta
-            pendientes.remove(best_node)
-
-        distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
         return {
             "routes": [{
-                "vehicle": 0,
                 "route": ruta,
-                "arrival_sec": llegada
+                "arrival_sec": [llegada[i] for i in ruta]
             }],
-            "distance_total_m": distancia_total
+            "distance_total_m": sum(D[ruta[i]][ruta[i+1]] for i in range(len(ruta)-1))
         }
 
-    return fallback_ni()
+    # Fallback básico (no optimal)
+    return {
+        "routes": [{
+            "route": list(range(n)),
+            "arrival_sec": [SHIFT_START + sum(T[i][i+1] + SERVICE_TIME for i in range(j)) for j in range(n)]
+        }],
+        "distance_total_m": sum(D[i][i+1] for i in range(n-1))
+    }
