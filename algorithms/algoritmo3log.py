@@ -1,5 +1,3 @@
-# algorithms/algoritmo3log.py
-
 from ortools.sat.python import cp_model
 import numpy as np
 
@@ -8,6 +6,7 @@ TOLERANCIA_RETRASO = 45 * 60    # 45 minutos
 SHIFT_START = 9 * 3600          # 09:00
 SHIFT_END = 16 * 3600 + 15 * 60 # 16:15
 
+# Pesos
 PESO_DISTANCIA   = 1
 PESO_RETRASO     = 15
 PESO_ANTICIPO    = 10
@@ -38,39 +37,57 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
-    # Ventanas de tiempo y penalizaciones
+    # Penalización por retraso proporcional
+    retraso_pesado = []
     for i in range(n):
         ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + retraso[i])
-        model.Add(anticipo[i] >= (ini + fin) // 2 - t[i])
-        model.Add(anticipo[i] >= 0)
+        ancho = max(1, fin - ini)
+        mult = model.NewIntVar(0, 3600*10, f"ret_peso_{i}")
+        model.AddMultiplicationEquality(mult, [retraso[i], PESO_RETRASO * 10 // ancho])
+        retraso_pesado.append(mult)
 
-    # Restricciones de secuencia y espera
+    # Penalización por anticipo innecesario
+    anticipo_pesado = []
+    for i in range(n):
+        mid = (ventanas[i][0] + ventanas[i][1]) // 2
+        model.Add(anticipo[i] >= mid - t[i])
+        model.Add(anticipo[i] >= 0)
+        m = model.NewIntVar(0, 3600*10, f"anti_peso_{i}")
+        model.AddMultiplicationEquality(m, [anticipo[i], PESO_ANTICIPO])
+        anticipo_pesado.append(m)
+
+    # Restricciones de secuencia y penalización por espera
+    espera_pesada = []
     for i in range(n):
         for j in range(n):
             if i != j:
-                tij = t[j]
-                ti = t[i]
-                travel = dur[i][j]
-                serv = service_times[i]
-                model.Add(tij >= ti + serv + travel).OnlyEnforceIf(x[i, j])
-                model.Add(espera[j] >= tij - (ti + serv + travel)).OnlyEnforceIf(x[i, j])
+                model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
+                model.Add(espera[j] >= t[j] - (t[i] + service_times[i] + dur[i][j])).OnlyEnforceIf(x[i, j])
+    for i in range(n):
+        e = model.NewIntVar(0, 3600*10, f"esp_peso_{i}")
+        model.AddMultiplicationEquality(e, [espera[i], PESO_ESPERA])
+        espera_pesada.append(e)
 
-    # Jornada extendida
-    end_time = model.NewIntVar(0, 24*3600, "fin_jornada")
+    # Penalización por jornada extendida
+    end_time = model.NewIntVar(0, 24 * 3600, "fin_jornada")
     model.AddMaxEquality(end_time, t)
-    jornada_ext = model.NewIntVar(0, 24*3600, "delta_ext")
-    model.Add(jornada_ext >= end_time - SHIFT_END)
-    model.Add(jornada_ext >= 0)
+    delta_ext = model.NewIntVar(0, 3600*4, "delta_ext")
+    model.Add(delta_ext >= end_time - SHIFT_END)
+    model.Add(delta_ext >= 0)
+    penal_ext = model.NewIntVar(0, 3600*10, "penal_ext")
+    model.AddMultiplicationEquality(penal_ext, [delta_ext, PESO_EXTENDIDO])
 
-    # Objetivo compuesto
-    obj = 0
-    obj += sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j) * PESO_DISTANCIA
-    obj += sum(retraso[i] * PESO_RETRASO // max(1, ventanas[i][1] - ventanas[i][0]) for i in range(n))
-    obj += sum(anticipo[i] * PESO_ANTICIPO for i in range(n))
-    obj += sum(espera[i] * PESO_ESPERA for i in range(n))
-    obj += jornada_ext * PESO_EXTENDIDO
+    # Objetivo
+    obj = model.NewIntVar(0, int(1e9), "obj")
+    model.Add(obj == sum([
+        sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j) * PESO_DISTANCIA,
+        sum(retraso_pesado),
+        sum(anticipo_pesado),
+        sum(espera_pesada),
+        penal_ext
+    ]))
     model.Minimize(obj)
 
     solver = cp_model.CpSolver()
@@ -105,6 +122,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
                 "distance_total_m": distancia_total
             }
 
+    # 🛟 Fallback heurístico si ruta incompleta o sin solución
     orden = sorted(range(n), key=lambda i: (ventanas[i][0], sum(dur[i]) + sum(dur[j][i] for j in range(n))))
     llegada = []
     hora_actual = SHIFT_START
