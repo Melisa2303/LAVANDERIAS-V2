@@ -1,144 +1,168 @@
+# algorithms/algoritmo3log.py
+
 from ortools.sat.python import cp_model
-import numpy as np
+import math
 
-SHIFT_START = 9 * 3600      # 09:00
-SHIFT_END   = 16 * 3600 + 15 * 60  # 16:15
-SERVICE_TIME = 600          # 10 minutos
-PESO_RETRASO = 5
-PESO_ANTICIPO = 1
-PESO_ESPERA = 1
-PESO_JORNADA_EXT = 20
+SHIFT_START = 9 * 3600
+SHIFT_END = 16 * 3600 + 15 * 60
+SERVICE_TIME = 600  # 10 minutos
 
-def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
+PESO_RETRASO = 1000
+PESO_ANTICIPO = 500
+PESO_ESPERA = 200
+PESO_JORNADA_EXT = 3000
+
+def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
     n = len(data["time_windows"])
-    D = data["duration_matrix"]
-    ventanas = data["time_windows"]
-
     model = cp_model.CpModel()
 
+    # Variables
     t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
     x = [[model.NewBoolVar(f"x_{i}_{j}") for j in range(n)] for i in range(n)]
 
-    M = 99999
+    M = 24 * 3600
     for i in range(n):
         for j in range(n):
             if i != j:
-                model.Add(t[j] >= t[i] + D[i][j] + SERVICE_TIME - M * (1 - x[i][j]))
+                model.Add(t[j] >= t[i] + data["duration_matrix"][i][j] + SERVICE_TIME).OnlyEnforceIf(x[i][j])
 
-    # Cada nodo tiene un predecessor y un successor (salvo cochera)
+    # Cada nodo tiene exactamente una entrada y una salida (excepto depósito)
     for i in range(1, n):
-        model.Add(sum(x[i][j] for j in range(n) if j != i) == 1)
         model.Add(sum(x[j][i] for j in range(n) if j != i) == 1)
-    model.Add(sum(x[0][j] for j in range(1, n)) == 1)  # salida de cochera
-    model.Add(sum(x[j][0] for j in range(1, n)) == 0)  # cochera no tiene entrada
+        model.Add(sum(x[i][j] for j in range(n) if j != i) == 1)
 
-    retraso, anticipo, espera = [], [], []
-    penalizaciones = []
-
+    # No permitir bucles
     for i in range(n):
-        ini, fin = ventanas[i]
-        retraso_i = model.NewIntVar(0, fin, f"retraso_{i}")
-        anticipo_i = model.NewIntVar(0, fin, f"anticipo_{i}")
-        espera_i = model.NewIntVar(0, fin, f"espera_{i}")
-        model.Add(retraso_i >= t[i] - fin)
-        model.Add(anticipo_i >= ini - t[i])
-        model.Add(espera_i >= ini - t[i])
-        model.AddMaxEquality(retraso_i, [t[i] - fin, 0])
-        model.AddMaxEquality(anticipo_i, [ini - t[i], 0])
-        model.AddMaxEquality(espera_i, [ini - t[i], 0])
-        retraso.append(retraso_i)
-        anticipo.append(anticipo_i)
-        espera.append(espera_i)
+        model.Add(x[i][i] == 0)
 
-        w_i = max(1, fin - ini)
-        penalizaciones.append(PESO_RETRASO * retraso_i // w_i)
+    # Ventanas de tiempo
+    for i in range(n):
+        ini, fin = data["time_windows"][i]
+        model.Add(t[i] >= ini)
+        model.Add(t[i] <= fin)
 
-    end_time = model.NewIntVar(0, 24 * 3600, "end_time")
-    model.AddMaxEquality(end_time, t)
-    delta_ext = model.NewIntVar(0, 8 * 3600, "delta_ext")
-    bool_ext = model.NewBoolVar("ext_flag")
-    model.Add(delta_ext == end_time - SHIFT_END).OnlyEnforceIf(bool_ext)
-    model.Add(delta_ext == 0).OnlyEnforceIf(bool_ext.Not())
+    # Penalizaciones proporcionales
+    penalizaciones = []
+    for i in range(1, n):
+        ini, fin = data["time_windows"][i]
+        ventana_i = max(1, fin - ini)
+
+        # Retraso
+        retraso_i = model.NewIntVar(0, M, f"retraso_{i}")
+        bool_retraso = model.NewBoolVar(f"bool_retraso_{i}")
+        model.Add(t[i] > fin).OnlyEnforceIf(bool_retraso)
+        model.Add(t[i] <= fin).OnlyEnforceIf(bool_retraso.Not())
+        model.Add(retraso_i == t[i] - fin).OnlyEnforceIf(bool_retraso)
+        model.Add(retraso_i == 0).OnlyEnforceIf(bool_retraso.Not())
+
+        div_retraso = model.NewIntVar(0, PESO_RETRASO, f"div_retraso_{i}")
+        model.AddDivisionEquality(div_retraso, retraso_i, ventana_i)
+        penalizaciones.append(PESO_RETRASO * div_retraso)
+
+        # Anticipo
+        anticipo_i = model.NewIntVar(0, M, f"anticipo_{i}")
+        bool_anticipo = model.NewBoolVar(f"bool_anticipo_{i}")
+        model.Add(t[i] < ini).OnlyEnforceIf(bool_anticipo)
+        model.Add(t[i] >= ini).OnlyEnforceIf(bool_anticipo.Not())
+        model.Add(anticipo_i == ini - t[i]).OnlyEnforceIf(bool_anticipo)
+        model.Add(anticipo_i == 0).OnlyEnforceIf(bool_anticipo.Not())
+
+        div_anticipo = model.NewIntVar(0, PESO_ANTICIPO, f"div_anticipo_{i}")
+        model.AddDivisionEquality(div_anticipo, anticipo_i, ventana_i)
+        penalizaciones.append(PESO_ANTICIPO * div_anticipo)
+
+        # Espera innecesaria
+        espera_i = model.NewIntVar(0, M, f"espera_{i}")
+        bool_espera = model.NewBoolVar(f"bool_espera_{i}")
+        mid = (ini + fin) // 2
+        model.Add(t[i] < mid).OnlyEnforceIf(bool_espera)
+        model.Add(t[i] >= mid).OnlyEnforceIf(bool_espera.Not())
+        model.Add(espera_i == mid - t[i]).OnlyEnforceIf(bool_espera)
+        model.Add(espera_i == 0).OnlyEnforceIf(bool_espera.Not())
+
+        div_espera = model.NewIntVar(0, PESO_ESPERA, f"div_espera_{i}")
+        model.AddDivisionEquality(div_espera, espera_i, ventana_i)
+        penalizaciones.append(PESO_ESPERA * div_espera)
+
+    # Jornada extendida
+    end_time = model.NewIntVar(0, M, "end_time")
+    for i in range(n):
+        model.AddMaxEquality(end_time, t)
+
+    delta_ext = model.NewIntVar(0, M, "delta_ext")
+    bool_ext = model.NewBoolVar("bool_ext")
     model.Add(end_time > SHIFT_END).OnlyEnforceIf(bool_ext)
     model.Add(end_time <= SHIFT_END).OnlyEnforceIf(bool_ext.Not())
+    model.Add(delta_ext == end_time - SHIFT_END).OnlyEnforceIf(bool_ext)
+    model.Add(delta_ext == 0).OnlyEnforceIf(bool_ext.Not())
+    penalizaciones.append(PESO_JORNADA_EXT * delta_ext)
 
-    obj_terms = penalizaciones + [
-        PESO_ANTICIPO * a for a in anticipo
-    ] + [
-        PESO_ESPERA * w for w in espera
-    ] + [
-        PESO_JORNADA_EXT * delta_ext
-    ]
-    model.Minimize(sum(obj_terms))
+    # Función objetivo
+    model.Minimize(sum(penalizaciones))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        orden = [0]
-        current = 0
+        orden = []
+        llegada = []
+        actual = 0
+        visitado = set([actual])
         while True:
-            nexts = [j for j in range(n) if j != current and solver.BooleanValue(x[current][j])]
-            if not nexts:
+            orden.append(actual)
+            llegada.append(solver.Value(t[actual]))
+            siguiente = None
+            for j in range(n):
+                if j not in visitado and solver.Value(x[actual][j]) == 1:
+                    siguiente = j
+                    break
+            if siguiente is None:
                 break
-            current = nexts[0]
-            orden.append(current)
-        eta = [int(solver.Value(t[i])) for i in orden]
-
+            actual = siguiente
+            visitado.add(actual)
         return {
-            "routes": [{
-                "route": orden,
-                "arrival_sec": eta
-            }]
+            "routes": [
+                {
+                    "route": orden,
+                    "arrival_sec": llegada
+                }
+            ]
         }
+    else:
+        # Fallback heurístico: nearest insertion
+        return fallback_nearest_insertion(data)
 
-    # --------------------- FALLBACK Nearest Insertion ---------------------
-    def fallback_nearest_insertion():
-        visited = [False] * n
-        visited[0] = True
-        route = [0]
-        arrival = [SHIFT_START]
-        current_time = SHIFT_START
-        current_node = 0
+def fallback_nearest_insertion(data):
+    from heapq import heappush, heappop
+    n = len(data["distance_matrix"])
+    no_visitados = set(range(1, n))
+    ruta = [0]
+    llegada = [SHIFT_START]
+    actual = 0
+    tiempo_actual = SHIFT_START
 
-        while sum(visited) < n:
-            best = None
-            best_score = float("inf")
-            for j in range(1, n):
-                if visited[j]:
-                    continue
-                travel = D[current_node][j]
-                arr = current_time + SERVICE_TIME + travel
-                ini, fin = ventanas[j]
-                delay = max(0, arr - fin)
-                advance = max(0, ini - arr)
-                wait = max(0, ini - arr)
-                width = max(1, fin - ini)
-                score = (
-                    PESO_RETRASO * delay // width +
-                    PESO_ANTICIPO * advance +
-                    PESO_ESPERA * wait
-                )
-                if score < best_score:
-                    best_score = score
-                    best = j
-                    best_arrival = max(arr, ini)
+    while no_visitados:
+        candidatos = []
+        for j in no_visitados:
+            dur = data["duration_matrix"][actual][j]
+            arr = max(tiempo_actual + SERVICE_TIME + dur, data["time_windows"][j][0])
+            if arr <= data["time_windows"][j][1]:
+                heappush(candidatos, (arr, j))
+        if not candidatos:
+            break
+        arr_j, j = heappop(candidatos)
+        ruta.append(j)
+        llegada.append(arr_j)
+        no_visitados.remove(j)
+        actual = j
+        tiempo_actual = arr_j
 
-            if best is None:
-                break
-
-            route.append(best)
-            arrival.append(best_arrival)
-            visited[best] = True
-            current_node = best
-            current_time = best_arrival
-
-        return {
-            "routes": [{
-                "route": route,
-                "arrival_sec": arrival
-            }]
-        }
-
-    return fallback_nearest_insertion()
+    return {
+        "routes": [
+            {
+                "route": ruta,
+                "arrival_sec": llegada
+            }
+        ]
+    }
