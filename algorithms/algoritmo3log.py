@@ -105,8 +105,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
                 "distance_total_m": distancia_total
             }
 
-    # 🛟 Fallback heurístico si ruta incompleta o sin solución
-    orden = sorted(range(n), key=lambda i: (ventanas[i][0], sum(dur[i]) + sum(dur[j][i] for j in range(n))))
+     orden = sorted(range(n), key=lambda i: (ventanas[i][0], sum(dur[i]) + sum(dur[j][i] for j in range(n))))
     llegada = []
     hora_actual = SHIFT_START
     for i in orden:
