@@ -39,8 +39,16 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
         ini, fin = ventanas[i]
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + retraso[i])
-        model.Add(espera[i] == t[i] - ini).OnlyEnforceIf(t[i] >= ini)
-        model.Add(espera[i] == 0).OnlyEnforceIf(t[i] < ini)
+
+        # Espera modelada correctamente
+        bool_on_time = model.NewBoolVar(f"on_time_{i}")
+        model.Add(t[i] >= ini).OnlyEnforceIf(bool_on_time)
+        model.Add(t[i] < ini).OnlyEnforceIf(bool_on_time.Not())
+
+        temp_wait = model.NewIntVar(-24*3600, 24*3600, f"temp_wait_{i}")
+        model.Add(temp_wait == t[i] - ini)
+        model.Add(espera[i] == temp_wait).OnlyEnforceIf(bool_on_time)
+        model.Add(espera[i] == 0).OnlyEnforceIf(bool_on_time.Not())
 
     for i in range(n):
         for j in range(n):
@@ -57,11 +65,15 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     # Jornada extendida
     end_time = model.NewIntVar(0, 24 * 3600, "end_time")
     model.AddMaxEquality(end_time, t)
-    delta_ext = model.NewIntVar(0, 3600 * 4, "delta_ext")
-    model.Add(delta_ext == end_time - SHIFT_END).OnlyEnforceIf(end_time > SHIFT_END)
-    model.Add(delta_ext == 0).OnlyEnforceIf(end_time <= SHIFT_END)
 
-    # Objetivo: penalizaciones ponderadas
+    delta_ext = model.NewIntVar(0, 3600 * 4, "delta_ext")
+    ext_bool = model.NewBoolVar("extendida")
+    model.Add(end_time > SHIFT_END).OnlyEnforceIf(ext_bool)
+    model.Add(end_time <= SHIFT_END).OnlyEnforceIf(ext_bool.Not())
+    model.Add(delta_ext == end_time - SHIFT_END).OnlyEnforceIf(ext_bool)
+    model.Add(delta_ext == 0).OnlyEnforceIf(ext_bool.Not())
+
+    # Objetivo
     obj_terms = []
     for i in range(n):
         w_i = max(1, ventanas[i][1] - ventanas[i][0])
@@ -93,7 +105,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
             actual = siguiente
 
         if len(ruta) < n:
-            print("⚠️ Solución incompleta: se encontró ruta parcial, se ejecutará fallback.")
+            print("⚠️ Solución incompleta: fallback activado.")
         else:
             llegada = [solver.Value(t[i]) for i in ruta]
             distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
@@ -106,36 +118,30 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
                 "distance_total_m": distancia_total
             }
 
-    # 🛠️ Fallback: Nearest Insertion respetando ventanas
-    print("⛔ No se encontró solución viable. Ejecutando heurística fallback...")
+    # Fallback: Nearest Insertion
+    print("⚠️ No se encontró solución CP-SAT. Usando fallback...")
 
     def insertion_fallback():
         remaining = set(range(1, n))
         ruta = [0]
         llegada = [ventanas[0][0]]
         while remaining:
-            best = None
-            best_pos = None
-            best_eta = None
+            best, best_eta, best_pos = None, None, None
             for cand in remaining:
                 for pos in range(1, len(ruta) + 1):
                     prev = ruta[pos - 1]
-                    nxt = ruta[pos] if pos < len(ruta) else None
                     eta = llegada[pos - 1] + service_times[prev] + dur[prev][cand]
                     if eta < ventanas[cand][0]:
                         eta = ventanas[cand][0]
                     if eta > ventanas[cand][1]:
                         continue
                     if best is None or eta < best_eta:
-                        best = cand
-                        best_pos = pos
-                        best_eta = eta
+                        best, best_eta, best_pos = cand, eta, pos
             if best is None:
                 break
             ruta.insert(best_pos, best)
             llegada.insert(best_pos, best_eta)
             remaining.remove(best)
-
         distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
         return {
             "routes": [{
