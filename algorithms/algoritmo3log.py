@@ -1,10 +1,14 @@
 from ortools.sat.python import cp_model
-import numpy as np
 
-SERVICE_TIME_DEFAULT = 10 * 60  # 10 min
-TOLERANCIA_RETRASO = 30 * 60    # 30 min
-JORNADA_INICIO = 9 * 3600       # 09:00
-JORNADA_FIN = 16 * 3600 + 15 * 60  # 16:15
+SERVICE_TIME_DEFAULT = 10 * 60
+TOLERANCIA_RETRASO = 45 * 60
+SHIFT_START_SEC = 9 * 3600
+SHIFT_END_SEC = 16 * 3600 + 15 * 60
+
+PESO_RETRASO   = 20
+PESO_ANTICIPO  = 2
+PESO_EXTENDIDO = 1000
+PESO_ESPERA    = 1
 
 def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     dur = data["duration_matrix"]
@@ -15,74 +19,66 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
     n = len(ventanas)
     model = cp_model.CpModel()
 
-    # Variables
-    x = {(i, j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(n) if i != j}
-    t = [model.NewIntVar(0, 24 * 3600, f"t_{i}") for i in range(n)]
+    x = {(i, j): model.NewBoolVar(f"x_{i}_{j}")
+         for i in range(n) for j in range(n) if i != j}
+    t = [model.NewIntVar(0, 24*3600, f"t_{i}") for i in range(n)]
     retraso = [model.NewIntVar(0, TOLERANCIA_RETRASO, f"ret_{i}") for i in range(n)]
+    espera = [model.NewIntVar(0, 12*3600, f"espera_{i}") for i in range(n)]
+    anticipo = [model.NewIntVar(0, 12*3600, f"anticipo_{i}") for i in range(n)]
 
-    # Flujo: entrada/salida única (salvo depósito)
+    for i in range(n):
+        ini, fin = ventanas[i]
+        mid = (ini + fin) // 2
+        model.Add(t[i] >= ini)
+        model.Add(t[i] <= fin + retraso[i])
+        model.Add(espera[i] == t[i] - ini)
+        model.Add(anticipo[i] == model.NewIntVar(0, mid, f"max0_{i}"))
+        model.AddMaxEquality(anticipo[i], [mid - t[i], 0])
+
     for j in range(1, n):
         model.Add(sum(x[i, j] for i in range(n) if i != j) == 1)
     for i in range(1, n):
         model.Add(sum(x[i, j] for j in range(n) if i != j) == 1)
-
     model.Add(sum(x[0, j] for j in range(1, n)) == 1)
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
-    # Ventanas de tiempo y retraso permitido
-    for i in range(n):
-        ini, fin = ventanas[i]
-        model.Add(t[i] >= ini)
-        model.Add(t[i] <= fin + retraso[i])
-
-    # Restricción temporal secuencial
     for i in range(n):
         for j in range(n):
             if i != j:
                 model.Add(t[j] >= t[i] + service_times[i] + dur[i][j]).OnlyEnforceIf(x[i, j])
 
-    # Subtour eliminations (MTZ)
     u = [model.NewIntVar(0, n - 1, f"u_{i}") for i in range(n)]
     for i in range(1, n):
         for j in range(1, n):
             if i != j:
                 model.Add(u[i] + 1 <= u[j] + (n - 1) * (1 - x[i, j]))
 
-    # Penalización proporcional al ancho de la ventana
-    penalizaciones = []
-    for i in range(n):
-        ini, fin = ventanas[i]
-        ancho = max(1, fin - ini)
-        peso = int(100000 / ancho)
-        penalizaciones.append(retraso[i] * peso)
+    jornada_fin = model.NewIntVar(0, 24*3600, "jornada_fin")
+    model.AddMaxEquality(jornada_fin, [t[i] + service_times[i] for i in range(n)])
+    delta_ext = model.NewIntVar(0, 3600*4, "delta_ext")
+    model.Add(delta_ext == model.NewIntVar(0, 3600*4, "max0_ext"))
+    model.AddMaxEquality(delta_ext, [jornada_fin - SHIFT_END_SEC, 0])
 
-    # Penalización por empezar jornada antes o después del horario permitido
-    exceso_inicio = model.NewIntVar(0, 24 * 3600, "exceso_inicio")
-    exceso_fin = model.NewIntVar(0, 24 * 3600, "exceso_fin")
-    model.AddMaxEquality(exceso_inicio, [0, JORNADA_INICIO - t[1]])
-    model.AddMaxEquality(exceso_fin, [0, t[-1] - JORNADA_FIN])
+    obj = sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j)
+    obj += sum(retraso[i] * PESO_RETRASO // max(1, ventanas[i][1] - ventanas[i][0]) for i in range(n))
+    obj += sum(espera[i] * PESO_ESPERA for i in range(n))
+    obj += sum(anticipo[i] * PESO_ANTICIPO for i in range(n))
+    obj += PESO_EXTENDIDO * delta_ext
 
-    # Función objetivo
-    model.Minimize(
-        sum(dur[i][j] * x[i, j] for i in range(n) for j in range(n) if i != j) +
-        sum(penalizaciones) +
-        exceso_inicio * 100 +
-        exceso_fin * 100
-    )
+    model.Minimize(obj)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
     if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        # Reconstrucción de la ruta
         ruta = [0]
         actual = 0
         visitados = set(ruta)
         while True:
             siguiente = None
             for j in range(n):
-                if actual != j and (actual, j) in x and solver.Value(x[actual, j]) == 1:
+                if actual != j and (actual, j) in x and solver.Value(x[actual, j]):
                     siguiente = j
                     break
             if siguiente is None or siguiente in visitados:
@@ -103,7 +99,7 @@ def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
             "distance_total_m": distancia_total
         }
 
-    # 🚨 Fallback si no encuentra solución
+    # fallback
     ruta = list(range(n))
     llegada = [ventanas[i][0] + service_times[i] for i in ruta]
     distancia_total = sum(dist[i][j] for i, j in zip(ruta, ruta[1:]))
