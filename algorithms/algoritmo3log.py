@@ -9,7 +9,7 @@ from typing import Dict, Any
 SERVICE_TIME   = 8 * 60           # 10 minutos de servicio
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
-ALLOWED_LATE   = 10 * 60           # hasta 16:25
+ALLOWED_LATE   = 10 * 60           # Tardanza adicional de 10 minutos (caso extremo para evitar que se excluya el nodo)
 MAX_TRAVEL     = 35 * 60           # descartar arcos >40min de viaje
 MAX_WAIT       = 30 * 60           # penalizar esperas >20 minutos
 
@@ -23,7 +23,7 @@ def optimizar_ruta_cp_sat(
     """
     1) Nearest Insertion para ruta inicial
     2) CP-SAT refinado con AddHint(...) partiendo de la solución inicial
-    3) Fallback puro Nearest Insertion si CP-SAT no halla solución
+    3) Segundo intento reajustando Nearest Insertion si CP-SAT no halla solución a la primera.
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
