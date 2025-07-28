@@ -7,10 +7,10 @@ from typing import Dict, Any
 #  CONSTANTES DE JORNADA Y SERVICIO
 # ----------------------------------
 SERVICE_TIME   = 10 * 60           # 10 minutos en segundos
-SHIFT_START    =  8.5 * 3600         # 09:00 en segundos
+SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
 ALLOWED_LATE   =  30 * 60          # se puede llegar hasta 16:45
-MAX_TRAVEL     =  35 * 60          # no permitimos viajes > 40 min
+MAX_TRAVEL     =  40 * 60          # no permitimos viajes > 40 min
 
 def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Dict[str, Any]:
     """
@@ -40,14 +40,17 @@ def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Di
             if i == j:
                 continue
             var = model.NewBoolVar(f"x_{i}_{j}")
-             if T[i][j] > MAX_TRAVEL:
+            # prohibimos viajes demasiado largos
+            if T[i][j] > MAX_TRAVEL:
                 model.Add(var == 0)
             x[i, j] = var
 
-     horizon = SHIFT_END + ALLOWED_LATE
+    # Tiempo de llegada t[i]
+    horizon = SHIFT_END + ALLOWED_LATE
     t = [model.NewIntVar(0, horizon, f"t_{i}") for i in range(n)]
 
-     u = [model.NewIntVar(0, n - 1, f"u_{i}") for i in range(n)]
+    # Variables MTZ u[i] para evitar subtours
+    u = [model.NewIntVar(0, n - 1, f"u_{i}") for i in range(n)]
 
     # --- Restricciones de flujo ---
     # Cada nodo j≠0 entra una vez
@@ -61,13 +64,14 @@ def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Di
     model.Add(sum(x[i, 0] for i in range(1, n)) == 1)
 
     # --- Ventanas de tiempo con lateness permitido ---
-    # Salida fija depósito a las xx:xx (por el momento está a las 9:00 am)
+    # Salida fija depósito a las 09:00
     model.Add(t[0] == SHIFT_START)
     for i, (start, end) in enumerate(windows):
         model.Add(t[i] >= start)
         model.Add(t[i] <= end + ALLOWED_LATE)
 
-     for i in range(n):
+    # --- Propagación de tiempos ---
+    for i in range(n):
         for j in range(n):
             if i == j:
                 continue
@@ -76,14 +80,16 @@ def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Di
                 t[j] >= t[i] + service[i] + T[i][j]
             ).OnlyEnforceIf(x[i, j])
 
-     model.Add(u[0] == 0)
+    # --- Eliminación de subtours (MTZ) ---
+    model.Add(u[0] == 0)
     for i in range(1, n):
         for j in range(1, n):
             if i == j:
                 continue
             model.Add(u[i] + 1 <= u[j] + n * (1 - x[i, j]))
 
-     model.Minimize(
+    # --- Objetivo: minimizar distancia total ---
+    model.Minimize(
         sum(D[i][j] * x[i, j] for (i, j) in x)
     )
 
@@ -92,7 +98,8 @@ def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Di
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
-     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+    # --- Si no encontró solución, fallback heurístico ---
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _fallback_insertion(data)
 
     # --- Reconstruir la ruta ---
