@@ -9,9 +9,9 @@ from typing import Dict, Any
 SERVICE_TIME   = 8 * 60           # 10 minutos de servicio
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
-ALLOWED_LATE   = 10 * 60           # hasta 16:25
-MAX_TRAVEL     = 35 * 60           # descartar arcos >40min de viaje
-MAX_WAIT       = 30 * 60           # penalizar esperas >20 minutos
+ALLOWED_LATE   = 15 * 60           # hasta 10-15 minutos
+MAX_TRAVEL     = 35 * 60           # descartar arcos 40min de viaje
+MAX_WAIT       = 45 * 60           # penalizar esperas 45 minutos
 
 # pesos
 WAIT_WEIGHT    = 100                # 1 segundo de espera = 1 unidad de penalización
@@ -20,18 +20,14 @@ def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
-    """
-    1) Nearest Insertion para ruta inicial
-    2) CP-SAT refinado con AddHint(...) partiendo de la solución inicial
-    3) Fallback puro Nearest Insertion si CP-SAT no halla solución
-    """
+    
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
     windows = data["time_windows"]
     service = data.get("service_times", [SERVICE_TIME]*len(windows))
     n       = len(D)
 
-    # 1) Construcción heurística inicial: Nearest Insertion
+     
     visitados = [0]
     restantes = set(range(1, n))
     while restantes:
@@ -41,18 +37,18 @@ def optimizar_ruta_cp_sat(
                 a = visitados[pos-1]
                 b = visitados[pos] if pos < len(visitados) else None
 
-                # tiempo acumulado hasta 'a'
+                 
                 t_acc = SHIFT_START
                 for idx,node in enumerate(visitados[:pos]):
                     if idx>0:
                         prev = visitados[idx-1]
                         t_acc += service[prev] + T[prev][node]
 
-                # llegada provisional a j
+                 
                 t_arr0 = t_acc + service[a] + T[a][j]
 
                 ini, fin = windows[j]
-                # siempre espera hasta ini
+                 
                 if t_arr0 < ini:
                     wait_time = ini - t_arr0
                     t_arr = ini
@@ -60,15 +56,15 @@ def optimizar_ruta_cp_sat(
                     wait_time = 0
                     t_arr = t_arr0
 
-                # si llega demasiado tarde, descartar
+                # si llega después de la franja horaria, descartar
                 if t_arr > fin + ALLOWED_LATE:
                     continue
 
-                # coste heurístico: distancia + tiempo + penalización por espera
+                # coste  : distancia + tiempo + penalización por espera
                 penalty = min(wait_time, MAX_WAIT) * WAIT_WEIGHT
                 score = t_arr + D[a][j] + penalty
 
-                # ajuste por arco eliminado a→b y añadido j→b
+                
                 if b is not None:
                     score += D[j][b] - D[a][b]
 
@@ -76,7 +72,7 @@ def optimizar_ruta_cp_sat(
                     best_cost, best_j, best_pos = score, j, pos
 
         if best_j is None:
-            # no quedan candidatos factibles
+            # no quedan nodos que visitar
             break
 
         visitados.insert(best_pos, best_j)
@@ -84,7 +80,7 @@ def optimizar_ruta_cp_sat(
 
     init_route = visitados
 
-    # 2) Modelo CP-SAT
+    #Modelo CP-SAT
     model = cp_model.CpModel()
 
     # Bool x[i,j] = 1 si voy de i a j
@@ -142,7 +138,7 @@ def optimizar_ruta_cp_sat(
         + WAIT_WEIGHT * sum(t[i] for i in range(n))
     )
 
-    # 3) Hint desde la ruta heurística
+    
     for a,b in zip(init_route, init_route[1:]):
         model.AddHint(x[a,b], 1)
     for pos, node in enumerate(init_route):
@@ -158,7 +154,7 @@ def optimizar_ruta_cp_sat(
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
-    # 5) Si falla, va al fallback
+    # 5) Si falla, se reintenta
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _fallback_insertion(data)
 
@@ -187,12 +183,7 @@ def optimizar_ruta_cp_sat(
     }
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Versión refinada:
-    - No omite puntos
-    - Ventanas ajustadas se insertan si abren pronto
-    - No espera innecesariamente
-    """
+   
     D        = data["distance_matrix"]
     T        = data["duration_matrix"]
     windows  = data["time_windows"]
