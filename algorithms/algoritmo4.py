@@ -95,19 +95,19 @@ class LNSOptimizer:
         solucion_dest = copy.deepcopy(solucion)
         removidos = []
         
-        # 1. Identificar puntos problemáticos de manera segura
+        # Identificar puntos problemáticos
         problematicos = []
         for i_ruta, ruta in enumerate(solucion):
-            if len(ruta) < 2:  # Saltar rutas demasiado cortas
+            if len(ruta) < 2:  
                 continue
             for i in range(1, len(ruta)):
                 try:
                     if self.dur_matrix[ruta[i-1]][ruta[i]] > MAX_TIEMPO_ENTRE_PUNTOS:
                         problematicos.append((i_ruta, i))
                 except IndexError:
-                    continue  # Si hay error en la matriz, saltar este punto
+                    continue   
     
-        # 2. Remover puntos problemáticos de manera controlada
+         
         if problematicos:
             num_remover = min(len(problematicos), int(len(problematicos) * 0.7))
             for i_ruta, idx in random.sample(problematicos, num_remover):
@@ -115,9 +115,9 @@ class LNSOptimizer:
                     if 0 <= idx < len(solucion_dest[i_ruta]):
                         removidos.append(solucion_dest[i_ruta].pop(idx))
                 except (IndexError, TypeError):
-                    continue  # Si falla, continuar con el siguiente
+                    continue   
     
-        # 3. Destrucción aleatoria complementaria con verificación
+        # Destrucción aleatoria complementaria con verificación
         puntos_disponibles = []
         for i_ruta, ruta in enumerate(solucion_dest):
             if len(ruta) > 1:  # Solo rutas con múltiples puntos
@@ -139,7 +139,7 @@ class LNSOptimizer:
     def reparar_solucion(self, solucion, removidos):
         for punto in removidos:
             mejor_costo = float('inf')
-            mejor_posicion = (0, 0)  # Posición por defecto
+            mejor_posicion = (0, 0)   
             
             for i_ruta, ruta in enumerate(solucion):
                 for j in range(len(ruta) + 1):
@@ -255,7 +255,6 @@ class LNSOptimizer:
 
 def optimizar_ruta_lns(data, tiempo_max_seg=120):
     """Función principal para integración"""
-    # Validación de datos
     required = ['distance_matrix', 'duration_matrix', 'time_windows']
     if not all(k in data for k in required):
         raise ValueError(f"Faltan datos requeridos: {required}")
