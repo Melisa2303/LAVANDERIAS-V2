@@ -188,60 +188,76 @@ def optimizar_ruta_cp_sat(
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Ruta greedy temporal que:
-    - Visita TODOS los puntos
-    - Respeta ventanas si es posible
-    - Nunca omite un cliente (ni uno)
+    Ruta greedy reforzada que:
+    - Visita todos los puntos
+    - NO pospone ventanas urgentes si puede atenderlas
+    - Penaliza retraso, pero fuerza atención si aún es posible
     """
-    D       = data["distance_matrix"]
-    T       = data["duration_matrix"]
-    windows = data["time_windows"]
-    service = data.get("service_times", [SERVICE_TIME]*len(windows))
-    n       = len(D)
+    D        = data["distance_matrix"]
+    T        = data["duration_matrix"]
+    windows  = data["time_windows"]
+    service  = data.get("service_times", [SERVICE_TIME] * len(windows))
+    n        = len(D)
 
     visitados = [0]
     llegada   = [SHIFT_START]
     restantes = set(range(1, n))
 
-    t_actual = SHIFT_START
-    nodo_act = 0
-    AJUSTADA_MAX = 2700  # 45 minutos
+    t_actual  = SHIFT_START
+    nodo_act  = 0
+    AJUSTADA_MAX = 2700  # 45 min
 
     while restantes:
-        candidatos = []
+        urgentes = []
+        normales = []
 
         for j in restantes:
-            travel = T[nodo_act][j]
-            eta    = t_actual + service[nodo_act] + travel
-            ini, fin = windows[j]
+            travel    = T[nodo_act][j]
+            eta       = t_actual + service[nodo_act] + travel
+            ini, fin  = windows[j]
             t_llegada = max(eta, ini)
 
-            # Calculamos penalización por retraso (si es que hay)
-            retraso = max(0, eta - fin)
+            if eta > fin + ALLOWED_LATE:
+                continue  # ni con tolerancia
+
+            # Verificamos si esta ventana es ajustada y aún alcanzable
             ventana_dur = fin - ini
-            urgencia = 10000 // (1 + ventana_dur)
+            if ventana_dur <= AJUSTADA_MAX and eta <= fin:
+                urgentes.append((fin, j, t_llegada))  # se cierra pronto → más urgente
+                continue
 
-            # Score: más bajo = mejor
-            score = (
-                retraso * 10 +               # penalización fuerte por llegar tarde
-                max(0, ini - eta) * 2 +      # espera penalizada suavemente
-                D[nodo_act][j] +
-                urgencia
-            )
-            candidatos.append((score, j, t_llegada))
+            # Si no es urgente, la consideramos normalmente
+            retraso = max(0, eta - fin)
+            espera  = max(0, ini - eta)
+            prioridad = 10000 // (1 + ventana_dur)
+            score = retraso * 10 + espera * 2 + D[nodo_act][j] + prioridad
+            normales.append((score, j, t_llegada))
 
-        # Siempre habrá al menos un candidato (nunca se omite nadie)
-        candidatos.sort()
-        _, best_j, t_llegada = candidatos[0]
+        if urgentes:
+            # 👈 Esta es la diferencia clave
+            # Seleccionamos la que se cierra más pronto
+            _, best_j, t_llegada = min(urgentes, key=lambda x: x[0])
+
+        elif normales:
+            _, best_j, t_llegada = min(normales, key=lambda x: x[0])
+
+        else:
+            # ya no hay factibles, pero forzamos visita igual (último recurso)
+            for j in restantes:
+                travel = T[nodo_act][j]
+                eta    = t_actual + service[nodo_act] + travel
+                ini = windows[j][0]
+                t_llegada = max(eta, ini)
+                best_j = j
+                break
 
         visitados.append(best_j)
         llegada.append(t_llegada)
         restantes.remove(best_j)
-
         t_actual = t_llegada
         nodo_act = best_j
 
-    # recalcular llegada final por robustez
+    # llegada robusta
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
@@ -260,3 +276,4 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
         "distance_total_m": dist_total
     }
+
