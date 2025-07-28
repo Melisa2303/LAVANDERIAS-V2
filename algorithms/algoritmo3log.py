@@ -14,8 +14,8 @@ MAX_TRAVEL     = 40 * 60           # descartar arcos >40min de viaje
 
 # penalizaciones
 DIST_WEIGHT    = 1                 # peso de la distancia
-WAIT_WEIGHT    = 10                # peso por segundo de espera temprana
-TARDY_WEIGHT   = 1                 # peso por segundo de tardanza
+WAIT_WEIGHT    = 1000                # peso por segundo de espera temprana
+TARDY_WEIGHT   = 10                 # peso por segundo de tardanza
 
 
 def optimizar_ruta_cp_sat(
