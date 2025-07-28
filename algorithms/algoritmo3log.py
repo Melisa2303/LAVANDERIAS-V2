@@ -188,10 +188,10 @@ def optimizar_ruta_cp_sat(
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Nearest Insertion secuencial con:
-      - NO huecos > 1h
-      - NO exclusión de clientes
-      - Atención aunque haya que esperar o llegar tarde
+    Ruta secuencial garantizando:
+      - Visita de todos los clientes
+      - NO huecos de 1h
+      - NO visitas tardías a ventanas tempranas
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -205,62 +205,88 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
 
     t_actual = SHIFT_START
     nodo_act = 0
-    MAX_WAIT = 1800  # espera deseada: 30min
-    MAX_GAP  = 3600  # evitar huecos >1h
+    MAX_WAIT = 1800  # espera tolerable
+    GAP_MAX  = 3600  # no dejar hueco > 1h
 
     while restantes:
-        mejores_opciones = []
+        factibles = []
+        proximos  = []
 
         for j in restantes:
-            travel_time = T[nodo_act][j]
-            eta         = t_actual + service[nodo_act] + travel_time
-            ini_j, fin_j = windows[j]
+            travel = T[nodo_act][j]
+            eta    = t_actual + service[nodo_act] + travel
+            ini, fin = windows[j]
 
-            # ETA ajustada si hay que esperar
-            t_llegada = max(eta, ini_j)
-            espera    = max(0, ini_j - eta)
-            tarde     = max(0, eta - fin_j)
+            if eta <= fin + ALLOWED_LATE:
+                espera = max(0, ini - eta)
+                llegada_estimada = max(eta, ini)
 
-            ventana_dur = fin_j - ini_j
-            prioridad   = 10000 // (1 + ventana_dur)  # más prioridad a ventanas angostas
+                # Candidato factible si podemos atenderlo ya o en breve
+                if espera <= MAX_WAIT:
+                    dur = fin - ini
+                    urgencia = 10000 // (1 + dur)
+                    score = espera + urgencia + D[nodo_act][j]
+                    factibles.append((score, j, llegada_estimada))
+                else:
+                    proximos.append((ini, j, eta))  # para decidir entre los siguientes
 
-            # Penalización por:
-            # - espera
-            # - retraso
-            # - distancia
-            score = (
-                espera * 1.5 +
-                tarde * 5 +
-                D[nodo_act][j] +
-                prioridad
-            )
-            mejores_opciones.append((score, j, t_llegada))
+        if factibles:
+            factibles.sort()
+            _, best_j, t_llegada = factibles[0]
 
-        # Elegir el mejor (aunque implique espera o llegada tarde)
-        mejores_opciones.sort()
-        _, best_j, eta_real = mejores_opciones[0]
+        elif proximos:
+            # ventana próxima: tomamos la más cercana en apertura
+            proximos.sort()
+            _, best_j, eta = proximos[0]
+            t_llegada = max(eta, windows[best_j][0])
 
-        # Agregar a la ruta
+            # si espera > 1h y hay otro cliente más amplio, lo usamos como relleno
+            if t_llegada - t_actual > GAP_MAX:
+                rellenables = []
+                for j in restantes:
+                    ini, fin = windows[j]
+                    if fin - ini >= 3600:  # ventanas amplias
+                        eta_alt = t_actual + service[nodo_act] + T[nodo_act][j]
+                        if eta_alt <= fin + ALLOWED_LATE:
+                            score = eta_alt - ini
+                            rellenables.append((score, j, max(eta_alt, ini)))
+                if rellenables:
+                    rellenables.sort()
+                    _, best_j, t_llegada = rellenables[0]
+
+        else:
+            # Último recurso: cualquiera visitable
+            otros = []
+            for j in restantes:
+                eta = t_actual + service[nodo_act] + T[nodo_act][j]
+                if eta <= windows[j][1] + ALLOWED_LATE:
+                    t_llegada = max(eta, windows[j][0])
+                    otros.append((t_llegada, j))
+            if not otros:
+                break  # imposible, pero por seguridad
+            otros.sort()
+            t_llegada, best_j = otros[0]
+
         visitados.append(best_j)
-        llegada.append(eta_real)
+        llegada.append(t_llegada)
         restantes.remove(best_j)
 
-        t_actual = eta_real
+        t_actual = t_llegada
         nodo_act = best_j
 
-    # Recalcular llegada final (robusto)
+    # recalculo robusto final
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
         if idx > 0:
-            prev = visitados[idx-1]
+            prev = visitados[idx - 1]
             t_now += service[prev] + T[prev][node]
         t_now = max(t_now, windows[node][0])
         llegada_final.append(t_now)
 
     dist_total = sum(
-        D[visitados[i]][visitados[i+1]]
-        for i in range(len(visitados)-1)
+        D[visitados[i]][visitados[i + 1]]
+        for i in range(len(visitados) - 1)
     )
 
     return {
