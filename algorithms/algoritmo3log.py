@@ -1,5 +1,3 @@
-
-
 # algorithms/algoritmo3_hybrid.py
 
 from ortools.sat.python import cp_model
@@ -12,8 +10,8 @@ SERVICE_TIME   = 8 * 60           # 10 minutos de servicio
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
 ALLOWED_LATE   = 10 * 60           # hasta 16:25
-MAX_TRAVEL     = 40 * 60           # descartar arcos >40min de viaje
-MAX_WAIT       = 30 * 60           # penalizar esperas >30 minutos
+MAX_TRAVEL     = 35 * 60           # descartar arcos >40min de viaje
+MAX_WAIT       = 30 * 60           # penalizar esperas >20 minutos
 
 # pesos
 WAIT_WEIGHT    = 100                # 1 segundo de espera = 1 unidad de penalización
@@ -160,7 +158,7 @@ def optimizar_ruta_cp_sat(
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
-    # 5) Si falla, se reintenta reorganizando
+    # 5) Si falla, va al fallback
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _fallback_insertion(data)
 
@@ -189,8 +187,12 @@ def optimizar_ruta_cp_sat(
     }
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
-
-    
+    """
+    Versión refinada:
+    - No omite puntos
+    - Ventanas ajustadas se insertan si abren pronto
+    - No espera innecesariamente
+    """
     D        = data["distance_matrix"]
     T        = data["duration_matrix"]
     windows  = data["time_windows"]
@@ -205,10 +207,11 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     nodo_act = 0
 
     AJUSTADA_MAX   = 2700   # 45 minutos
-    INSERCION_MAX  = 2700   # Esperará 45 minutos máximo para ir a una ventana próxima para evitar perderla
+    INSERCION_MAX  = 2700   # puedo esperarte 45 min si falta poco para que abras
 
     while restantes:
-         ajustadas_pendientes = []
+        # 1. Buscar ventana ajustada más próxima aún no visitada
+        ajustadas_pendientes = []
         for j in restantes:
             ini, fin = windows[j]
             if fin - ini <= AJUSTADA_MAX:
@@ -221,16 +224,18 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
             eta_v      = t_actual + service[nodo_act] + travel_v
             espera_v   = ini_v - eta_v
 
-             if espera_v <= INSERCION_MAX:
+            # Si falta poco para que abra (≤45 min), la visito directamente
+            if espera_v <= INSERCION_MAX:
                 t_llegada = max(eta_v, ini_v)
                 visitados.append(j_v)
                 llegada.append(t_llegada)
                 restantes.remove(j_v)
                 t_actual = t_llegada
                 nodo_act = j_v
-                continue   
+                continue  # saltamos el resto de lógica
 
-         candidatos = []
+        # 2. Evaluar todos los candidatos
+        candidatos = []
         for j in restantes:
             travel     = T[nodo_act][j]
             eta        = t_actual + service[nodo_act] + travel
@@ -245,7 +250,8 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
             candidatos.append((score, j, t_llegada))
 
         if not candidatos:
-             for j in restantes:
+            # último recurso
+            for j in restantes:
                 eta = t_actual + service[nodo_act] + T[nodo_act][j]
                 t_llegada = max(eta, windows[j][0])
                 best_j = j
@@ -260,7 +266,7 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         t_actual = t_llegada
         nodo_act = best_j
 
-    # recalcular llegada final 
+    # recalcular llegada final robusta
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
