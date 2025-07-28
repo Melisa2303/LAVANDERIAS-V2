@@ -186,13 +186,12 @@ def optimizar_ruta_cp_sat(
         "distance_total_m": dist_total
     }
 
-
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Nearest Insertion con ETA realista:
-      - Respeta ventanas de tiempo [ini, fin]
-      - Penaliza espera innecesaria
-      - Prioriza clientes con ventanas tempranas y ajustadas
+    Nearest Insertion secuencial, sin esperas prolongadas:
+      - Construcción iterativa, sin saltos largos
+      - Prioriza clientes atendibles pronto
+      - No se adelanta a clientes de ventana tardía
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -204,66 +203,44 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     llegada   = [SHIFT_START]
     restantes = set(range(1, n))
 
+    t_actual = SHIFT_START
+    nodo_act = 0
+
     while restantes:
-        best_score, best_j, best_pos, best_eta = float("inf"), None, None, None
+        candidatos = []
 
         for j in restantes:
+            travel_time = T[nodo_act][j]
+            eta         = t_actual + service[nodo_act] + travel_time
             ini_j, fin_j = windows[j]
 
-            for pos in range(1, len(visitados)+1):
-                ruta_tmp = visitados[:pos] + [j] + visitados[pos:]
+            # Si la espera es tolerable y se puede atender a tiempo
+            if eta <= fin_j + ALLOWED_LATE:
+                espera = max(0, ini_j - eta)
+                # Penalizamos espera y ventana angosta
+                ventana_dur = fin_j - ini_j
+                prioridad = 10000 // (1 + ventana_dur)
+                score = espera + prioridad + D[nodo_act][j]  # función híbrida
+                candidatos.append((score, j, eta))
 
-                # Simulamos la ruta temporal
-                tiempo_actual = SHIFT_START
-                llegada_tmp   = []
-                factible      = True
+        if not candidatos:
+            break  # no hay nadie atendible en el instante actual
 
-                for idx, nodo in enumerate(ruta_tmp):
-                    if idx == 0:
-                        llegada_tmp.append(tiempo_actual)
-                        continue
-                    prev = ruta_tmp[idx-1]
-                    tiempo_actual += service[prev] + T[prev][nodo]
-                    tiempo_actual = max(tiempo_actual, windows[nodo][0])
-                    if tiempo_actual > windows[nodo][1] + ALLOWED_LATE:
-                        factible = False
-                        break
-                    llegada_tmp.append(tiempo_actual)
+        # Seleccionamos el mejor
+        candidatos.sort()
+        _, best_j, eta = candidatos[0]
 
-                if not factible:
-                    continue
-
-                # Heurística: penaliza
-                # - tiempo de llegada tardío
-                # - espera innecesaria
-                # - ventanas ajustadas más prioritarias
-                t_llegada_j = llegada_tmp[pos]
-                espera      = max(0, windows[j][0] - (llegada[-1] + service[visitados[-1]] + T[visitados[-1]][j]))
-                ventana_dif = windows[j][1] - windows[j][0]
-                prioridad   = 10000 // (1 + ventana_dif)  # penaliza más si la ventana es angosta
-
-                score = (
-                    t_llegada_j +
-                    2 * espera +
-                    prioridad +
-                    D[visitados[-1]][j]
-                )
-
-                if score < best_score:
-                    best_score = score
-                    best_j     = j
-                    best_pos   = pos
-                    best_eta   = llegada_tmp
-
-        if best_j is None:
-            # Si no se pudo insertar ningún punto, salimos
-            break
-
-        visitados.insert(best_pos, best_j)
-        llegada = best_eta
+        # Registramos
+        t_servicio = max(eta, windows[best_j][0])
+        llegada.append(t_servicio)
+        visitados.append(best_j)
         restantes.remove(best_j)
 
-    # Recalcular llegada final (robusto)
+        # Actualizamos contexto
+        t_actual = t_servicio
+        nodo_act = best_j
+
+    # recalculamos ETA final (robusto)
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
