@@ -18,7 +18,7 @@ WAIT_WEIGHT    = 10                # peso por segundo de espera temprana
 TARDY_WEIGHT   = 1                 # peso por segundo de tardanza
 
 
-def optimizar_ruta_cp_sat_hybrid(
+def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
