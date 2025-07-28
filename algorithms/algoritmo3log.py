@@ -16,7 +16,7 @@ MAX_WAIT       = 20 * 60           # penalizar esperas >20 minutos
 # pesos
 WAIT_WEIGHT    = 1                 # 1 segundo de espera = 1 unidad de penalización
 
-def optimizar_ruta_cp_sat_hybrid(
+def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
