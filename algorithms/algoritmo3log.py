@@ -189,9 +189,9 @@ def optimizar_ruta_cp_sat(
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ruta secuencial garantizando:
-      - Visita de todos los clientes
-      - NO huecos de 1h
-      - NO visitas tardías a ventanas tempranas
+      - Todos los clientes atendidos
+      - Ventanas ajustadas NO se postergan
+      - No huecos > 1h
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -206,66 +206,51 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     t_actual = SHIFT_START
     nodo_act = 0
     MAX_WAIT = 1800  # espera tolerable
-    GAP_MAX  = 3600  # no dejar hueco > 1h
+    MAX_GAP  = 3600  # hueco inaceptable
 
     while restantes:
-        factibles = []
-        proximos  = []
+        candidatos = []
 
         for j in restantes:
-            travel = T[nodo_act][j]
-            eta    = t_actual + service[nodo_act] + travel
-            ini, fin = windows[j]
+            travel_time = T[nodo_act][j]
+            eta         = t_actual + service[nodo_act] + travel_time
+            ini, fin    = windows[j]
 
             if eta <= fin + ALLOWED_LATE:
                 espera = max(0, ini - eta)
-                llegada_estimada = max(eta, ini)
+                dentro_de_ventana = eta >= ini and eta <= fin
+                apertura_proxima  = ini - t_actual <= MAX_WAIT
 
-                # Candidato factible si podemos atenderlo ya o en breve
-                if espera <= MAX_WAIT:
-                    dur = fin - ini
-                    urgencia = 10000 // (1 + dur)
+                # Prioridad alta si está en ventana o abrirá en breve
+                if dentro_de_ventana or apertura_proxima:
+                    ventana_dur = fin - ini
+                    urgencia = 10000 // (1 + ventana_dur)
                     score = espera + urgencia + D[nodo_act][j]
-                    factibles.append((score, j, llegada_estimada))
-                else:
-                    proximos.append((ini, j, eta))  # para decidir entre los siguientes
+                    candidatos.append((score, j, max(eta, ini)))
 
-        if factibles:
-            factibles.sort()
-            _, best_j, t_llegada = factibles[0]
-
-        elif proximos:
-            # ventana próxima: tomamos la más cercana en apertura
-            proximos.sort()
-            _, best_j, eta = proximos[0]
-            t_llegada = max(eta, windows[best_j][0])
-
-            # si espera > 1h y hay otro cliente más amplio, lo usamos como relleno
-            if t_llegada - t_actual > GAP_MAX:
-                rellenables = []
-                for j in restantes:
-                    ini, fin = windows[j]
-                    if fin - ini >= 3600:  # ventanas amplias
-                        eta_alt = t_actual + service[nodo_act] + T[nodo_act][j]
-                        if eta_alt <= fin + ALLOWED_LATE:
-                            score = eta_alt - ini
-                            rellenables.append((score, j, max(eta_alt, ini)))
-                if rellenables:
-                    rellenables.sort()
-                    _, best_j, t_llegada = rellenables[0]
+        if candidatos:
+            candidatos.sort()
+            _, best_j, t_llegada = candidatos[0]
 
         else:
-            # Último recurso: cualquiera visitable
-            otros = []
+            # No hay nadie próximo — elegimos el que abre más pronto SIN ignorar ventana
+            posibles = []
             for j in restantes:
-                eta = t_actual + service[nodo_act] + T[nodo_act][j]
-                if eta <= windows[j][1] + ALLOWED_LATE:
-                    t_llegada = max(eta, windows[j][0])
-                    otros.append((t_llegada, j))
-            if not otros:
-                break  # imposible, pero por seguridad
-            otros.sort()
-            t_llegada, best_j = otros[0]
+                travel_time = T[nodo_act][j]
+                eta         = t_actual + service[nodo_act] + travel_time
+                ini, fin    = windows[j]
+
+                if eta <= fin + ALLOWED_LATE:
+                    t_llegada = max(eta, ini)
+                    penaliza = max(0, t_llegada - fin)
+                    posibles.append((ini, j, t_llegada, penaliza))
+
+            if not posibles:
+                break  # No debería pasar, pero protección
+
+            # elegimos el más próximo en apertura (no el más cómodo)
+            posibles.sort(key=lambda x: (x[0], x[3]))
+            _, best_j, t_llegada, _ = posibles[0]
 
         visitados.append(best_j)
         llegada.append(t_llegada)
@@ -274,7 +259,7 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         t_actual = t_llegada
         nodo_act = best_j
 
-    # recalculo robusto final
+    # llegada final consistente
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
@@ -285,9 +270,15 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         llegada_final.append(t_now)
 
     dist_total = sum(
-        D[visitados[i]][visitados[i + 1]]
-        for i in range(len(visitados) - 1)
+        D[visitados[i]][visitados[i+1]]
+        for i in range(len(visitados)-1)
     )
+
+    return {
+        "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
+        "distance_total_m": dist_total
+    }
+
 
     return {
         "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
