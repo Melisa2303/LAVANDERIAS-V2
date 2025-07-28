@@ -1,106 +1,164 @@
-# algorithms/algoritmo3log.py
+# algorithms/algoritmo3.py
+
 from ortools.sat.python import cp_model
-import numpy as np
-import time
+import math
 
-# Constantes del problema
-SERVICE_TIME = 600
-SHIFT_START = 9 * 3600
-SHIFT_END = 16 * 3600 + 30 * 60
-SHIFT_HARD_LIMIT = 16 * 3600 + 45 * 60  # 16:45
+# --------------------------------------
+#  CONSTANTES DE JORNADA Y SERVICIO
+# --------------------------------------
+SERVICE_TIME_DEFAULT = 10 * 60      # 10 min en segundos
+SHIFT_START_SEC      =  9 * 3600    # 09:00 h
+SHIFT_END_SEC        = 16 * 3600 + 15*60  # 16:15 h
+ALLOWED_LATE         =  30 * 60    # +30 min tolerados (hasta 16:45)
 
-# Pesos para penalizaciones
-PESO_RETRASO = 3
-PESO_JORNADA_EXT = 6
-PESO_ESPERA = 1
-
-def optimizar_ruta_cp_sat(data, tiempo_max_seg=60):
-    n = len(data["time_windows"])
-    D = data["duration_matrix"]
+def optimizar_ruta_cp_sat(data, tiempo_max_seg=120):
+    """
+    data = {
+      "distance_matrix": [[...], ...],  # metros
+      "duration_matrix": [[...], ...],  # segundos
+      "time_windows":    [(ini, fin), ...],  # segundos desde 00:00
+      "service_times":   [s_i, ...],    # segundos
+      "num_vehicles":    1,
+      "vehicle_capacities": [...],      # no usadas aquí
+      "depot":           0
+    }
+    """
+    dist    = data["distance_matrix"]
+    dur     = data["duration_matrix"]
+    windows = data["time_windows"]
+    service = data.get("service_times",
+                       [SERVICE_TIME_DEFAULT]*len(windows))
+    n = len(dist)
 
     model = cp_model.CpModel()
 
-    x = [model.NewIntVar(0, n - 1, f"x_{i}") for i in range(n)]
-    t = [model.NewIntVar(SHIFT_START, SHIFT_HARD_LIMIT, f"t_{i}") for i in range(n)]
-
-    model.AddAllDifferent(x)
-
-    for i in range(n - 1):
-        u = x[i]
-        v = x[i + 1]
-        dur = D[u.Index()][v.Index()]
-        model.Add(t[v.Index()] >= t[u.Index()] + SERVICE_TIME + dur)
-
-    # Ventanas de tiempo
-    retraso = []
-    espera = []
-    penalizaciones = []
-
+    # ---------------------
+    # Variables de decisión
+    # ---------------------
+    # x[i,j] = 1 si vamos directamente de i a j
+    x = {}
     for i in range(n):
-        ini, fin = data["time_windows"][i]
-        retraso_i = model.NewIntVar(0, SHIFT_HARD_LIMIT, f"retraso_{i}")
-        espera_i = model.NewIntVar(0, SHIFT_HARD_LIMIT, f"espera_{i}")
-        ancho = max(1, fin - ini)
+        for j in range(n):
+            if i != j:
+                x[i,j] = model.NewBoolVar(f"x_{i}_{j}")
 
-        # t[i] > fin ⇒ retraso = t[i] - fin
-        late = model.NewBoolVar(f"late_{i}")
-        model.Add(t[i] > fin).OnlyEnforceIf(late)
-        model.Add(t[i] <= fin).OnlyEnforceIf(late.Not())
-        diff_late = model.NewIntVar(0, SHIFT_HARD_LIMIT, f"diff_late_{i}")
-        model.Add(diff_late == t[i] - fin)
-        model.Add(retraso_i == diff_late).OnlyEnforceIf(late)
-        model.Add(retraso_i == 0).OnlyEnforceIf(late.Not())
+    # t[i] = tiempo de llegada al nodo i
+    horizon = SHIFT_END_SEC + ALLOWED_LATE
+    t = [model.NewIntVar(0, horizon, f"t_{i}") for i in range(n)]
 
-        # t[i] < ini ⇒ espera = ini - t[i]
-        early = model.NewBoolVar(f"early_{i}")
-        model.Add(t[i] < ini).OnlyEnforceIf(early)
-        model.Add(t[i] >= ini).OnlyEnforceIf(early.Not())
-        diff_early = model.NewIntVar(0, SHIFT_HARD_LIMIT, f"diff_early_{i}")
-        model.Add(diff_early == ini - t[i])
-        model.Add(espera_i == diff_early).OnlyEnforceIf(early)
-        model.Add(espera_i == 0).OnlyEnforceIf(early.Not())
+    # Variables MTZ para eliminar subtours
+    u = [model.NewIntVar(0, n-1, f"u_{i}") for i in range(n)]
 
-        retraso.append(retraso_i)
-        espera.append(espera_i)
+    # ---------------------
+    # Restricciones de flujo
+    # ---------------------
+    # Cada nodo (excepto depósito) tiene exactamente 1 entrada y 1 salida
+    for j in range(1, n):
+        model.Add(sum(x[i,j] for i in range(n) if i!=j) == 1)
+    for i in range(1, n):
+        model.Add(sum(x[i,j] for j in range(n) if i!=j) == 1)
 
-        # Penalización proporcional a ancho de ventana
-        model.AddDivisionEquality(model.NewIntVar(0, 1000, ""), retraso_i, ancho)
-        penalizaciones.append(PESO_RETRASO * retraso_i // ancho)
-        penalizaciones.append(PESO_ESPERA * espera_i // 60)
+    # El depósito (0) arranca y cierra la ruta una sola vez
+    model.Add(sum(x[0,j] for j in range(1,n)) == 1)
+    model.Add(sum(x[i,0] for i in range(1,n)) == 1)
 
-    # Penalización por extender jornada más allá de 16:30
-    end_time = model.NewIntVar(SHIFT_START, SHIFT_HARD_LIMIT, "end_time")
-    model.AddMaxEquality(end_time, [t[i] for i in range(n)])
-    jornada_ext = model.NewIntVar(0, SHIFT_HARD_LIMIT, "jornada_ext")
-    model.Add(jornada_ext == end_time - SHIFT_END)
-    jornada_bool = model.NewBoolVar("jornada_extiende")
-    model.Add(end_time > SHIFT_END).OnlyEnforceIf(jornada_bool)
-    model.Add(end_time <= SHIFT_END).OnlyEnforceIf(jornada_bool.Not())
-    model.Add(jornada_ext == 0).OnlyEnforceIf(jornada_bool.Not())
-    penalizaciones.append(PESO_JORNADA_EXT * jornada_ext // 60)
+    # ---------------------
+    # Restricciones de tiempo
+    # ---------------------
+    # No llegamos antes de la apertura de cada ventana
+    for i, (start, _) in enumerate(windows):
+        model.Add(t[i] >= start)
 
-    # Función objetivo
-    model.Minimize(sum(penalizaciones))
+    # Fijamos la salida del depósito a SHIFT_START_SEC
+    model.Add(t[0] == SHIFT_START_SEC)
 
+    # Si hacemos i→j, entonces t[j] ≥ t[i] + service[i] + travel[i][j]
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                model.Add(
+                    t[j] >= t[i] + service[i] + dur[i][j]
+                ).OnlyEnforceIf(x[i,j])
+
+    # --------------------------------------
+    # Eliminación de subtours: formulario MTZ
+    # --------------------------------------
+    # u[0] == 0
+    model.Add(u[0] == 0)
+    for i in range(1, n):
+        for j in range(1, n):
+            if i != j:
+                # Si x[i,j]=1 entonces u[i]+1 <= u[j]
+                model.Add(u[i] + 1 <= u[j] + n*(1 - x[i,j]))
+
+    # ---------------------
+    # Objetivo: minimizar distancia
+    # ---------------------
+    model.Minimize(
+        sum(dist[i][j] * x[i,j] for (i,j) in x)
+    )
+
+    # ---------------------
+    # Solver
+    # ---------------------
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
 
     status = solver.Solve(model)
-
-    if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        orden = [solver.Value(x[i]) for i in range(n)]
-        tiempos = [solver.Value(t[i]) for i in range(n)]
-        orden_final = sorted(zip(orden, range(n)))
-        route = [idx for _, idx in orden_final]
-        arrival_sec = [tiempos[idx] for idx in route]
-        distance_total_m = sum(data["distance_matrix"][route[i]][route[i + 1]] for i in range(len(route) - 1))
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        # Fallback: ruta natural sin optimizar
+        ruta = list(range(n))
+        llegada = []
+        current = SHIFT_START_SEC
+        for i in ruta:
+            # respetar apertura de ventana, al menos start_i
+            current = max(current, windows[i][0])
+            llegada.append(current)
+            current += service[i]
         return {
             "routes": [{
-                "route": route,
-                "arrival_sec": arrival_sec
+                "vehicle": 0,
+                "route": ruta,
+                "arrival_sec": llegada
             }],
-            "distance_total_m": distance_total_m
+            "distance_total_m": 0
         }
 
-    # Fallback: retorna None si no hay solución
-    return None
+    # ---------------------
+    # Reconstrucción de la ruta
+    # ---------------------
+    ruta = [0]
+    actual = 0
+    visitados = {0}
+    while True:
+        siguiente = None
+        for j in range(n):
+            if j != actual and solver.Value(x[actual,j]) == 1:
+                if j in visitados:
+                    # ciclo detectado
+                    siguiente = None
+                else:
+                    siguiente = j
+                break
+        if siguiente is None:
+            break
+        ruta.append(siguiente)
+        visitados.add(siguiente)
+        actual = siguiente
+
+    # Cálculo de llegadas
+    llegada = [solver.Value(t[i]) for i in ruta]
+
+    # Distancia total
+    distancia = 0
+    for a,b in zip(ruta, ruta[1:]):
+        distancia += dist[a][b]
+
+    return {
+        "routes": [{
+            "vehicle": 0,
+            "route": ruta,
+            "arrival_sec": llegada
+        }],
+        "distance_total_m": distancia
+    }
