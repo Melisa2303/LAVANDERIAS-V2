@@ -4,198 +4,201 @@ from ortools.sat.python import cp_model
 from typing import Dict, Any
 
 # ----------------------------
-# CONSTANTES DE JORNADA & COSTES
+#  CONSTANTES DE JORNADA Y SERVICIO
 # ----------------------------
-SERVICE_TIME   = 10 * 60           # 10 min en segundos
+SERVICE_TIME   = 10 * 60           # 10 minutos en segundos
 SHIFT_START    =  9 * 3600         # 09:00
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15
-ALLOWED_LATE   = 30 * 60           # hasta 16:45
-MAX_TRAVEL     = 35 * 60           # bloquear arcos > 40 min
-
-SLACK_LIMIT    = 20 * 60           # solo penalizar hasta 20 min de espera
-WAIT_WEIGHT    = 100                 # costo por segundo de espera temprana
-LATE_WEIGHT    = 10                # costo por segundo de tardanza a la ventana
-
+ALLOWED_LATE   = 30 * 60           # puede llegarse hasta las 17:15
+MAX_TRAVEL     = 40 * 60           # no usar arcos > 40 min
+WAIT_WEIGHT    = 1                 # penaliza 1 unidad por segundo de espera/tardanza
 
 def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
     """
-    1) Nearest Insertion
-    2) CP-SAT puro con hint
-    3) Fallback Nearest Insertion
+    1) Construye ruta inicial con Nearest-Insertion
+    2) Refina con CP-SAT usando AddHint(...) para partir de esa ruta
+    3) Si CP-SAT falla, cae en _fallback_insertion (que respeta ventanas + tolerancia)
     """
-    D = data["distance_matrix"]
-    T = data["duration_matrix"]
+    D       = data["distance_matrix"]
+    T       = data["duration_matrix"]
     windows = data["time_windows"]
     service = data.get("service_times", [SERVICE_TIME]*len(windows))
-    n = len(D)
+    n       = len(D)
 
-    # --- 1) ruta inicial pelo Nearest Insertion ---
+    # ----------------------
+    # 1) Heurística Nearest-Insertion
+    # ----------------------
     visitados = [0]
     restantes = set(range(1, n))
     while restantes:
-        best, bj, pos = float("inf"), None, None
+        best_cost, best_j, best_pos = float("inf"), None, None
         for j in restantes:
-            for p in range(1, len(visitados)+1):
-                a = visitados[p-1]
-                b = visitados[p] if p < len(visitados) else None
-                cost = D[a][j] + (D[j][b] if b is not None else 0) - (D[a][b] if b is not None else 0)
-                if cost < best:
-                    best, bj, pos = cost, j, p
-        visitados.insert(pos, bj)
-        restantes.remove(bj)
+            for pos in range(1, len(visitados)+1):
+                ant = visitados[pos-1]
+                sig = visitados[pos] if pos < len(visitados) else None
+                delta = D[ant][j] + (D[j][sig] if sig is not None else 0)
+                delta -= (D[ant][sig] if sig is not None else 0)
+                if delta < best_cost:
+                    best_cost, best_j, best_pos = delta, j, pos
+        visitados.insert(best_pos, best_j)
+        restantes.remove(best_j)
     init_route = visitados
 
-    # --- 2) Construir modelo CP-SAT ---
+    # ----------------------
+    # 2) Modelo CP-SAT
+    # ----------------------
     model = cp_model.CpModel()
-    # x[i,j] = 1 si voy de i a j
+
+    # Variables x[i,j]: viajo de i a j
     x = {}
     for i in range(n):
         for j in range(n):
             if i == j: continue
-            v = model.NewBoolVar(f"x_{i}_{j}")
+            b = model.NewBoolVar(f"x_{i}_{j}")
+            # bloqueo de arcos demasiado largos
             if T[i][j] > MAX_TRAVEL:
-                model.Add(v == 0)
-            x[i,j] = v
-    # t[i] = tiempo de llegada a i
+                model.Add(b == 0)
+            x[i, j] = b
+
+    # Variables de tiempo t[i]
     horizon = SHIFT_END + ALLOWED_LATE
     t = [model.NewIntVar(0, horizon, f"t_{i}") for i in range(n)]
-    # subtour vars MTZ
+
+    # Variables MTZ para subtours
     u = [model.NewIntVar(0, n-1, f"u_{i}") for i in range(n)]
 
-    # grados de flujo
-    for j in range(1,n):
-        model.Add(sum(x[i,j] for i in range(n) if i!=j)==1)
-    for i in range(1,n):
-        model.Add(sum(x[i,j] for j in range(n) if j!=i)==1)
-    model.Add(sum(x[0,j] for j in range(1,n))==1)
-    model.Add(sum(x[i,0] for i in range(1,n))==1)
+    # Grados de entrada/salida
+    for j in range(1, n):
+        model.Add(sum(x[i,j] for i in range(n) if i!=j) == 1)
+    for i in range(1, n):
+        model.Add(sum(x[i,j] for j in range(n) if j!=i) == 1)
+    model.Add(sum(x[0,j] for j in range(1,n)) == 1)
+    model.Add(sum(x[i,0] for i in range(1,n)) == 1)
 
-    # ventana depósito
+    # Ventanas rígidas + tolerancia de tardanza
     model.Add(t[0] == SHIFT_START)
-
-    # ventanas de tiempo (permitir tardanza hasta ALLOWED_LATE)
-    for i,(ini,fin) in enumerate(windows):
-        # t[i] >= ini - SLACK_LIMIT  → permitimos anticipación
-        model.Add(t[i] >= ini - SLACK_LIMIT)
-        # t[i] <= fin + ALLOWED_LATE → tardanza tolerada
+    for i, (ini, fin) in enumerate(windows):
+        model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + ALLOWED_LATE)
 
-    # secuencia temporal
+    # Secuencia de tiempos
     for i in range(n):
         for j in range(n):
-            if i==j: continue
-            model.Add(t[j] >= t[i] + service[i] + T[i][j]).OnlyEnforceIf(x[i,j])
+            if i == j: continue
+            model.Add(
+                t[j] >= t[i] + service[i] + T[i][j]
+            ).OnlyEnforceIf(x[i,j])
 
     # MTZ subtours
-    model.Add(u[0]==0)
-    for i in range(1,n):
-        for j in range(1,n):
-            if i!=j:
-                model.Add(u[i] + 1 <= u[j] + n*(1 - x[i,j]))
+    model.Add(u[0] == 0)
+    for i in range(1, n):
+        for j in range(1, n):
+            if i != j:
+                model.Add(u[i] + 1 <= u[j] + n * (1 - x[i,j]))
 
-    # --- Variables de slack y tardanza para penalizar ---
-    slack = []
-    late  = []
-    for i,(ini,fin) in enumerate(windows):
-        si = model.NewIntVar(0, SLACK_LIMIT, f"slack_{i}")
-        li = model.NewIntVar(0, ALLOWED_LATE, f"late_{i}")
-        # si = max(0, ini - t[i])
-        model.Add(si >= ini - t[i])
-        # li = max(0, t[i] - fin)
-        model.Add(li >= t[i] - fin)
-        slack.append(si)
-        late.append(li)
-
-    # --- 3) Objetivo: distancia + penal slack + penal tardanza ---
+    # Objetivo: distancia + penalización de espera/tardanza acumulada
     model.Minimize(
-        sum(D[i][j]*x[i,j] for i,j in x)
-      + WAIT_WEIGHT  * sum(slack)
-      + LATE_WEIGHT  * sum(late)
+        sum(D[i][j] * x[i,j] for (i,j) in x)
+        + WAIT_WEIGHT * sum(t[i] for i in range(n))
     )
 
-    # --- 4) Inyectar hint desde ruta inicial ---
-    for a,b in zip(init_route, init_route[1:]):
+    # Semejanza con heurística: añadir hints para CP-SAT
+    # (fase caliente, acelera la convergencia)
+    for a, b in zip(init_route, init_route[1:]):
         model.AddHint(x[a,b], 1)
-    for pos,node in enumerate(init_route):
+    for pos, node in enumerate(init_route):
         model.AddHint(u[node], pos)
-    # hint de tiempos (ETA realista)
     eta = SHIFT_START
     model.AddHint(t[0], eta)
-    for prev,curr in zip(init_route, init_route[1:]):
+    for prev, curr in zip(init_route, init_route[1:]):
         eta = max(eta + service[prev] + T[prev][curr], windows[curr][0])
         model.AddHint(t[curr], eta)
 
-    # --- 5) Resolver ---
+    # Resolver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
-    sol = solver.Solve(model)
+    status = solver.Solve(model)
 
-    if sol not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        # Fallback si no encuentra nada
+    # Si falla, fallback garantizado
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _fallback_insertion(data)
 
-    # --- 6) Extraer ruta y ETAs ---
+    # Extraer la ruta y ETAs de la solución CP-SAT
     ruta, llegada = [0], [solver.Value(t[0])]
     cur = 0
     seen = {0}
     while True:
         nxt = next((j for j in range(n)
-                    if j not in seen and solver.Value(x[cur,j])==1),
+                    if j not in seen and solver.Value(x[cur,j]) == 1),
                    None)
-        if nxt is None: break
+        if nxt is None:
+            break
         ruta.append(nxt)
         llegada.append(solver.Value(t[nxt]))
         seen.add(nxt)
         cur = nxt
 
-    total_dist = sum(D[a][b] for a,b in zip(ruta, ruta[1:]))
-
+    dist_total = sum(D[a][b] for a,b in zip(ruta, ruta[1:]))
     return {
-        "routes":[{"vehicle":0,"route":ruta,"arrival_sec":llegada}],
-        "distance_total_m": total_dist
+        "routes": [{"vehicle": 0, "route": ruta, "arrival_sec": llegada}],
+        "distance_total_m": dist_total
     }
 
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Nearest Insertion puro + ETA realista."""
-    D = data["distance_matrix"]
-    T = data["duration_matrix"]
+    """
+    Nearest Insertion puro + ETA realista,
+    respeta apertura, cierre (+ tolerancia), nunca descarta nodos.
+    """
+    D       = data["distance_matrix"]
+    T       = data["duration_matrix"]
     windows = data["time_windows"]
     service = data.get("service_times", [SERVICE_TIME]*len(windows))
-    n = len(D)
+    n       = len(D)
 
+    # 1) Nearest Insertion
     visitados = [0]
-    restantes = set(range(1,n))
+    restantes = set(range(1, n))
     while restantes:
-        best,bj,pos = float("inf"),None,None
+        best, bj, bpos = float("inf"), None, None
         for j in restantes:
-            for p in range(1,len(visitados)+1):
-                a = visitados[p-1]
-                b = visitados[p] if p<len(visitados) else None
-                cost = D[a][j] + (D[j][b] if b else 0) - (D[a][b] if b else 0)
-                if cost < best: best,bj,pos = cost,j,p
-        visitados.insert(pos,bj)
+            for pos in range(1, len(visitados)+1):
+                a = visitados[pos-1]
+                b = visitados[pos] if pos < len(visitados) else None
+                delta = D[a][j] + (D[j][b] if b is not None else 0)
+                delta -= (D[a][b] if b is not None else 0)
+                if delta < best:
+                    best, bj, bpos = delta, j, pos
+        visitados.insert(bpos, bj)
         restantes.remove(bj)
 
+    # 2) Calcular ETAs **respetando ventanas y tolerancia**
     llegada = []
     t_now = SHIFT_START
-    for idx,node in enumerate(visitados):
-        if idx>0:
+    for idx, node in enumerate(visitados):
+        if idx > 0:
             prev = visitados[idx-1]
             t_now += service[prev] + T[prev][node]
-        # respetar ventana
+        # nunca antes de la apertura
         t_now = max(t_now, windows[node][0])
+        # nunca después del cierre + tolerancia
+        t_now = min(t_now, windows[node][1] + ALLOWED_LATE)
         llegada.append(t_now)
 
-    total_dist = sum(
+    # 3) Calcular distancia total
+    dist_total = sum(
         D[visitados[i]][visitados[i+1]]
         for i in range(len(visitados)-1)
     )
 
     return {
-        "routes":[{"vehicle":0,"route":visitados,"arrival_sec":llegada}],
-        "distance_total_m": total_dist
+        "routes": [{
+            "vehicle": 0,
+            "route": visitados,
+            "arrival_sec": llegada
+        }],
+        "distance_total_m": dist_total
     }
