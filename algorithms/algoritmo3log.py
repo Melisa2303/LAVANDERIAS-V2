@@ -187,7 +187,6 @@ def optimizar_ruta_cp_sat(
     }
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
-def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Versión final con:
     - Prioridad a ventanas ajustadas
@@ -209,7 +208,7 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     AJUSTADA_MAX = 2700  # 45 min
 
     while restantes:
-        # Detectar ventana ajustada más urgente aún no visitada
+        # 1. Detectar ventana ajustada más urgente aún no visitada
         ajustadas = []
         for j in restantes:
             ini, fin = windows[j]
@@ -223,7 +222,8 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
             # ETA mínima desde posición actual a ventana urgente
             eta_urgente = t_actual + service[nodo_act] + T[nodo_act][j_urgente]
             if eta_urgente > windows[j_urgente][1] + ALLOWED_LATE:
-                 cliente_urgente = None
+                # no llegaríamos ni con esfuerzo (raro, pero protección)
+                cliente_urgente = None
             else:
                 cliente_urgente = j_urgente
 
@@ -241,11 +241,13 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
 
             score = retraso * 10 + espera * 2 + D[nodo_act][j] + prioridad
 
-            #  Si este j es urgente, le damos prioridad absoluta
+            # ⚠️ Si este j es urgente, le damos prioridad absoluta
             if j == cliente_urgente and eta <= fin:
                 score = -99999  # prioridad máxima
 
-             if cliente_urgente and j != cliente_urgente:
+            # ⚠️ Si estamos antes de la ventana urgente, solo aceptamos
+            # candidatos si no hacen imposible llegar a tiempo al urgente
+            if cliente_urgente and j != cliente_urgente:
                 travel_to_j      = T[nodo_act][j]
                 eta_to_j         = t_actual + service[nodo_act] + travel_to_j
                 end_j            = max(eta_to_j, windows[j][0]) + service[j]
@@ -257,7 +259,8 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
             candidatos.append((score, j, t_llegada))
 
         if not candidatos:
-             for j in restantes:
+            # ningún candidato posible → tomar el que sea, incluso tarde
+            for j in restantes:
                 travel = T[nodo_act][j]
                 eta    = t_actual + service[nodo_act] + travel
                 t_llegada = max(eta, windows[j][0])
@@ -293,5 +296,3 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
         "distance_total_m": dist_total
     }
-`
-
