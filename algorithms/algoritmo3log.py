@@ -1,31 +1,31 @@
 # algorithms/algoritmo3_hybrid.py
 
-from typing import Dict, Any
 from ortools.sat.python import cp_model
+from typing import Dict, Any
 
 # ----------------------------------
 #  CONSTANTES DE JORNADA Y SERVICIO
 # ----------------------------------
-SERVICE_TIME   = 10 * 60           # 10 minutos de servicio
+SERVICE_TIME   = 10 * 60           # 10 minutos en segundos
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
-ALLOWED_LATE   = 30 * 60           # hasta 16:45
-MAX_TRAVEL     = 40 * 60           # descartar arcos >40min de viaje
+ALLOWED_LATE   = 30 * 60           # se permite llegar hasta 16:45
+MAX_WAIT       = 20 * 60           # máximo 20 min de espera anticipada
+MAX_TRAVEL     = 40 * 60           # descartamos arcos >40min de viaje
 
-# penalizaciones
-DIST_WEIGHT    = 1                 # peso de la distancia
-WAIT_WEIGHT    = 1000                # peso por segundo de espera temprana
-TARDY_WEIGHT   = 10                 # peso por segundo de tardanza
+# pesos en la función objetivo
+DIST_WEIGHT    = 1     # por metro recorrido
+WAIT_WEIGHT    = 100   # por segundo de espera (muy penalizado)
 
 
-def optimizar_ruta_cp_sat(
+def optimizar_ruta_cp_sat_hybrid(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
     """
-    1) Heurística Nearest Insertion para ruta inicial
-    2) CP-SAT refinado con hint desde la solución inicial
-    3) Si CP-SAT no encuentra solución, fallback con penalizaciones
+    1) Nearest Insertion para ruta inicial
+    2) CP-SAT refinado con AddHint(...) partiendo de esa ruta
+    3) Fallback puro que también respeta ventanas y slack máximo
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -33,140 +33,109 @@ def optimizar_ruta_cp_sat(
     service = data.get("service_times", [SERVICE_TIME]*len(windows))
     n       = len(D)
 
-    # ------------------------------------------------------
-    # 1) Construir ruta inicial por Nearest Insertion
-    # ------------------------------------------------------
+    # 1) SOLUCIÓN INICIAL nearest insertion
     visitados = [0]
     restantes = set(range(1, n))
     while restantes:
-        best_cost, best_j, best_pos = float('inf'), None, None
+        best_delta, best_j, best_pos = float("inf"), None, None
         for j in restantes:
             for pos in range(1, len(visitados)+1):
-                a = visitados[pos-1]
-                b = visitados[pos] if pos < len(visitados) else None
-
-                # coste distancia incremental
-                delta = D[a][j]
-                if b is not None:
-                    delta += D[j][b] - D[a][b]
-
-                # simular ETA hasta antes de j
-                t_now = SHIFT_START
-                for idx, node in enumerate(visitados[:pos]):
-                    if idx > 0:
-                        prev = visitados[idx-1]
-                        t_now += service[prev] + T[prev][node]
-                    t_now = max(t_now, windows[node][0])
-
-                # llegada a j y penalizaciones
-                t_j = max(t_now + service[visitados[pos-1]] + T[visitados[pos-1]][j],
-                          windows[j][0])
-                wait_j  = max(0, windows[j][0] - t_j)
-                tardy_j = max(0, t_j - windows[j][1])
-
-                # llegada a b tras j
-                if b is not None:
-                    t_next = max(t_j + service[j] + T[j][b],
-                                 windows[b][0])
-                    wait_b  = max(0, windows[b][0] - t_next)
-                    tardy_b = max(0, t_next - windows[b][1])
-                else:
-                    wait_b = tardy_b = 0
-
-                penalty = WAIT_WEIGHT*(wait_j + wait_b) + TARDY_WEIGHT*(tardy_j + tardy_b)
-                cost = DIST_WEIGHT*delta + penalty
-
-                if cost < best_cost:
-                    best_cost, best_j, best_pos = cost, j, pos
-
+                ant = visitados[pos-1]
+                sig = visitados[pos] if pos < len(visitados) else None
+                delta = D[ant][j] + (D[j][sig] if sig is not None else 0)
+                delta -= (D[ant][sig] if sig is not None else 0)
+                if delta < best_delta:
+                    best_delta, best_j, best_pos = delta, j, pos
         visitados.insert(best_pos, best_j)
         restantes.remove(best_j)
-
     init_route = visitados
 
-    # ------------------------------------------------------
-    # 2) Construir y resolver modelo CP-SAT con hint
-    # ------------------------------------------------------
+    # 2) MODELO CP-SAT
     model = cp_model.CpModel()
 
-    # Variables de arco
+    # variables arco x[i,j]
     x = {}
     for i in range(n):
         for j in range(n):
             if i == j: continue
             b = model.NewBoolVar(f"x_{i}_{j}")
-            # bloquear arcos muy largos
+            # bloqueamos arcos excesivamente largos
             if T[i][j] > MAX_TRAVEL:
                 model.Add(b == 0)
-            x[i, j] = b
+            x[(i,j)] = b
 
-    # Tiempo de llegada
+    # variables de tiempo de llegada t[i]
     horizon = SHIFT_END + ALLOWED_LATE
     t = [model.NewIntVar(0, horizon, f"t_{i}") for i in range(n)]
 
-    # Variables MTZ para subtours
+    # MTZ para subtours
     u = [model.NewIntVar(0, n-1, f"u_{i}") for i in range(n)]
 
-    # Grados de entrada/salida
+    # grado de entrada/salida =1
     for j in range(1, n):
-        model.Add(sum(x[i,j] for i in range(n) if i!=j) == 1)
+        model.Add(sum(x[(i,j)] for i in range(n) if i!=j) == 1)
     for i in range(1, n):
-        model.Add(sum(x[i,j] for j in range(n) if j!=i) == 1)
-    model.Add(sum(x[0,j] for j in range(1,n)) == 1)
-    model.Add(sum(x[i,0] for i in range(1,n)) == 1)
+        model.Add(sum(x[(i,j)] for j in range(n) if j!=i) == 1)
+    model.Add(sum(x[(0,j)] for j in range(1,n)) == 1)
+    model.Add(sum(x[(i,0)] for i in range(1,n)) == 1)
 
-    # Ventanas de tiempo (permitir tardanza hasta ALLOWED_LATE)
+    # ventanas de tiempo (con tardanza permitida)
     model.Add(t[0] == SHIFT_START)
     for i, (ini, fin) in enumerate(windows):
         model.Add(t[i] >= ini)
         model.Add(t[i] <= fin + ALLOWED_LATE)
 
-    # Secuencia de tiempos
+    # secuencia de tiempos + límite de espera anticipada
     for i in range(n):
         for j in range(n):
             if i == j: continue
+            # si voy de i a j
             model.Add(
                 t[j] >= t[i] + service[i] + T[i][j]
-            ).OnlyEnforceIf(x[i,j])
+            ).OnlyEnforceIf(x[(i,j)])
+            # no más de MAX_WAIT anticipado
+            model.Add(
+                t[j] <= t[i] + service[i] + T[i][j] + MAX_WAIT
+            ).OnlyEnforceIf(x[(i,j)])
 
-    # MTZ subtours
+    # MTZ subtour elimination
     model.Add(u[0] == 0)
     for i in range(1,n):
         for j in range(1,n):
-            if i != j:
-                model.Add(u[i] + 1 <= u[j] + n*(1 - x[i,j]))
+            if i == j: continue
+            model.Add(u[i] + 1 <= u[j] + n*(1 - x[(i,j)]))
 
-    # Objetivo: distancia + sum(t[i]) penalizada
+    # objetivo: distancia + espera penalizada
     model.Minimize(
-        sum(D[i][j] * x[i,j] for (i,j) in x) +
-        WAIT_WEIGHT * sum(t[i] for i in range(n))
+        DIST_WEIGHT * sum(D[i][j] * x[(i,j)] for (i,j) in x)
+        + WAIT_WEIGHT * sum(t[i] for i in range(n))
     )
 
-    # Hints desde init_route
+    # hints desde la ruta heurística
     for a, b in zip(init_route, init_route[1:]):
-        model.AddHint(x[a,b], 1)
+        if (a,b) in x:
+            model.AddHint(x[(a,b)], 1)
     for pos, node in enumerate(init_route):
         model.AddHint(u[node], pos)
-    # ETA hints
     eta = SHIFT_START
     model.AddHint(t[0], eta)
     for prev, curr in zip(init_route, init_route[1:]):
         eta = max(eta + service[prev] + T[prev][curr], windows[curr][0])
         model.AddHint(t[curr], eta)
 
+    # resolver
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        # reconstruir ruta
-        ruta = [0]
-        llegada = [solver.Value(t[0])]
-        seen = {0}
+        # reconstruir ruta desde x[i,j]
+        ruta, llegada = [0], [solver.Value(t[0])]
         cur = 0
-        while True:
+        seen = {0}
+        for _ in range(n-1):
             nxt = next((j for j in range(n)
-                        if j not in seen and solver.Value(x[cur,j])==1),
+                        if j not in seen and solver.Value(x[(cur,j)])==1),
                        None)
             if nxt is None:
                 break
@@ -177,19 +146,24 @@ def optimizar_ruta_cp_sat(
 
         dist_total = sum(D[a][b] for a,b in zip(ruta, ruta[1:]))
         return {
-            "routes":[{"vehicle":0,"route":ruta,"arrival_sec":llegada}],
+            "routes": [{
+                "vehicle": 0,
+                "route": ruta,
+                "arrival_sec": llegada
+            }],
             "distance_total_m": dist_total
         }
 
-    # ------------------------------------------------------
-    # 3) Fallback si CP-SAT no halla solución
-    # ------------------------------------------------------
+    # 3) FALLBACK si CP-SAT no halla solución
     return _fallback_insertion(data)
 
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Nearest Insertion + penalización de espera/tardanza al pie de la letra.
+    Nearest Insertion puro, ETA realista con:
+     - ventanas de tiempo
+     - slack máximo MAX_WAIT
+     - tardanza hasta ALLOWED_LATE
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -197,70 +171,46 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     service = data.get("service_times", [SERVICE_TIME]*len(windows))
     n       = len(D)
 
+    # reconstruir misma heurística de inserción
     visitados = [0]
-    restantes = set(range(1,n))
-
+    restantes = set(range(1, n))
     while restantes:
-        best_cost, bj, bpos = float('inf'), None, None
+        best_delta, bj, bpos = float("inf"), None, None
         for j in restantes:
             for pos in range(1, len(visitados)+1):
                 a = visitados[pos-1]
                 b = visitados[pos] if pos < len(visitados) else None
-
-                # incremento de distancia
-                delta_dist = D[a][j]
-                if b is not None:
-                    delta_dist += D[j][b] - D[a][b]
-
-                # simular ETA
-                t_now = SHIFT_START
-                for idx,node in enumerate(visitados[:pos]):
-                    if idx>0:
-                        prev = visitados[idx-1]
-                        t_now += service[prev] + T[prev][node]
-                    t_now = max(t_now, windows[node][0])
-
-                # llegada a j
-                t_j = max(t_now + service[visitados[pos-1]] + T[visitados[pos-1]][j],
-                          windows[j][0])
-                wait_j  = max(0, windows[j][0] - t_j)
-                tardy_j = max(0, t_j - windows[j][1])
-
-                # llegada a b tras j
-                if b is not None:
-                    t_next = max(t_j + service[j] + T[j][b],
-                                 windows[b][0])
-                    wait_b  = max(0, windows[b][0] - t_next)
-                    tardy_b = max(0, t_next - windows[b][1])
-                else:
-                    wait_b = tardy_b = 0
-
-                penalty = WAIT_WEIGHT*(wait_j + wait_b) + TARDY_WEIGHT*(tardy_j + tardy_b)
-                cost = DIST_WEIGHT*delta_dist + penalty
-
-                if cost < best_cost:
-                    best_cost, bj, bpos = cost, j, pos
-
+                delta = D[a][j] + (D[j][b] if b is not None else 0)
+                delta -= (D[a][b] if b is not None else 0)
+                if delta < best_delta:
+                    best_delta, bj, bpos = delta, j, pos
         visitados.insert(bpos, bj)
         restantes.remove(bj)
 
-    # calcular ETA final
+    # calcular ETA respetando ventanas, slack y tardanzas
     llegada = []
-    t_now   = SHIFT_START
-    for idx,node in enumerate(visitados):
-        if idx>0:
+    t_now = SHIFT_START
+    for idx, node in enumerate(visitados):
+        if idx > 0:
             prev = visitados[idx-1]
             t_now += service[prev] + T[prev][node]
-        t_now = max(t_now, windows[node][0])
-        t_now = min(t_now, windows[node][1] + ALLOWED_LATE)
+        # si llego antes, solo espero hasta MAX_WAIT antes
+        if t_now < windows[node][0]:
+            t_now = min(windows[node][0], t_now + MAX_WAIT)
+        # si llego muy tarde, lo acorto a fin+ALLOWED_LATE
+        if t_now > windows[node][1] + ALLOWED_LATE:
+            t_now = windows[node][1] + ALLOWED_LATE
         llegada.append(t_now)
 
     dist_total = sum(
         D[visitados[i]][visitados[i+1]]
         for i in range(len(visitados)-1)
     )
-
     return {
-        "routes":[{"vehicle":0,"route":visitados,"arrival_sec":llegada}],
+        "routes": [{
+            "vehicle": 0,
+            "route": visitados,
+            "arrival_sec": llegada
+        }],
         "distance_total_m": dist_total
     }
