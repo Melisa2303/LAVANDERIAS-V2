@@ -17,7 +17,7 @@ WAIT_WEIGHT    = 1                 # costo por segundo de espera temprana
 LATE_WEIGHT    = 10                # costo por segundo de tardanza a la ventana
 
 
-def optimizar_ruta_cp_sat_hybrid(
+def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
