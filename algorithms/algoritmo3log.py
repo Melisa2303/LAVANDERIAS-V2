@@ -189,11 +189,10 @@ def optimizar_ruta_cp_sat(
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Nearest Insertion + ETA realista que:
-      - respeta ventanas [ini, fin]
-      - espera hasta ini si llega antes
-      - descarta insertaciones imposibles
-      - penaliza esperas > MAX_WAIT en el score
+    Nearest Insertion con ETA realista:
+      - Respeta ventanas de tiempo [ini, fin]
+      - Penaliza espera innecesaria
+      - Prioriza clientes con ventanas tempranas y ajustadas
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -202,70 +201,77 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     n       = len(D)
 
     visitados = [0]
-    restantes = set(range(1,n))
+    llegada   = [SHIFT_START]
+    restantes = set(range(1, n))
 
     while restantes:
-        best_score, bj, bpos = float("inf"), None, None
+        best_score, best_j, best_pos, best_eta = float("inf"), None, None, None
+
         for j in restantes:
+            ini_j, fin_j = windows[j]
+
             for pos in range(1, len(visitados)+1):
-                a = visitados[pos-1]
-                b = visitados[pos] if pos < len(visitados) else None
+                ruta_tmp = visitados[:pos] + [j] + visitados[pos:]
 
-                # tiempo acumulado hasta 'a'
-                t_acc = SHIFT_START
-                for idx,node in enumerate(visitados[:pos]):
-                    if idx>0:
-                        prev = visitados[idx-1]
-                        t_acc += service[prev] + T[prev][node]
+                # Simulamos la ruta temporal
+                tiempo_actual = SHIFT_START
+                llegada_tmp   = []
+                factible      = True
 
-                # llegada provisional a j
-                t_arr0 = t_acc + service[a] + T[a][j]
-                ini, fin = windows[j]
+                for idx, nodo in enumerate(ruta_tmp):
+                    if idx == 0:
+                        llegada_tmp.append(tiempo_actual)
+                        continue
+                    prev = ruta_tmp[idx-1]
+                    tiempo_actual += service[prev] + T[prev][nodo]
+                    tiempo_actual = max(tiempo_actual, windows[nodo][0])
+                    if tiempo_actual > windows[nodo][1] + ALLOWED_LATE:
+                        factible = False
+                        break
+                    llegada_tmp.append(tiempo_actual)
 
-                # siempre espera hasta ini
-                if t_arr0 < ini:
-                    wait_time = ini - t_arr0
-                    t_arr = ini
-                else:
-                    wait_time = 0
-                    t_arr = t_arr0
-
-                # descarta si fuera de ventana tolerada
-                if t_arr > fin + ALLOWED_LATE:
+                if not factible:
                     continue
 
-                # score: tiempo+distancia+penalización espera
-                penalty = min(wait_time, MAX_WAIT) * WAIT_WEIGHT
-                score = t_arr + D[a][j] + penalty
+                # Heurística: penaliza
+                # - tiempo de llegada tardío
+                # - espera innecesaria
+                # - ventanas ajustadas más prioritarias
+                t_llegada_j = llegada_tmp[pos]
+                espera      = max(0, windows[j][0] - (llegada[-1] + service[visitados[-1]] + T[visitados[-1]][j]))
+                ventana_dif = windows[j][1] - windows[j][0]
+                prioridad   = 10000 // (1 + ventana_dif)  # penaliza más si la ventana es angosta
 
-                # ajustar por arco a→b eliminado / j→b añadido
-                if b is not None:
-                    score += D[j][b] - D[a][b]
+                score = (
+                    t_llegada_j +
+                    2 * espera +
+                    prioridad +
+                    D[visitados[-1]][j]
+                )
 
                 if score < best_score:
-                    best_score, bj, bpos = score, j, pos
+                    best_score = score
+                    best_j     = j
+                    best_pos   = pos
+                    best_eta   = llegada_tmp
 
-        if bj is None:
+        if best_j is None:
+            # Si no se pudo insertar ningún punto, salimos
             break
 
-        visitados.insert(bpos, bj)
-        restantes.remove(bj)
+        visitados.insert(best_pos, best_j)
+        llegada = best_eta
+        restantes.remove(best_j)
 
-    # reconstruir las ETAs finales
-    llegada = []
+    # Recalcular llegada final (robusto)
+    llegada_final = []
     t_now = SHIFT_START
-    for idx,node in enumerate(visitados):
-        if idx>0:
+    for idx, node in enumerate(visitados):
+        if idx > 0:
             prev = visitados[idx-1]
             t_now += service[prev] + T[prev][node]
-        ini, fin = windows[node]
-        # espera si antes de ini
-        if t_now < ini:
-            t_now = ini
-        # si llega demasiado tarde
-        if t_now > fin + ALLOWED_LATE:
-            t_now = fin + ALLOWED_LATE
-        llegada.append(t_now)
+        t_now = max(t_now, windows[node][0])
+        llegada_final.append(t_now)
 
     dist_total = sum(
         D[visitados[i]][visitados[i+1]]
@@ -273,6 +279,6 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     return {
-        "routes":[{"vehicle":0,"route":visitados,"arrival_sec":llegada}],
+        "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
         "distance_total_m": dist_total
     }
