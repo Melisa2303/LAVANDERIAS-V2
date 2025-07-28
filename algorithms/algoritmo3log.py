@@ -10,7 +10,7 @@ SERVICE_TIME   = 8 * 60           # 10 minutos de servicio
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
 ALLOWED_LATE   = 10 * 60           # hasta 16:25
-MAX_TRAVEL     = 60 * 60           # descartar arcos >40min de viaje
+MAX_TRAVEL     = 35 * 60           # descartar arcos >40min de viaje
 MAX_WAIT       = 30 * 60           # penalizar esperas >20 minutos
 
 # pesos
