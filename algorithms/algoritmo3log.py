@@ -18,7 +18,7 @@ DIST_WEIGHT    = 1     # por metro recorrido
 WAIT_WEIGHT    = 100   # por segundo de espera (muy penalizado)
 
 
-def optimizar_ruta_cp_sat_hybrid(
+def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
