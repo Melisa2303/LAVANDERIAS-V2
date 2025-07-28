@@ -6,7 +6,7 @@ from typing import Dict, Any
 # ----------------------------------
 #  CONSTANTES DE JORNADA Y SERVICIO
 # ----------------------------------
-SERVICE_TIME   = 8 * 60           # 10 minutos de servicio
+SERVICE_TIME   = 12 * 60           # 10 minutos de servicio
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
 ALLOWED_LATE   = 10 * 60           # Tardanza adicional de 10 minutos (caso extremo para evitar que se excluya el nodo)
