@@ -198,10 +198,10 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     nodo_act = 0
 
     AJUSTADA_MAX   = 30*60   # 30 minutos
-    INSERCION_MAX  = 30*60   # puede esperar 30 min si falta poco para que abra
+    INSERCION_MAX  = 30*60   # puede esperar 30 min si falta poco para que abra una ventana de tiempo
 
     while restantes:
-        # 1. Buscar ventana ajustada más próxima aún no visitada
+        #Buscar ventana más próxima a abrir
         ajustadas_pendientes = []
         for j in restantes:
             ini, fin = windows[j]
@@ -215,7 +215,7 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
             eta_v      = t_actual + service[nodo_act] + travel_v
             espera_v   = ini_v - eta_v
 
-            # Si falta poco para que abra (≤45 min), la visito directamente
+            # Si falta poco para que abra la ventana se aumenta prioridad
             if espera_v <= INSERCION_MAX:
                 t_llegada = max(eta_v, ini_v)
                 visitados.append(j_v)
@@ -223,9 +223,9 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
                 restantes.remove(j_v)
                 t_actual = t_llegada
                 nodo_act = j_v
-                continue  # saltamos el resto de lógica
+                continue   
 
-        # 2. Evaluar todos los candidatos
+         
         candidatos = []
         for j in restantes:
             travel     = T[nodo_act][j]
@@ -257,7 +257,7 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         t_actual = t_llegada
         nodo_act = best_j
 
-    # recalcular llegada final robusta
+    # recalcular ruta final
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
