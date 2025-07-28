@@ -9,12 +9,12 @@ from typing import Dict, Any
 SERVICE_TIME   = 10 * 60           # 10 minutos de servicio
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
-ALLOWED_LATE   = 30 * 60           # hasta 16:45
+ALLOWED_LATE   = 10 * 60           # hasta 16:25
 MAX_TRAVEL     = 40 * 60           # descartar arcos >40min de viaje
 MAX_WAIT       = 30 * 60           # penalizar esperas >20 minutos
 
 # pesos
-WAIT_WEIGHT    = 100                 # 1 segundo de espera = 1 unidad de penalización
+WAIT_WEIGHT    = 1000                 # 1 segundo de espera = 1 unidad de penalización
 
 def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
