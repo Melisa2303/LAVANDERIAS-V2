@@ -206,8 +206,8 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     t_actual = SHIFT_START
     nodo_act = 0
 
-    AJUSTADA_MAX   = 2700   # 45 minutos
-    INSERCION_MAX  = 2700   # puedo esperarte 45 min si falta poco para que abras
+    AJUSTADA_MAX   = 30*60   # 30 minutos
+    INSERCION_MAX  = 30*60   # puede esperar 30 min si falta poco para que abra
 
     while restantes:
         # 1. Buscar ventana ajustada más próxima aún no visitada
