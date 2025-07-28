@@ -12,7 +12,7 @@ SHIFT_END      = 16 * 3600 + 15*60 # 16:15
 ALLOWED_LATE   = 30 * 60           # hasta 16:45
 MAX_TRAVEL     = 40 * 60           # no aceptamos arcos > 40min
 
-def optimizar_ruta_cp_sat_hybrid(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Dict[str, Any]:
+def optimizar_ruta_cp_sat(data: Dict[str, Any], tiempo_max_seg: int = 120) -> Dict[str, Any]:
     # 1) SOLUCIÓN INICIAL POR NEAREST INSERTION
     D        = data["distance_matrix"]
     T        = data["duration_matrix"]
