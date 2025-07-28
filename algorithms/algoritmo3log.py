@@ -14,7 +14,7 @@ MAX_TRAVEL     = 35 * 60           # descartar arcos >40min de viaje
 MAX_WAIT       = 30 * 60           # penalizar esperas >20 minutos
 
 # pesos
-WAIT_WEIGHT    = 1000000000                 # 1 segundo de espera = 1 unidad de penalización
+WAIT_WEIGHT    = 100                # 1 segundo de espera = 1 unidad de penalización
 
 def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
