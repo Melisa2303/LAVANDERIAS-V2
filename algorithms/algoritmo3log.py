@@ -143,7 +143,7 @@ def optimizar_ruta_cp_sat(
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         # 5) Fallback a Nearest Insertion puro
-        return _fallback_insertion(data)
+        return None
 
     # -------------------------
     # 6) Extraer solución CP-SAT
@@ -169,48 +169,7 @@ def optimizar_ruta_cp_sat(
         "distance_total_m": dist_total
     }
 
-def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Nearest Insertion puro + ETA realista respetando ventanas.
-    """
-    D       = data["distance_matrix"]
-    T       = data["duration_matrix"]
-    windows = data["time_windows"]
-    service = data.get("service_times", [SERVICE_TIME]*len(windows))
-    n       = len(D)
 
-    visitados = [0]
-    restantes = set(range(1,n))
-    while restantes:
-        best_cost,bj,bpos = float('inf'),None,None
-        for j in restantes:
-            for pos in range(1,len(visitados)+1):
-                a = visitados[pos-1]
-                b = visitados[pos] if pos<len(visitados) else None
-                delta = D[a][j] + (D[j][b] if b is not None else 0)
-                delta -= (D[a][b] if b is not None else 0)
-                if delta < best_cost:
-                    best_cost,bj,bpos = delta,j,pos
-        visitados.insert(bpos,bj)
-        restantes.remove(bj)
-
-    # calcular ETA respetando ventanas
-    llegada = []
-    t_now   = SHIFT_START
-    for idx,node in enumerate(visitados):
-        if idx>0:
-            prev = visitados[idx-1]
-            t_now += service[prev] + T[prev][node]
-        # si llego antes de la apertura, espero hasta ini
-        t_now = max(t_now, windows[node][0])
-        # si llego muy tarde, capear a fin+ALLOWED_LATE
-        t_now = min(t_now, windows[node][1] + ALLOWED_LATE)
-        llegada.append(t_now)
-
-    dist_total = sum(
-        D[visitados[i]][visitados[i+1]]
-        for i in range(len(visitados)-1)
-    )
 
     return {
         "routes":[{"vehicle":0, "route":visitados, "arrival_sec":llegada}],
