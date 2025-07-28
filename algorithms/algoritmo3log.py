@@ -10,10 +10,10 @@ SERVICE_TIME   = 10 * 60           # 10 min en segundos
 SHIFT_START    =  9 * 3600         # 09:00
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15
 ALLOWED_LATE   = 30 * 60           # hasta 16:45
-MAX_TRAVEL     = 40 * 60           # bloquear arcos > 40 min
+MAX_TRAVEL     = 35 * 60           # bloquear arcos > 40 min
 
 SLACK_LIMIT    = 20 * 60           # solo penalizar hasta 20 min de espera
-WAIT_WEIGHT    = 1                 # costo por segundo de espera temprana
+WAIT_WEIGHT    = 100                 # costo por segundo de espera temprana
 LATE_WEIGHT    = 10                # costo por segundo de tardanza a la ventana
 
 
