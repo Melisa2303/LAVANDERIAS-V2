@@ -372,7 +372,6 @@ def optimizar_ruta_cp_sat(
         "distance_total_m": dist_total
     }
 
-
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Versión refinada:
@@ -472,3 +471,4 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
         "distance_total_m": dist_total
     }
+
