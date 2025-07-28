@@ -187,11 +187,12 @@ def optimizar_ruta_cp_sat(
     }
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
+def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Ruta greedy reforzada que:
-    - Visita todos los puntos
-    - NO pospone ventanas urgentes si puede atenderlas
-    - Penaliza retraso, pero fuerza atención si aún es posible
+    Versión final con:
+    - Prioridad a ventanas ajustadas
+    - Todos los clientes son visitados
+    - Se evita esperar innecesariamente si se puede entregar antes a otros
     """
     D        = data["distance_matrix"]
     T        = data["duration_matrix"]
@@ -203,61 +204,77 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     llegada   = [SHIFT_START]
     restantes = set(range(1, n))
 
-    t_actual  = SHIFT_START
-    nodo_act  = 0
+    t_actual = SHIFT_START
+    nodo_act = 0
     AJUSTADA_MAX = 2700  # 45 min
 
     while restantes:
-        urgentes = []
-        normales = []
+        # Detectar ventana ajustada más urgente aún no visitada
+        ajustadas = []
+        for j in restantes:
+            ini, fin = windows[j]
+            if fin - ini <= AJUSTADA_MAX:
+                ajustadas.append((fin, j))  # más pronto primero
+        ajustadas.sort()
+        j_urgente = ajustadas[0][1] if ajustadas else None
+
+        cliente_urgente = None
+        if j_urgente is not None:
+            # ETA mínima desde posición actual a ventana urgente
+            eta_urgente = t_actual + service[nodo_act] + T[nodo_act][j_urgente]
+            if eta_urgente > windows[j_urgente][1] + ALLOWED_LATE:
+                 cliente_urgente = None
+            else:
+                cliente_urgente = j_urgente
+
+        candidatos = []
 
         for j in restantes:
-            travel    = T[nodo_act][j]
-            eta       = t_actual + service[nodo_act] + travel
-            ini, fin  = windows[j]
-            t_llegada = max(eta, ini)
-
-            if eta > fin + ALLOWED_LATE:
-                continue  # ni con tolerancia
-
-            # Verificamos si esta ventana es ajustada y aún alcanzable
+            travel     = T[nodo_act][j]
+            eta        = t_actual + service[nodo_act] + travel
+            ini, fin   = windows[j]
+            t_llegada  = max(eta, ini)
+            retraso    = max(0, eta - fin)
+            espera     = max(0, ini - eta)
             ventana_dur = fin - ini
-            if ventana_dur <= AJUSTADA_MAX and eta <= fin:
-                urgentes.append((fin, j, t_llegada))  # se cierra pronto → más urgente
-                continue
-
-            # Si no es urgente, la consideramos normalmente
-            retraso = max(0, eta - fin)
-            espera  = max(0, ini - eta)
             prioridad = 10000 // (1 + ventana_dur)
+
             score = retraso * 10 + espera * 2 + D[nodo_act][j] + prioridad
-            normales.append((score, j, t_llegada))
 
-        if urgentes:
-            # 👈 Esta es la diferencia clave
-            # Seleccionamos la que se cierra más pronto
-            _, best_j, t_llegada = min(urgentes, key=lambda x: x[0])
+            #  Si este j es urgente, le damos prioridad absoluta
+            if j == cliente_urgente and eta <= fin:
+                score = -99999  # prioridad máxima
 
-        elif normales:
-            _, best_j, t_llegada = min(normales, key=lambda x: x[0])
+             if cliente_urgente and j != cliente_urgente:
+                travel_to_j      = T[nodo_act][j]
+                eta_to_j         = t_actual + service[nodo_act] + travel_to_j
+                end_j            = max(eta_to_j, windows[j][0]) + service[j]
+                travel_to_urgent = T[j][cliente_urgente]
+                eta_luego        = end_j + travel_to_urgent
+                if eta_luego > windows[cliente_urgente][1]:
+                    continue  # no usar este candidato, nos haría fallar la ventana urgente
 
-        else:
-            # ya no hay factibles, pero forzamos visita igual (último recurso)
-            for j in restantes:
+            candidatos.append((score, j, t_llegada))
+
+        if not candidatos:
+             for j in restantes:
                 travel = T[nodo_act][j]
                 eta    = t_actual + service[nodo_act] + travel
-                ini = windows[j][0]
-                t_llegada = max(eta, ini)
+                t_llegada = max(eta, windows[j][0])
                 best_j = j
                 break
+        else:
+            candidatos.sort()
+            _, best_j, t_llegada = candidatos[0]
 
         visitados.append(best_j)
         llegada.append(t_llegada)
         restantes.remove(best_j)
+
         t_actual = t_llegada
         nodo_act = best_j
 
-    # llegada robusta
+    # recalcular llegada final robusta
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
@@ -276,4 +293,5 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
         "distance_total_m": dist_total
     }
+`
 
