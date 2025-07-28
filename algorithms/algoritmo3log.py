@@ -6,14 +6,14 @@ from typing import Dict, Any
 # ----------------------------------
 #  CONSTANTES DE JORNADA Y SERVICIO
 # ----------------------------------
-SERVICE_TIME   = 10 * 60           # 10 minutos de servicio
-SHIFT_START    =  9 * 3600         # 09:00 en segundos
+SERVICE_TIME   = 15 * 60           # 10 minutos de servicio
+SHIFT_START    =  8.5 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
 ALLOWED_LATE   = 30 * 60           # hasta 16:45 permitidos
-MAX_TRAVEL     = 40 * 60           # descartar arcos >40min de viaje
+MAX_TRAVEL     = 45 * 60           # descartar arcos >40min de viaje
 
 # pesos por segundo de espera / tardanza
-WAIT_WEIGHT    = 10                # penaliza fuerte la espera temprana
+WAIT_WEIGHT    = 100000              # penaliza fuerte la espera temprana
 TARDY_WEIGHT   = 1                 # penaliza débil la tardanza
 
 def optimizar_ruta_cp_sat(
