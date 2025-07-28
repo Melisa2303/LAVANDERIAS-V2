@@ -534,7 +534,7 @@ def optimizar_ruta_cp_sat(
     solver.parameters.max_time_in_seconds = tiempo_max_seg
     status = solver.Solve(model)
 
-    # 5) Si falla, va al fallback
+    # 5) Si falla, se reintenta reorganizando
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         return _fallback_insertion(data)
 
@@ -561,6 +561,7 @@ def optimizar_ruta_cp_sat(
         "routes":[{"vehicle":0,"route":ruta,"arrival_sec":llegada}],
         "distance_total_m": dist_total
     }
+
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -661,4 +662,3 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         "routes": [{"vehicle": 0, "route": visitados, "arrival_sec": llegada_final}],
         "distance_total_m": dist_total
     }
-
