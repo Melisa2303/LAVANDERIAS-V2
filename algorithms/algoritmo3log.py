@@ -12,7 +12,7 @@ SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
 ALLOWED_LATE   = 30 * 60           # hasta 16:45
 MAX_TRAVEL     = 40 * 60           # arcos de más de 40 min bloqueados
 
-def optimizar_ruta_cp_sat_hybrid(
+def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
