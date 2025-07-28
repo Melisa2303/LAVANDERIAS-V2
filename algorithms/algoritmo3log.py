@@ -16,7 +16,7 @@ MAX_TRAVEL     = 40 * 60           # descartar arcos >40min de viaje
 WAIT_WEIGHT    = 10                # penaliza fuerte la espera temprana
 TARDY_WEIGHT   = 1                 # penaliza débil la tardanza
 
-def optimizar_ruta_cp_sat_hybrid(
+def optimizar_ruta_cp_sat(
     data: Dict[str, Any],
     tiempo_max_seg: int = 120
 ) -> Dict[str, Any]:
