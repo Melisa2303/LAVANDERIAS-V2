@@ -188,10 +188,8 @@ def optimizar_ruta_cp_sat(
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Ruta secuencial con prioridad estricta para ventanas ajustadas:
-    - TODAS las ventanas son respetadas si es físicamente posible
-    - Ventanas ajustadas no se postergan nunca
-    - Todos los clientes son atendidos
+    Nearest Insertion garantizado sin ignorar ventanas tempranas ni ajustadas.
+    Visita todos los clientes, priorizando a los que tienen ventanas activas o ajustadas.
     """
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
@@ -207,51 +205,51 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
     nodo_act = 0
 
     MAX_WAIT      = 1800  # 30 minutos
-    AJUSTADA_MAX  = 2700  # ventanas de 45min o menos = ajustadas
+    AJUSTADA_MAX  = 2700  # ventanas de ≤ 45min se consideran ajustadas
 
     while restantes:
-        ajustadas_prioritarias = []
-        candidatos = []
-        fallback = []
+        prioritarios = []
+        candidatos   = []
+        fallback     = []
 
         for j in restantes:
             travel = T[nodo_act][j]
             eta    = t_actual + service[nodo_act] + travel
             ini, fin = windows[j]
-
             if eta > fin + ALLOWED_LATE:
-                continue  # ni con tolerancia
+                continue  # ni con tolerancia entra
 
             dur_ventana = fin - ini
             espera = max(0, ini - eta)
+            llega_dentro = ini <= eta <= fin
+            abre_pronto  = ini - eta <= MAX_WAIT
+
             t_llegada = max(eta, ini)
 
-            # 👇 Ventanas ajustadas aún posibles → prioridad total
-            if dur_ventana <= AJUSTADA_MAX and t_llegada <= fin:
-                ajustadas_prioritarias.append((t_llegada, j))
+            # 1. Altísima prioridad: ventana ya abierta y ajustada
+            if ini <= t_actual and dur_ventana <= AJUSTADA_MAX:
+                prioritarios.append((j, t_llegada))
 
-            # candidatas normales
-            elif espera <= MAX_WAIT:
-                score = espera + D[nodo_act][j] + 10000 // (1 + dur_ventana)
-                candidatos.append((score, j, t_llegada))
+            # 2. Ventana ya abierta o abrirá pronto (espera aceptable)
+            elif llega_dentro or abre_pronto:
+                candidatos.append((espera + D[nodo_act][j], j, t_llegada))
 
+            # 3. Último recurso (tarde pero aún permitido)
             else:
                 fallback.append((ini, j, t_llegada))
 
-        if ajustadas_prioritarias:
-            _, best_j = min(ajustadas_prioritarias)
-            travel = T[nodo_act][best_j]
-            eta    = t_actual + service[nodo_act] + travel
-            t_llegada = max(eta, windows[best_j][0])
+        if prioritarios:
+            best_j, t_llegada = min(prioritarios, key=lambda x: x[1])
 
         elif candidatos:
             _, best_j, t_llegada = min(candidatos, key=lambda x: x[0])
 
         elif fallback:
+            # tomar el más urgente aunque se llegue tarde
             _, best_j, t_llegada = min(fallback, key=lambda x: x[2])
 
         else:
-            break  # no debería pasar
+            break  # no hay opciones, debería ser imposible
 
         visitados.append(best_j)
         llegada.append(t_llegada)
@@ -259,7 +257,7 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
         t_actual = t_llegada
         nodo_act = best_j
 
-    # recalcular llegada final robusto
+    # recálculo robusto final
     llegada_final = []
     t_now = SHIFT_START
     for idx, node in enumerate(visitados):
