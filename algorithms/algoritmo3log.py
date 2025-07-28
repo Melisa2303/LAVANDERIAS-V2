@@ -9,9 +9,9 @@ from typing import Dict, Any
 SERVICE_TIME   = 10 * 60           # 10 minutos en segundos
 SHIFT_START    =  9 * 3600         # 09:00 en segundos
 SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
-ALLOWED_LATE   = 30 * 60           # se permite llegar hasta 16:45
-MAX_WAIT       = 20 * 60           # máximo 20 min de espera anticipada
-MAX_TRAVEL     = 40 * 60           # descartamos arcos >40min de viaje
+ALLOWED_LATE   = 5 * 60            # se permite llegar hasta 16:20
+MAX_WAIT       = 45 * 60           # máximo 45 min de espera anticipada
+MAX_TRAVEL     = 60 * 60           # descartamos arcos >60min de viaje
 
 # pesos en la función objetivo
 DIST_WEIGHT    = 1     # por metro recorrido
