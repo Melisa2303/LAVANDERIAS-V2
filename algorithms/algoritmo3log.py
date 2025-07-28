@@ -155,7 +155,7 @@ def optimizar_ruta_cp_sat(
         }
 
     # 3) FALLBACK si CP-SAT no halla solución
-    return _fallback_insertion(data)
+    return None
 
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
