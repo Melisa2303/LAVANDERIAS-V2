@@ -563,10 +563,7 @@ def optimizar_ruta_cp_sat(
     }
 
 def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Nearest Insertion garantizado sin ignorar ventanas tempranas ni ajustadas.
-    Visita todos los clientes, priorizando a los que tienen ventanas activas o ajustadas.
-    """
+    
     D       = data["distance_matrix"]
     T       = data["duration_matrix"]
     windows = data["time_windows"]
@@ -592,8 +589,8 @@ def _fallback_insertion(data: Dict[str, Any]) -> Dict[str, Any]:
             travel = T[nodo_act][j]
             eta    = t_actual + service[nodo_act] + travel
             ini, fin = windows[j]
-            if eta > fin + ALLOWED_LATE:
-                continue  # ni con tolerancia entra
+            #if eta > fin + ALLOWED_LATE:
+            #    continue  # ni con tolerancia entra
 
             dur_ventana = fin - ini
             espera = max(0, ini - eta)
