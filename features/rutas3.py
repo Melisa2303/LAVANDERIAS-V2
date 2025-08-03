@@ -32,7 +32,7 @@ gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 ALG_MAP = {
     "Algoritmo 1 - PCA - GLS": optimizar_ruta_algoritmo22,
     "Algoritmo 2 - Clarke Wrigth + Tabu Search": optimizar_ruta_cw_tabu,
-    "Algoritmo 3 - CP - SAT": optimizar_ruta_cp_sat,
+    "Algoritmo 3 - CP - SAT/ Nearest Insertion": optimizar_ruta_cp_sat,
     "Algoritmo 4 - LNS": optimizar_ruta_lns,
 }
 
