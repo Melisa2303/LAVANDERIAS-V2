@@ -392,7 +392,7 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
 def cargar_pedidos(fecha, tipo):
     """
     Lee de Firestore la colección 'recogidas' filtrando por fecha (recojo/entrega)
-    y tipo de servicio. Soporta dos esquemas de datos en paralelo:
+    y tipo de servicio. Soporta dos esquemas de datos:
 
       Esquema unificado:
         - direccion
@@ -420,7 +420,7 @@ def cargar_pedidos(fecha, tipo):
         Selecciona dirección y coordenadas:
         1) Prioriza esquema unificado (direccion, coordenadas{lat,lon})
         2) Si falta algo, usa lado correspondiente (recojo/entrega)
-        3) Si aún falta, intenta el lado opuesto (por compatibilidad)
+        3) Si aún falta, intenta nuevamente por compatibilidad)
         """
         # 1) Unificado
         direccion = data.get("direccion")
@@ -501,7 +501,7 @@ def cargar_pedidos(fecha, tipo):
 
         op = "Recojo" if is_recojo else "Entrega"
 
-        # Dirección y coordenadas (con estrategia de fallback)
+        # Dirección y coordenadas 
         direccion, lat, lon = _pick_dir_coords(data, is_recojo)
 
         # Nombre (cliente o sucursal)
@@ -510,9 +510,8 @@ def cargar_pedidos(fecha, tipo):
         # Hora de servicio (start/end)
         ts, te = _pick_hora(data, is_recojo)
 
-        # Si no hay coords válidas, evita romper rutas (skip o log)
+        # Si no hay coords válidas
         if lat is None or lon is None:
-            # Puedes cambiar a st.warning si quieres ver los que faltan:
             # st.warning(f"[{d.id}] sin coordenadas válidas. Se omite.")
             continue
 
