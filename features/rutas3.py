@@ -98,7 +98,7 @@ def ver_ruta_optimizada():
 
         alg_fn = ALG_MAP[algoritmo]
         t0 = tiempo.time()
-        res = alg_fn(data, tiempo_max_seg=90)
+        res = alg_fn(data, tiempo_max_seg=45)
         st.session_state["solve_t"] = tiempo.time() - t0
 
         if not res:
