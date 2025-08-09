@@ -27,8 +27,7 @@ def cargar_ruta(fecha):
         query = db.collection('recogidas')
         hoy = fecha.strftime("%Y-%m-%d")
 
-        # Se consultan ambas fechas históricas; si usas 'fecha' unificada, se podría agregar otra query.
-        docs = (
+         docs = (
             list(query.where("fecha_recojo", "==", hoy).stream()) +
             list(query.where("fecha_entrega", "==", hoy).stream())
         )
