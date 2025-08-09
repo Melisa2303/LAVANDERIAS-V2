@@ -21,12 +21,16 @@ def cargar_ruta(fecha):
     """
     Carga las rutas de recogida y entrega desde la base de datos para una fecha específica.
     Retorna una lista de dict con los campos necesarios.
+    Soporta horas tanto separadas (hora_recojo/hora_entrega) como unificadas (hora).
     """
     try:
         query = db.collection('recogidas')
+        hoy = fecha.strftime("%Y-%m-%d")
+
+        # Se consultan ambas fechas históricas; si usas 'fecha' unificada, se podría agregar otra query.
         docs = (
-            list(query.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()) +
-            list(query.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream())
+            list(query.where("fecha_recojo", "==", hoy).stream()) +
+            list(query.where("fecha_entrega", "==", hoy).stream())
         )
 
         datos = []
@@ -34,7 +38,8 @@ def cargar_ruta(fecha):
             data = doc.to_dict()
             doc_id = doc.id
 
-            if data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d"):
+            # ---- Recojo ----
+            if data.get("fecha_recojo") == hoy:
                 datos.append({
                     "id": doc_id,
                     "operacion": "Recojo",
@@ -42,13 +47,15 @@ def cargar_ruta(fecha):
                     "sucursal": data.get("sucursal"),
                     "direccion": data.get("direccion_recojo", "N/A"),
                     "telefono": data.get("telefono", "N/A"),
-                    "hora": data.get("hora_recojo", ""),
+                    # Soporte de hora unificada:
+                    "hora": data.get("hora_recojo") or data.get("hora", ""),
                     "tipo_solicitud": data.get("tipo_solicitud"),
                     "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
                     "fecha": data.get("fecha_recojo"),
                 })
 
-            if data.get("fecha_entrega") == fecha.strftime("%Y-%m-%d"):
+            # ---- Entrega ----
+            if data.get("fecha_entrega") == hoy:
                 datos.append({
                     "id": doc_id,
                     "operacion": "Entrega",
@@ -56,7 +63,8 @@ def cargar_ruta(fecha):
                     "sucursal": data.get("sucursal"),
                     "direccion": data.get("direccion_entrega", "N/A"),
                     "telefono": data.get("telefono", "N/A"),
-                    "hora": data.get("hora_entrega", ""),
+                    # Soporte de hora unificada:
+                    "hora": data.get("hora_entrega") or data.get("hora", ""),
                     "tipo_solicitud": data.get("tipo_solicitud"),
                     "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
                     "fecha": data.get("fecha_entrega"),
@@ -119,7 +127,8 @@ def datos_ruta():
             hora_col1, hora_col2 = st.columns([4, 1])
             with hora_col1:
                 horas_sugeridas = [f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)]
-                hora_actual = delivery_data.get("hora", "12:00:00")[:5]
+                # Soporta vacío o formato HH:MM:SS
+                hora_actual = (delivery_data.get("hora") or "12:00:00")[:5]
                 if hora_actual not in horas_sugeridas:
                     horas_sugeridas.append(hora_actual)
                     horas_sugeridas.sort()
@@ -140,8 +149,10 @@ def datos_ruta():
                             if delivery_data["operacion"] == "Recojo"
                             else "hora_entrega"
                         )
+                        # Sincroniza también el campo unificado "hora"
                         db.collection('recogidas').document(delivery_data["id"]).update({
-                            campo_hora: f"{hora:02d}:{minutos:02d}:00"
+                            campo_hora: f"{hora:02d}:{minutos:02d}:00",
+                            "hora":     f"{hora:02d}:{minutos:02d}:00"
                         })
                         st.success("Hora actualizada")
                         st.cache_data.clear()
