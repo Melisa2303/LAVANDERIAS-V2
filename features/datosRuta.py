@@ -46,7 +46,7 @@ def cargar_ruta(fecha):
                     "sucursal": data.get("sucursal"),
                     "direccion": data.get("direccion_recojo", "N/A"),
                     "telefono": data.get("telefono", "N/A"),
-                    # Soporte de hora unificada:
+                    
                     "hora": data.get("hora_recojo") or data.get("hora", ""),
                     "tipo_solicitud": data.get("tipo_solicitud"),
                     "coordenadas": data.get("coordenadas_recojo", {"lat": -16.409047, "lon": -71.537451}),
@@ -62,7 +62,7 @@ def cargar_ruta(fecha):
                     "sucursal": data.get("sucursal"),
                     "direccion": data.get("direccion_entrega", "N/A"),
                     "telefono": data.get("telefono", "N/A"),
-                    # Soporte de hora unificada:
+                     
                     "hora": data.get("hora_entrega") or data.get("hora", ""),
                     "tipo_solicitud": data.get("tipo_solicitud"),
                     "coordenadas": data.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
@@ -85,7 +85,7 @@ def datos_ruta():
         )
     st.title("📋 Ruta del Día")
 
-    # Filtro: solo fecha
+    # Filtro: 
     fecha_seleccionada = st.date_input("Seleccionar Fecha", value=datetime.now().date())
 
     # Obtener datos
