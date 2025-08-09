@@ -391,54 +391,142 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
 @st.cache_data(ttl=300)
 def cargar_pedidos(fecha, tipo):
     """
-    Lee de Firestore las colecciones 'recogidas' filtradas por fecha de recojo/entrega
-    y tipo de servicio. Retorna una lista de dict con los campos necesarios:
-      - id, operacion, nombre_cliente, direccion, lat, lon, time_start, time_end, demand
+    Lee de Firestore la colección 'recogidas' filtrando por fecha (recojo/entrega)
+    y tipo de servicio. Soporta dos esquemas de datos en paralelo:
+
+      Esquema unificado:
+        - direccion
+        - coordenadas: {lat, lon}
+        - fecha
+        - hora   (opcional)
+
+      Esquema histórico (doble):
+        - direccion_recojo / direccion_entrega
+        - coordenadas_recojo / coordenadas_entrega: {lat, lon}
+        - fecha_recojo / fecha_entrega
+        - hora_recojo / hora_entrega  (opcional)
+
+    Retorna una lista de dicts con:
+      - id, operacion, nombre_cliente, direccion, lat, lon, time_start, time_end, demand, tipo
     """
+    def _to_float(x):
+        try:
+            return float(x) if x is not None else None
+        except Exception:
+            return None
+
+    def _pick_dir_coords(data, is_recojo):
+        """
+        Selecciona dirección y coordenadas:
+        1) Prioriza esquema unificado (direccion, coordenadas{lat,lon})
+        2) Si falta algo, usa lado correspondiente (recojo/entrega)
+        3) Si aún falta, intenta el lado opuesto (por compatibilidad)
+        """
+        # 1) Unificado
+        direccion = data.get("direccion")
+        coords_uni = data.get("coordenadas") or {}
+        lat = _to_float(coords_uni.get("lat"))
+        lon = _to_float(coords_uni.get("lon"))
+
+        # 2) Lado principal (recojo/entrega)
+        lado = "recojo" if is_recojo else "entrega"
+        if not direccion:
+            direccion = data.get(f"direccion_{lado}")
+        if lat is None or lon is None:
+            coords_lado = data.get(f"coordenadas_{lado}") or {}
+            lat = _to_float(lat if lat is not None else coords_lado.get("lat"))
+            lon = _to_float(lon if lon is not None else coords_lado.get("lon"))
+
+        # 3) Lado opuesto como último recurso
+        if (lat is None or lon is None) or not direccion:
+            opuesto = "entrega" if is_recojo else "recojo"
+            direccion = direccion or data.get(f"direccion_{opuesto}")
+            coords_op = data.get(f"coordenadas_{opuesto}") or {}
+            lat = _to_float(lat if lat is not None else coords_op.get("lat"))
+            lon = _to_float(lon if lon is not None else coords_op.get("lon"))
+
+        return direccion or "", lat, lon
+
+    def _pick_hora(data, is_recojo):
+        """
+        Elige hora de servicio:
+        1) hora_recojo / hora_entrega si existen
+        2) 'hora' unificada si existe
+        3) default 09:00–16:00
+        """
+        lado = "recojo" if is_recojo else "entrega"
+        h = data.get(f"hora_{lado}") or data.get("hora")
+        if h:
+            return h, h
+        return "09:00", "16:00"
+
     col = db.collection('recogidas')
     docs = []
-    # Todas las recogidas cuya fecha_recojo coincida
-    docs += col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()
-    # Todas las recogidas cuya fecha_entrega coincida
-    docs += col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
+    # Coincidencias por fecha en ambos campos del esquema histórico
+    hoy_str = fecha.strftime("%Y-%m-%d")
+    docs += col.where("fecha_recojo", "==", hoy_str).stream()
+    docs += col.where("fecha_entrega", "==", hoy_str).stream()
+    # También considerar el esquema unificado (si hubiera 'fecha')
+    try:
+        docs += col.where("fecha", "==", hoy_str).stream()
+    except Exception:
+        # Si el índice/propiedad no existe, seguimos sin romper
+        pass
 
+    # Filtrar por tipo si corresponde
     if tipo != "Todos":
         tf = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
-        docs = [d for d in docs if d.to_dict().get("tipo_solicitud") == tf]
+        docs = [d for d in docs if (d.to_dict().get("tipo_solicitud") or "").strip() == tf]
 
     out = []
+    seen_ids = set()  # evitar duplicados si un doc matchea varias consultas
     for d in docs:
+        if d.id in seen_ids:
+            continue
         data = d.to_dict()
-        is_recojo = data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d")
+        seen_ids.add(d.id)
+
+        # Determinar si el registro aplica como Recojo o Entrega hoy.
+        # Regla:
+        #   - Si coincide fecha_recojo -> Recojo
+        #   - elif coincide fecha_entrega -> Entrega
+        #   - elif coincide 'fecha' unificada -> Recojo (por defecto)
+        is_recojo = False
+        if data.get("fecha_recojo") == hoy_str:
+            is_recojo = True
+        elif data.get("fecha_entrega") == hoy_str:
+            is_recojo = False
+        elif data.get("fecha") == hoy_str:
+            is_recojo = True  # por defecto tratamos como "Recojo"
+
         op = "Recojo" if is_recojo else "Entrega"
 
-        # Extraer coordenadas y dirección según tipo
-        key_coord = f"coordenadas_{'recojo' if is_recojo else 'entrega'}"
-        key_dir   = f"direccion_{'recojo' if is_recojo else 'entrega'}"
-        coords = data.get(key_coord, {})
-        lat, lon = coords.get("lat"), coords.get("lon")
-        direccion = data.get(key_dir, "") or ""
+        # Dirección y coordenadas (con estrategia de fallback)
+        direccion, lat, lon = _pick_dir_coords(data, is_recojo)
 
-        # Extraer nombre del cliente o sucursal
-        nombre = data.get("nombre_cliente")
-        if not nombre:
-            nombre = data.get("sucursal", "") or "Sin nombre"
+        # Nombre (cliente o sucursal)
+        nombre = data.get("nombre_cliente") or data.get("sucursal") or "Sin nombre"
 
-        # Hora de servicio
-        hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
-        ts, te = (hs, hs) if hs else ("09:00", "16:00")
+        # Hora de servicio (start/end)
+        ts, te = _pick_hora(data, is_recojo)
+
+        # Si no hay coords válidas, evita romper rutas (skip o log)
+        if lat is None or lon is None:
+            # Puedes cambiar a st.warning si quieres ver los que faltan:
+            # st.warning(f"[{d.id}] sin coordenadas válidas. Se omite.")
+            continue
 
         out.append({
             "id":             d.id,
             "operacion":      op,
             "nombre_cliente": nombre,
-            "direccion":      direccion,
+            "direccion":      direccion or "",
             "lat":            lat,
             "lon":            lon,
             "time_start":     ts,
             "time_end":       te,
             "demand":         1,
-            "tipo":           data.get("tipo_solicitud", "").strip()  
+            "tipo":           (data.get("tipo_solicitud") or "").strip()
         })
 
     return out
