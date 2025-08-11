@@ -161,8 +161,10 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     """
-    Intenta resolver VRPTW con OR-Tools.
-    Si falla, amplía las ventanas de tiempo y reintenta automáticamente una vez.
+    VRPTW con OR-Tools:
+      - service_time aplicado en cada nodo (no en el arco)
+      - depósito fijado exactamente a SHIFT_START_SEC sin conflicto
+      - reintento ampliando ventanas cortas si falla
     """
     manager = pywrapcp.RoutingIndexManager(
         len(data["distance_matrix"]),
@@ -171,33 +173,42 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     )
     routing = pywrapcp.RoutingModel(manager)
 
+    # --- callback SOLO con viaje (sin servicio) ---
     def time_cb(from_index, to_index):
         i = manager.IndexToNode(from_index)
         j = manager.IndexToNode(to_index)
-        travel = data["duration_matrix"][i][j]
-        service = 0 if i == data["depot"] else data["service_times"][i]
-        return travel + service
+        return data["duration_matrix"][i][j]
 
     transit_cb_idx = routing.RegisterTransitCallback(time_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_idx)
 
+    # --- Dimensión de tiempo ---
     routing.AddDimension(
         transit_cb_idx,
-        24 * 3600,
-        24 * 3600,
+        24 * 3600,  # waiting permitido
+        24 * 3600,  # máximo por vehículo
         False,
         "Time"
     )
     time_dim = routing.GetDimensionOrDie("Time")
     time_dim.SetGlobalSpanCostCoefficient(1000)
 
+    # --- Ventanas para TODOS EXCEPTO depósito; servicio en cada nodo ---
+    depot_node = data["depot"]
     for node, (ini, fin) in enumerate(data["time_windows"]):
         idx = manager.NodeToIndex(node)
+        if node == depot_node:
+            continue  # evitamos conflicto; se fija abajo
         time_dim.CumulVar(idx).SetRange(ini, fin)
+        # aplicar tiempo de servicio en el nodo (excepto depósito)
+        if node != depot_node:
+            time_dim.AddToCumulVar(idx, int(data["service_times"][node]))
 
-    depot_idx = manager.NodeToIndex(data["depot"])
+    # --- Depósito: salida fija a SHIFT_START_SEC ---
+    depot_idx = manager.NodeToIndex(depot_node)
     time_dim.CumulVar(depot_idx).SetRange(SHIFT_START_SEC, SHIFT_START_SEC)
 
+    # --- Capacidad (si procede) ---
     if any(data["demands"]):
         def demand_cb(from_index):
             return data["demands"][manager.IndexToNode(from_index)]
@@ -206,6 +217,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
             demand_cb_idx, 0, data["vehicle_capacities"], True, "Capacity"
         )
 
+    # --- Búsqueda ---
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.time_limit.FromSeconds(tiempo_max_seg)
     params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
@@ -213,6 +225,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
 
     sol = routing.SolveWithParameters(params)
 
+    # --- Sin solución: diagnóstico + reintento ampliando ventanas cortas ---
     if not sol:
         st.warning("❌ No se encontró solución con OR-Tools.")
 
@@ -222,8 +235,8 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
             dur = fin - ini
             h_ini = f"{ini // 3600:02}:{(ini % 3600) // 60:02}"
             h_fin = f"{fin // 3600:02}:{(fin % 3600) // 60:02}"
-            label = "[DEPÓSITO]" if node == data["depot"] else f"Nodo {node}"
-            if dur < 45 * 60 and node != data["depot"]:
+            label = "[DEPÓSITO]" if node == depot_node else f"Nodo {node}"
+            if dur < 45 * 60 and node != depot_node:
                 st.error(f"⚠️ {label:12} → {h_ini} - {h_fin}  (solo {dur // 60} min)")
                 ventanas_cortas.append(node)
             else:
@@ -233,55 +246,54 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         for i, d in enumerate(data["demands"]):
             st.text(f"Nodo {i}: demanda = {d}")
 
-        # Si aún no se ha hecho un reintento, ampliamos las ventanas cortas
         if not reintento and ventanas_cortas:
-            st.warning("🔄 Intentando nuevamente con márgenes ampliados para nodos conflictivos...")
-
+            st.warning("🔄 Reintentando con márgenes ampliados en nodos conflictivos...")
             nueva_data = data.copy()
             nuevas_ventanas = []
             for i, (ini, fin) in enumerate(data["time_windows"]):
                 if i in ventanas_cortas:
                     centro = (ini + fin) // 2
-                    nuevo_ini = max(0, centro - 3600)
-                    nuevo_fin = min(86400, centro + 3600)
-                    nuevas_ventanas.append((nuevo_ini, nuevo_fin))
+                    nuevas_ventanas.append((
+                        max(0, centro - 3600),
+                        min(86400, centro + 3600)
+                    ))
                 else:
                     nuevas_ventanas.append((ini, fin))
-
             nueva_data["time_windows"] = nuevas_ventanas
             return optimizar_ruta_algoritmo22(nueva_data, tiempo_max_seg, reintento=True)
 
-        st.error("😕 Sin solución factible. Incluso tras reintentar.")
+        st.error("😕 Sin solución factible incluso tras reintentar.")
         return None
 
+    # --- Extraer solución (incluyendo hora de salida del nodo) ---
     rutas = []
     dist_total_m = 0
     for v in range(data["num_vehicles"]):
         idx = routing.Start(v)
-        route, llegada = [], []
+        route, arrival_sec, departure_sec = [], [], []
         while not routing.IsEnd(idx):
             n = manager.IndexToNode(idx)
             nxt = sol.Value(routing.NextVar(idx))
             dest = manager.IndexToNode(nxt)
             dist_total_m += data["distance_matrix"][n][dest]
+
+            eta = sol.Min(time_dim.CumulVar(idx))
+            servicio = 0 if n == depot_node else int(data["service_times"][n])
             route.append(n)
-            llegada.append(sol.Min(time_dim.CumulVar(idx)))
+            arrival_sec.append(eta)
+            departure_sec.append(eta + servicio)
+
             idx = nxt
 
         rutas.append({
             "vehicle": v,
             "route": route,
-            "arrival_sec": llegada
+            "arrival_sec": arrival_sec,
+            "departure_sec": departure_sec,  # útil para métricas reales
         })
 
     st.success("✅ Ruta encontrada con éxito.")
-    return {
-        "routes": rutas,
-        "distance_total_m": dist_total_m
-    }
-
-
-
+    return {"routes": rutas, "distance_total_m": dist_total_m}
 
 
 def agregar_ventana_margen(df, margen_segundos=15*60):
