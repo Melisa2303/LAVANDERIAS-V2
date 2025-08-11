@@ -1,12 +1,12 @@
 #################################################################################################################
 # :) –  Streamlit App Integrado:
-#   → GLS + PCI + OR-Tools
-#   → Firebase Firestore (usando service account JSON)
-#   → Google Maps Distance Matrix & Directions
-#   → OR-Tools VRP-TW con servicio, ventanas, tráfico real
-#   → Se empleó el algoritmo de agrupación: Agglomerative Clustering para agrupar pedidos cercanos.
-#   → Página única: Ver Ruta Optimizada
-#   → En caso el algoritmo no dé respuesta, usa distancias euclidianas
+# → GLS + PCI + OR-Tools
+# → Firebase Firestore (usando service account JSON)
+# → Google Maps Distance Matrix & Directions
+# → OR-Tools VRP-TW con servicio, ventanas, tráfico real
+# → Se empleó el algoritmo de agrupación: Agglomerative Clustering para agrupar pedidos cercanos.
+# → Página única: Ver Ruta Optimizada
+# → En caso el algoritmo no dé respuesta, usa distancias euclidianas
 ##################################################################################################################
 
 import os
@@ -39,14 +39,13 @@ GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.get
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
-SERVICE_TIME     = 8 * 60            # 8 minutos de servicio en cada parada (excepto depósito)
-MAX_ELEMENTS     = 100               # límite de celdas por petición Distance Matrix API
-SHIFT_START_SEC  = 8 * 3600 + 30*60  # 08:30 en segundos
-SHIFT_END_SEC    = 17 * 3600         # 17:00 en segundos
-MARGEN           = 15 * 60           # 15 minutos en segundos
+SERVICE_TIME    = 8 * 60         # 8 minutos de servicio en cada parada (excepto depósito)
+MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matrix API
+SHIFT_START_SEC = 8 * 3600 + 30 * 60   # 08:30 en segundos
+SHIFT_END_SEC   = 17 * 3600           # 17:00 en segundos
+MARGEN          = 15 * 60        # 15 minutos en segundos
 
 # ===================== FUNCIONES AUXILIARES =====================
-
 def _hora_a_segundos(hhmm):
     """Convierte 'HH:MM' o 'HH:MM:SS' a segundos desde medianoche."""
     if hhmm is None or pd.isna(hhmm) or hhmm == "":
@@ -58,9 +57,6 @@ def _hora_a_segundos(hhmm):
         return h * 3600 + m * 60
     except Exception:
         return None
-
-def _sec_to_hhmm(s: int) -> str:
-    return f"{s // 3600:02}:{(s % 3600) // 60:02}"
 
 def _haversine_dist_dur(coords, vel_kmh=40.0):
     """
@@ -133,19 +129,18 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         if ini is None or fin is None:
             ini, fin = SHIFT_START_SEC, SHIFT_END_SEC
         else:
-            # aplica margen alrededor de la hora
             ini = max(0, ini - MARGEN)
             fin = min(24 * 3600, fin + MARGEN)
         time_windows.append((ini, fin))
         demandas.append(row.get("demand", 1))
 
-        tipo = (row.get("tipo") or "").strip()
+        tipo = row.get("tipo", "").strip()
         if tipo == "Sucursal":
-            service_times.append(10 * 60)  # 10 min
+            service_times.append(10 * 60)  # 10 minutos
         elif tipo == "Planta":
-            service_times.append(10 * 60)  # 10 min
+            service_times.append(10 * 60)  # 10 minutos
         else:
-            service_times.append(10 * 60)  # 10 min (Cliente Delivery o indefinido)
+            service_times.append(10 * 60)  # Cliente Delivery o indefinido
 
     return {
         "distance_matrix": dist_m,
@@ -161,9 +156,9 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     """
     VRPTW con OR-Tools (Routing Solver):
-      - service_time se suma en el callback (en el nodo origen)
-      - no fijamos ventana del depósito en el bucle; se fija aparte a SHIFT_START_SEC
-      - reintento ampliando ventanas cortas si falla
+    - service_time se suma en el callback (en el nodo origen)
+    - no fijamos ventana del depósito en el bucle; se fija aparte a SHIFT_START_SEC
+    - reintento ampliando ventanas cortas si falla
     """
     manager = pywrapcp.RoutingIndexManager(
         len(data["distance_matrix"]),
@@ -293,8 +288,22 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     st.success("✅ Ruta encontrada con éxito.")
     return {"routes": rutas, "distance_total_m": dist_total_m}
 
-# ===================== FUNCIONES PARA CLUSTERING =====================
+def agregar_ventana_margen(df, margen_segundos=15 * 60):
+    def expandir_fila(row):
+        ini = _hora_a_segundos(row["time_start"])
+        fin = _hora_a_segundos(row["time_end"])
+        if ini is None or fin is None:
+            return "No especificado"
+        ini = max(0, ini - margen_segundos)
+        fin = min(24 * 3600, fin + margen_segundos)
+        h_ini = f"{ini // 3600:02}:{(ini % 3600) // 60:02}"
+        h_fin = f"{fin // 3600:02}:{(fin % 3600) // 60:02}"
+        return f"{h_ini} - {h_fin} h"
 
+    df["ventana_con_margen"] = df.apply(expandir_fila, axis=1)
+    return df
+
+# ===================== FUNCIONES PARA CLUSTERING =====================
 def _haversine_meters(lat1, lon1, lat2, lon2):
     """Retorna distancia en metros entre dos puntos (lat, lon) usando Haversine."""
     R = 6371e3  # metros
@@ -306,13 +315,14 @@ def _haversine_meters(lat1, lon1, lat2, lon2):
 
 def agrupar_puntos_aglomerativo(df, eps_metros=5):
     """
-    Agrupa pedidos cercanos mediante AgglomerativeClustering.
+    Agrupa pedidos cercanos mediante AgglomerativeClustering. 
     eps_metros: umbral de distancia máxima en metros para que queden en el mismo cluster.
     Retorna (df_clusters, df_etiquetado), donde:
       - df_etiquetado = df original con columna 'cluster' indicando etiqueta de cluster.
       - df_clusters  = DataFrame de centroides con columnas ['id','operacion','nombre_cliente',
                         'dirección','lat','lon','time_start','time_end','demand'].
     """
+    # Si no hay pedidos, retorno vacíos
     if df.empty:
         return pd.DataFrame(), df.copy()
 
@@ -332,7 +342,7 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
 
     # 2) Aplicar AgglomerativeClustering con distancia precomputada
     clustering = AgglomerativeClustering(
-        n_clusters=None,
+        n_clusters=None,  # 1
         metric="precomputed",
         linkage="average",
         distance_threshold=eps_metros
@@ -354,14 +364,17 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
         direcciones = list(members["direccion"].unique())
         direccion_desc = ", ".join(direcciones[:2]) + ("..." if len(direcciones) > 2 else "")
         # Ventana: tomo min y max de time_start/time_end
-        ts_vals = [t for t in members["time_start"].tolist() if t]
-        te_vals = [t for t in members["time_end"].tolist() if t]
+        ts_vals = members["time_start"].tolist()
+        te_vals = members["time_end"].tolist()
+        ts_vals = [t for t in ts_vals if t]
+        te_vals = [t for t in te_vals if t]
         inicio_cluster = min(ts_vals) if ts_vals else ""
         fin_cluster = max(te_vals) if te_vals else ""
         demanda_total = int(members["demand"].sum())
         agrupados.append({
             "id":             f"cluster_{clus}",
             "operacion":      "Agrupado",
+            # "nombre_cliente": f"Grupo {clus}: {nombre_desc}",
             "nombre_cliente": nombre_desc,
             "direccion":      direccion_desc,
             "lat":            centro_lat,
@@ -375,7 +388,6 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
     return df_clusters, df_labeled
 
 # ===================== CARGAR PEDIDOS DESDE FIRESTORE =====================
-
 @st.cache_data(ttl=300)
 def cargar_pedidos(fecha, tipo):
     """
@@ -436,12 +448,12 @@ def cargar_pedidos(fecha, tipo):
         return direccion or "", lat, lon
 
     def _pick_hora(data, is_recojo):
-    """
-    Elige hora de servicio:
-    1) hora_recojo / hora_entrega si existen
-    2) 'hora' unificada si existe
-    3) default 09:00–16:00
-    """
+        """
+        Elige hora de servicio:
+        1) hora_recojo / hora_entrega si existen
+        2) 'hora' unificada si existe
+        3) default 09:00–16:00
+        """
         lado = "recojo" if is_recojo else "entrega"
         h = data.get(f"hora_{lado}") or data.get("hora")
         if h:
@@ -489,7 +501,7 @@ def cargar_pedidos(fecha, tipo):
 
         op = "Recojo" if is_recojo else "Entrega"
 
-        # Dirección y coordenadas
+        # Dirección y coordenadas 
         direccion, lat, lon = _pick_dir_coords(data, is_recojo)
 
         # Nombre (cliente o sucursal)
