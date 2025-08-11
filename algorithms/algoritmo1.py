@@ -459,18 +459,20 @@ def cargar_pedidos(fecha, tipo):
 
         return direccion or "", lat, lon
 
-    def _pick_hora(data, is_recojo):
-        """
-        Elige hora de servicio:
-        1) hora_recojo / hora_entrega si existen
-        2) 'hora' unificada si existe
-        3) default 09:00–16:00
-        """
-        lado = "recojo" if is_recojo else "entrega"
-        h = data.get(f"hora_{lado}") or data.get("hora")
-        if h:
-            return h, h
-        return "09:00", "16:00"
+ def _pick_hora(data, is_recojo):
+    """
+    Elige hora de servicio:
+    1) hora_recojo / hora_entrega si existen
+    2) 'hora' unificada si existe
+    3) default = jornada configurada (SHIFT_START_SEC–SHIFT_END_SEC)
+    """
+    lado = "recojo" if is_recojo else "entrega"
+    h = (data.get(f"hora_{lado}") or data.get("hora"))
+    if h:
+        return h, h
+    # default: usa tu jornada
+    return _sec_to_hhmm(SHIFT_START_SEC), _sec_to_hhmm(SHIFT_END_SEC)
+
 
     col = db.collection('recogidas')
     docs = []
