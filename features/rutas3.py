@@ -15,7 +15,7 @@ from streamlit_folium import st_folium
 from core.firebase import db
 from core.constants import GOOGLE_MAPS_API_KEY
 
-from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo, MARGEN
+from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo, MARGEN, SHIFT_START_SEC
 from algorithms.algoritmo2 import optimizar_ruta_cw_tabu
 from algorithms.algoritmo3log import optimizar_ruta_cp_sat
 from algorithms.algoritmo4 import optimizar_ruta_lns
@@ -282,6 +282,6 @@ def ver_ruta_optimizada():
         st.markdown("## 🔍 Métricas Finales")
         st.markdown(f"- Kilometraje total: **{res['distance_total_m']/1000:.2f} km**")
         st.markdown(f"- Tiempo de cómputo: **{st.session_state['solve_t']:.2f} s**")
-        tiempo_total_min = (max(res["routes"][0]["arrival_sec"]) - 9*3600) / 60
+        tiempo_total_min = (max(res["routes"][0]["arrival_sec"]) - SHIFT_START_SEC) / 60
         st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
         st.markdown(f"- Puntos visitados: **{len(ruta)}**")
