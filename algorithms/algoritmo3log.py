@@ -6,9 +6,9 @@ from typing import Dict, Any
 # ----------------------------------
 #  CONSTANTES DE JORNADA Y SERVICIO
 # ----------------------------------
-SERVICE_TIME   = 8 * 60           # 10 minutos de servicio
-SHIFT_START    =  9 * 3600         # 09:00 en segundos
-SHIFT_END      = 16 * 3600 + 15*60 # 16:15 en segundos
+SERVICE_TIME   = 8 * 60           # 8 minutos de servicio
+SHIFT_START    =  8 * 3600 + 30*60   # 08:30 en segundos
+SHIFT_END      = 17 * 3600         # 16:15 en segundos
 ALLOWED_LATE   = 15 * 60           # hasta 10-15 minutos
 MAX_TRAVEL     = 35 * 60           # descartar arcos 40min de viaje
 MAX_WAIT       = 45 * 60           # penalizar esperas 45 minutos
