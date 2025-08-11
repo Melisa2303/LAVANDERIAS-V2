@@ -458,7 +458,7 @@ def cargar_pedidos(fecha, tipo):
         h = data.get(f"hora_{lado}") or data.get("hora")
         if h:
             return h, h
-        return "09:00", "16:00"
+        return "08:30", "17:00"
 
     col = db.collection('recogidas')
     docs = []
