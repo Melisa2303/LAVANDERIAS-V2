@@ -395,36 +395,66 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         st.error("😕 Sin solución factible incluso tras reintentar.")
         return None
 
-    # --- Extraer solución (ETA = inicio servicio). Omitimos depósito en la ruta
+    # --- Extraer solución (ETA = inicio servicio)
     rutas = []
     dist_total_m = 0
+    n_nodos = len(data["time_windows"])
+    todos_clientes = set(range(n_nodos)) - {depot_node}
+
+    visitados_global = set()
+
     for v in range(data["num_vehicles"]):
         idx = routing.Start(v)
-        route, arrival_sec, departure_sec = [], [], []
+
+        route_no_depot   = []
+        route_with_depot = []
+        arrival_sec      = []
+        departure_sec    = []
+
+        # añadimos depósito inicial a la lista "con depósito"
+        route_with_depot.append(depot_node)
+
         while not routing.IsEnd(idx):
             n   = manager.IndexToNode(idx)
             nxt = sol.Value(routing.NextVar(idx))
             dest = manager.IndexToNode(nxt)
 
+            # distancia acumulada
             dist_total_m += data["distance_matrix"][n][dest]
 
-            # usar Value para el cumul (mejor que Min para lectura del plan)
+            # cumul del tiempo en 'n'
             eta = int(sol.Value(time_dim.CumulVar(idx)))
             srv = 0 if n == depot_node else int(service_times[n])
 
+            # guardamos "n" en la lista con depósito
+            if len(route_with_depot) == 0 or route_with_depot[-1] != n:
+                route_with_depot.append(n)
+
+            # en la lista sin depósito, sólo clientes
             if n != depot_node:
-                route.append(n)
+                route_no_depot.append(n)
                 arrival_sec.append(eta)
                 departure_sec.append(eta + srv)
+                visitados_global.add(n)
 
             idx = nxt
 
+        # al terminar, añadimos depósito final a "con depósito"
+        route_with_depot.append(depot_node)
+
         rutas.append({
             "vehicle": v,
-            "route": route,
+            "route": route_no_depot,           
+            "route_with_depot": route_with_depot,  
             "arrival_sec": arrival_sec,
             "departure_sec": departure_sec,
         })
+
+    # --- Chequeo de cobertura (debug útil)
+    faltantes = sorted(list(todos_clientes - visitados_global))
+    if faltantes:
+        st.error(f"Clientes NO visitados por el solver (índices en 'data'): {faltantes}")
+       
 
     st.success("✅ Ruta encontrada con éxito.")
     return {"routes": rutas, "distance_total_m": dist_total_m}
