@@ -13,6 +13,7 @@ import folium
 from streamlit_folium import st_folium
 
 from core.firebase import db
+from core.firebase import guardar_resultado_corrida, obtener_historial_corridas
 from core.constants import GOOGLE_MAPS_API_KEY
 
 from algorithms.algoritmo1 import optimizar_ruta_algoritmo22, cargar_pedidos, _crear_data_model, agrupar_puntos_aglomerativo, MARGEN, SHIFT_START_SEC,SHIFT_END_SEC
@@ -285,3 +286,32 @@ def ver_ruta_optimizada():
         tiempo_total_min = (max(res["routes"][0]["arrival_sec"]) - SHIFT_START_SEC) / 60
         st.markdown(f"- Tiempo estimado total: **{tiempo_total_min:.2f} min**")
         st.markdown(f"- Puntos visitados: **{len(ruta)}**")
+
+        # === GUARDAR MÉTRICAS FINALES DEL ALGORITMO EN FIRESTORE ===
+        # Siempre guarda, sin importar la combinación de fecha y algoritmo
+        guardar_resultado_corrida(
+            db=db,
+            fecha_ruta=str(fecha),
+            algoritmo=algoritmo,
+            distancia_km=res['distance_total_m']/1000,
+            tiempo_min=tiempo_total_min,
+            tiempo_computo_s=st.session_state['solve_t'],
+            num_puntos=len(ruta)
+        )
+
+    st.markdown("---")
+    st.subheader("Descargar historial de corridas")
+
+    if st.button("Descargar historial en CSV"):
+        df_hist = obtener_historial_corridas(db)
+        if df_hist.empty:
+            st.warning("No hay historial de corridas aún.")
+        else:
+            csv_buffer = io.StringIO()
+            df_hist.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_buffer.getvalue(),
+                file_name="historial_corridas.csv",
+                mime="text/csv"
+            )
