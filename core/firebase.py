@@ -5,6 +5,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import os
 from dotenv import load_dotenv
+from datetime import datetime
+import pandas as pd
 
 # Cargar variables de entorno
 load_dotenv()
@@ -80,3 +82,48 @@ def verificar_unicidad_boleta(numero_boleta, tipo_servicio, sucursal):
     st.session_state.boletas_verificadas[cache_key] = not existe
     
     return not existe
+
+# ------------------- GUARDAR RESULTADO DE UNA CORRIDA ----------------------
+
+def guardar_resultado_corrida(
+    db,
+    fecha_ruta: str,
+    algoritmo: str,
+    distancia_km: float,
+    tiempo_min: float,
+    tiempo_computo_s: float,
+    num_puntos: int
+):
+    """
+    Guarda en Firestore el resultado FINAL de una corrida de algoritmo,
+    con las 4 métricas correctas (NO las "driving"/Google, sino las del optimizador).
+    """
+    # Timestamp de la corrida (momento en que se guarda)
+    fecha_corrida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    doc = {
+        "fecha_corrida": fecha_corrida,
+        "fecha_ruta": fecha_ruta,
+        "algoritmo": algoritmo,
+        "distancia_km": distancia_km,
+        "tiempo_min": tiempo_min,
+        "tiempo_computo_s": tiempo_computo_s,
+        "num_puntos": num_puntos
+    }
+    # Colección centralizada (ajusta el nombre si deseas)
+    db.collection("resultados_algoritmos").add(doc)
+
+# ------------------- DESCARGAR HISTORIAL DE CORRIDAS -----------------------
+
+def obtener_historial_corridas(db):
+    """
+    Lee TODOS los resultados guardados en Firestore y los retorna como DataFrame.
+    """
+    docs = db.collection("resultados_algoritmos").stream()
+    data = []
+    for doc in docs:
+        data.append(doc.to_dict())
+    # Si quieres, aquí puedes ordenar por fecha_corrida
+    df = pd.DataFrame(data)
+    if not df.empty and "fecha_corrida" in df.columns:
+        df = df.sort_values("fecha_corrida", ascending=True)
+    return df
