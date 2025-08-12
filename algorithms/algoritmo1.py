@@ -427,7 +427,7 @@ def cargar_pedidos(fecha, tipo):
 
         # Hora de servicio
         hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
-        ts, te = (hs, hs) if hs else ("09:00", "16:00")
+        ts, te = (hs, hs) if hs else ("08:30", "17:00")
 
         out.append({
             "id":             d.id,
