@@ -269,7 +269,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     for v in range(data["num_vehicles"]):
         idx = routing.Start(v)
 
-        route_no_depot   = []             # SOLO clientes (compatibilidad con tu UI)
+        route_no_depot   = []             # SOLO clientes (lo que espera tu UI)
         route_with_depot = [depot_node]   # incluye depósito al inicio
         arrival_sec      = []
         departure_sec    = []
@@ -279,7 +279,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
             nxt = sol.Value(routing.NextVar(idx))
             dest = manager.IndexToNode(nxt)
 
-            # Acumular distancia n -> dest
+            # Distancia acumulada n -> dest
             dist_total_m += data["distance_matrix"][n][dest]
 
             # ⚠️ Leer el cumul con Value (no Min)
@@ -304,16 +304,19 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
 
         rutas.append({
             "vehicle": v,
-            "route": route_no_depot,               # SIN depósito (lo que espera tu app)
-            "route_with_depot": route_with_depot,  # CON depósito (por si tu UI lo necesita)
+            "route": route_no_depot,               # SIN depósito
+            "route_with_depot": route_with_depot,  # CON depósito
             "arrival_sec": arrival_sec,
             "departure_sec": departure_sec,
         })
 
-    # ---- Chequeo de cobertura (debug útil) ----
+    # ---- Chequeo de cobertura (debug fuerte) ----
     faltantes = sorted(list(todos_clientes - visitados_global))
     if faltantes:
-        st.error(f"Clientes NO visitados por el solver (índices en data): {faltantes}")
+        st.error(f"🚨 Clientes NO visitados por el solver (índices en 'data'): {faltantes}")
+        st.info(f"Total clientes esperados: {len(todos_clientes)} | visitados: {len(visitados_global)}")
+    else:
+        st.info(f"Clientes visitados: {len(visitados_global)} de {len(todos_clientes)}")
 
     st.success("✅ Ruta encontrada con éxito.")
     return {"routes": rutas, "distance_total_m": dist_total_m}
