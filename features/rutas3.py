@@ -290,29 +290,37 @@ def ver_ruta_optimizada():
 
         # === GUARDAR MÉTRICAS FINALES DEL ALGORITMO EN FIRESTORE ===
         # Siempre guarda, sin importar la combinación de fecha y algoritmo
-        guardar_resultado_corrida(
-            db=db,
-            fecha_ruta=str(fecha),
-            algoritmo=algoritmo,
-            distancia_km=res['distance_total_m']/1000,
-            tiempo_min=tiempo_total_min,
-            tiempo_computo_s=st.session_state['solve_t'],
-            num_puntos=len(ruta)
-        )
+        if st.button("Guardar esta corrida en historial"):
+            guardar_resultado_corrida(
+                db=db,
+                fecha_ruta=str(fecha),
+                algoritmo=algoritmo,
+                distancia_km=round(res['distance_total_m']/1000, 2),    # redondea a 2 decimales
+                tiempo_min=round(tiempo_total_min, 2),
+                tiempo_computo_s=round(st.session_state['solve_t'], 2),
+                num_puntos=len(ruta)
+            )
+            st.success("🚀 Corrida guardada en historial.")
 
     st.markdown("---")
     st.subheader("Descargar historial de corridas")
 
-    if st.button("Descargar historial en CSV"):
-        df_hist = obtener_historial_corridas(db)
-        if df_hist.empty:
-            st.warning("No hay historial de corridas aún.")
-        else:
-            csv_buffer = io.StringIO()
-            df_hist.to_csv(csv_buffer, index=False)
-            st.download_button(
-                label="Descargar CSV",
-                data=csv_buffer.getvalue(),
-                file_name="historial_corridas.csv",
-                mime="text/csv"
-            )
+    df_hist = obtener_historial_corridas(db)
+    if df_hist.empty:
+        st.warning("No hay historial de corridas aún.")
+    else:
+        csv_buffer = io.StringIO()
+        # Opcional: redondear columnas numéricas aquí
+        if 'distancia_km' in df_hist.columns:
+            df_hist['distancia_km'] = df_hist['distancia_km'].round(2)
+        if 'tiempo_min' in df_hist.columns:
+            df_hist['tiempo_min'] = df_hist['tiempo_min'].round(2)
+        if 'tiempo_computo_s' in df_hist.columns:
+            df_hist['tiempo_computo_s'] = df_hist['tiempo_computo_s'].round(2)
+        df_hist.to_csv(csv_buffer, index=False)
+        st.download_button(
+            label="Descargar historial en CSV",
+            data=csv_buffer.getvalue(),
+            file_name="historial_corridas.csv",
+            mime="text/csv"
+        )
