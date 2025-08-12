@@ -305,22 +305,23 @@ def ver_ruta_optimizada():
     st.markdown("---")
     st.subheader("Descargar historial de corridas")
 
-    df_hist = obtener_historial_corridas(db)
-    if df_hist.empty:
-        st.warning("No hay historial de corridas aún.")
-    else:
-        csv_buffer = io.StringIO()
-        # Opcional: redondear columnas numéricas aquí
-        if 'distancia_km' in df_hist.columns:
-            df_hist['distancia_km'] = df_hist['distancia_km'].round(2)
-        if 'tiempo_min' in df_hist.columns:
-            df_hist['tiempo_min'] = df_hist['tiempo_min'].round(2)
-        if 'tiempo_computo_s' in df_hist.columns:
-            df_hist['tiempo_computo_s'] = df_hist['tiempo_computo_s'].round(2)
-        df_hist.to_csv(csv_buffer, index=False)
-        st.download_button(
-            label="Descargar historial en CSV",
-            data=csv_buffer.getvalue(),
-            file_name="historial_corridas.csv",
-            mime="text/csv"
-        )
+    if st.button("Descargar historial en CSV"):
+        df_hist = obtener_historial_corridas(db)
+        if df_hist.empty:
+            st.warning("No hay historial de corridas aún.")
+        else:
+            csv_buffer = io.StringIO()
+            # Redondear columnas numéricas antes de guardar
+            if 'distancia_km' in df_hist.columns:
+                df_hist['distancia_km'] = df_hist['distancia_km'].round(2)
+            if 'tiempo_min' in df_hist.columns:
+                df_hist['tiempo_min'] = df_hist['tiempo_min'].round(2)
+            if 'tiempo_computo_s' in df_hist.columns:
+                df_hist['tiempo_computo_s'] = df_hist['tiempo_computo_s'].round(2)
+            df_hist.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="Descargar CSV",
+                data=csv_buffer.getvalue(),
+                file_name="historial_corridas.csv",
+                mime="text/csv"
+            )
