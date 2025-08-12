@@ -39,26 +39,11 @@ GOOGLE_MAPS_API_KEY = st.secrets.get("google_maps", {}).get("api_key") or os.get
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # -------------------- CONSTANTES VRP --------------------
-SERVICE_TIME    = 8 * 60               # 8 minutos de servicio en cada parada (excepto depósito)
-MAX_ELEMENTS    = 100                  # límite de celdas por petición Distance Matrix API
+SERVICE_TIME    = 8 * 60         # 8 minutos de servicio en cada parada (excepto depósito)
+MAX_ELEMENTS    = 100            # límite de celdas por petición Distance Matrix API
 SHIFT_START_SEC = 8 * 3600 + 30 * 60   # 08:30 en segundos
-SHIFT_END_SEC   = 17 * 3600            # 17:00 en segundos
-MARGEN          = 15 * 60              # 15 minutos en segundos
-
-# -------------------- COCHERA (depósito) --------------------
-# Ajusta estas coordenadas a tu cochera real.
-COCHERA = {
-    "id": "depot_0",
-    "operacion": "Depósito",
-    "nombre_cliente": "Cochera",
-    "direccion": "Cochera",
-    "lat": -16.4141434959913,          # <-- EDITA AQUÍ si tu cochera es otra
-    "lon": -71.51839574233342,         # <-- EDITA AQUÍ si tu cochera es otra
-    "time_start": "08:30",
-    "time_end":   "17:00",
-    "demand": 0,
-    "tipo": "Depósito"
-}
+SHIFT_END_SEC   = 17 * 3600           # 17:00 en segundos
+MARGEN          = 15 * 60        # 15 minutos en segundos
 
 # ===================== FUNCIONES AUXILIARES =====================
 def _hora_a_segundos(hhmm):
@@ -130,128 +115,15 @@ def _distancia_duracion_matrix(coords):
                 )
     return dist, dur
 
-def _haversine_meters(lat1, lon1, lat2, lon2):
-    """Retorna distancia en metros entre dos puntos (lat, lon) usando Haversine."""
-    R = 6371e3  # metros
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(a))
-
-def insertar_cochera_al_inicio(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Garantiza que la fila 0 sea la cochera (depósito).
-    Si ya es depósito (por coordenadas), no duplica.
-    """
-    if df.empty:
-        return pd.DataFrame([COCHERA])
-
-    try:
-        lat0 = float(df.iloc[0]["lat"])
-        lon0 = float(df.iloc[0]["lon"])
-        if abs(lat0 - COCHERA["lat"]) < 1e-9 and abs(lon0 - COCHERA["lon"]) < 1e-9:
-            return df  # ya está la cochera en la fila 0
-    except Exception:
-        pass
-
-    # Inserta la cochera como primera fila
-    return pd.concat([pd.DataFrame([COCHERA]), df], ignore_index=True)
-
-def agrupar_puntos_aglomerativo(df, eps_metros=5):
-    """
-    Agrupa pedidos cercanos mediante AgglomerativeClustering. 
-    eps_metros: umbral de distancia máxima en metros para que queden en el mismo cluster.
-    Retorna (df_clusters, df_etiquetado), donde:
-      - df_etiquetado = df original con columna 'cluster' indicando etiqueta de cluster.
-      - df_clusters  = DataFrame de centroides con columnas ['id','operacion','nombre_cliente',
-                        'dirección','lat','lon','time_start','time_end','demand'].
-    """
-    # Si no hay pedidos, retorno vacíos
-    if df.empty:
-        return pd.DataFrame(), df.copy()
-
-    coords = df[["lat", "lon"]].to_numpy()
-    n = len(coords)
-    # 1) Construir matriz de distancias en metros
-    dist_m = np.zeros((n, n), dtype=float)
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                dist_m[i, j] = 0.0
-            else:
-                dist_m[i, j] = _haversine_meters(
-                    coords[i, 0], coords[i, 1],
-                    coords[j, 0], coords[j, 1]
-                )
-
-    # 2) Aplicar AgglomerativeClustering con distancia precomputada
-    clustering = AgglomerativeClustering(
-        n_clusters=None,
-        metric="precomputed",
-        linkage="average",
-        distance_threshold=eps_metros
-    )
-    labels = clustering.fit_predict(dist_m)
-    df_labeled = df.copy()
-    df_labeled["cluster"] = labels
-
-    # 3) Construir DataFrame de centroides
-    agrupados = []
-    for clus in sorted(np.unique(labels)):
-        members = df_labeled[df_labeled["cluster"] == clus]
-        centro_lat = members["lat"].mean()
-        centro_lon = members["lon"].mean()
-        # Nombre descriptivo: primeros dos clientes del cluster
-        nombres = list(members["nombre_cliente"].unique())
-        nombre_desc = ", ".join(nombres[:2]) + ("..." if len(nombres) > 2 else "")
-        # Concatenar direcciones de los pedidos (hasta 2)
-        direcciones = list(members["direccion"].unique())
-        direccion_desc = ", ".join(direcciones[:2]) + ("..." if len(direcciones) > 2 else "")
-        # Ventana: tomo min y max de time_start/time_end
-        ts_vals = members["time_start"].tolist()
-        te_vals = members["time_end"].tolist()
-        ts_vals = [t for t in ts_vals if t]
-        te_vals = [t for t in te_vals if t]
-        inicio_cluster = min(ts_vals) if ts_vals else ""
-        fin_cluster = max(te_vals) if te_vals else ""
-        demanda_total = int(members["demand"].sum())
-        agrupados.append({
-            "id":             f"cluster_{clus}",
-            "operacion":      "Agrupado",
-            "nombre_cliente": nombre_desc,
-            "direccion":      direccion_desc,
-            "lat":            centro_lat,
-            "lon":            centro_lon,
-            "time_start":     inicio_cluster,
-            "time_end":       fin_cluster,
-            "demand":         demanda_total
-        })
-
-    df_clusters = pd.DataFrame(agrupados)
-    return df_clusters, df_labeled
-
-# ===================== DATA MODEL =====================
 def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
-    """
-    Prepara el modelo para OR-Tools.
-    - Asegura que la cochera sea el nodo 0 (se inserta si no está).
-    - Aplica márgenes a ventanas (excepto depósito que se fija con SHIFT_START_SEC).
-    - Fuerza demanda=0 y servicio=0 en el depósito para evitar confusiones.
-    """
-    # 1) Forzar cochera en fila 0
-    df = insertar_cochera_al_inicio(df)
-
-    # 2) Matrices
     coords = list(zip(df["lat"], df["lon"]))
     dist_m, dur_s = _distancia_duracion_matrix(coords)
 
-    # 3) Ventanas, demandas, servicio
     time_windows = []
     demandas = []
     service_times = []
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         ini = _hora_a_segundos(row.get("time_start"))
         fin = _hora_a_segundos(row.get("time_end"))
         if ini is None or fin is None:
@@ -260,23 +132,15 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
             ini = max(0, ini - MARGEN)
             fin = min(24 * 3600, fin + MARGEN)
         time_windows.append((ini, fin))
-
         demandas.append(row.get("demand", 1))
 
-        tipo = (row.get("tipo") or "").strip()
-        if tipo in ("Sucursal", "Planta", "Cliente Delivery", "Depósito"):
-            service_times.append(10 * 60)
+        tipo = row.get("tipo", "").strip()
+        if tipo == "Sucursal":
+            service_times.append(10 * 60)  # 10 minutos
+        elif tipo == "Planta":
+            service_times.append(10 * 60)  # 10 minutos
         else:
-            service_times.append(10 * 60)
-
-    # 4) Sanidad depósito: demanda y servicio en 0
-    if demandas:
-        if demandas[0] != 0:
-            logging.warning("El nodo 0 no tiene demanda 0. Ajustando para depósito.")
-            demandas[0] = 0
-    if service_times:
-        if service_times[0] != 0:
-            service_times[0] = 0  # aunque el callback ya ignora el servicio en depósito
+            service_times.append(10 * 60)  # Cliente Delivery o indefinido
 
     return {
         "distance_matrix": dist_m,
@@ -289,7 +153,6 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         "service_times": service_times
     }
 
-# ===================== SOLVER OR-TOOLS =====================
 def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     """
     VRPTW con OR-Tools (Routing Solver):
@@ -305,8 +168,8 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     )
     routing = pywrapcp.RoutingModel(manager)
 
-    depot_node    = data["depot"]
-    durations     = data["duration_matrix"]
+    depot_node   = data["depot"]
+    durations    = data["duration_matrix"]
     service_times = data.get("service_times", [0] * len(data["time_windows"]))
 
     # --- Callback: viaje + servicio del nodo 'from' (excepto depósito)
@@ -395,69 +258,138 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         st.error("😕 Sin solución factible incluso tras reintentar.")
         return None
 
-    # --- Extraer solución (ETA = inicio servicio)
+    # --- Extraer solución (ETA = inicio servicio). Omitimos depósito en la ruta
     rutas = []
     dist_total_m = 0
-    n_nodos = len(data["time_windows"])
-    todos_clientes = set(range(n_nodos)) - {depot_node}
-
-    visitados_global = set()
-
     for v in range(data["num_vehicles"]):
         idx = routing.Start(v)
-
-        route_no_depot   = []
-        route_with_depot = []
-        arrival_sec      = []
-        departure_sec    = []
-
-        # añadimos depósito inicial a la lista "con depósito"
-        route_with_depot.append(depot_node)
-
+        route, arrival_sec, departure_sec = [], [], []
         while not routing.IsEnd(idx):
             n   = manager.IndexToNode(idx)
             nxt = sol.Value(routing.NextVar(idx))
             dest = manager.IndexToNode(nxt)
 
-            # distancia acumulada
             dist_total_m += data["distance_matrix"][n][dest]
 
-            # cumul del tiempo en 'n'
-            eta = int(sol.Value(time_dim.CumulVar(idx)))
+            eta = int(sol.Min(time_dim.CumulVar(idx)))
             srv = 0 if n == depot_node else int(service_times[n])
 
-            # guardamos "n" en la lista con depósito
-            if len(route_with_depot) == 0 or route_with_depot[-1] != n:
-                route_with_depot.append(n)
-
-            # en la lista sin depósito, sólo clientes
             if n != depot_node:
-                route_no_depot.append(n)
+                route.append(n)
                 arrival_sec.append(eta)
                 departure_sec.append(eta + srv)
-                visitados_global.add(n)
 
             idx = nxt
 
-        # al terminar, añadimos depósito final a "con depósito"
-        route_with_depot.append(depot_node)
-
         rutas.append({
             "vehicle": v,
-            "route": route_no_depot,           
-            "route_with_depot": route_with_depot,  
+            "route": route,
             "arrival_sec": arrival_sec,
             "departure_sec": departure_sec,
         })
 
-    # --- Chequeo de cobertura (debug útil)
-    faltantes = sorted(list(todos_clientes - visitados_global))
-    if faltantes:
-        st.error(f"Clientes NO visitados por el solver (índices en 'data'): {faltantes}")
-       
-
     st.success("✅ Ruta encontrada con éxito.")
     return {"routes": rutas, "distance_total_m": dist_total_m}
+
+
+def agregar_ventana_margen(df, margen_segundos=15 * 60):
+    def expandir_fila(row):
+        ini = _hora_a_segundos(row["time_start"])
+        fin = _hora_a_segundos(row["time_end"])
+        if ini is None or fin is None:
+            return "No especificado"
+        ini = max(0, ini - margen_segundos)
+        fin = min(24 * 3600, fin + margen_segundos)
+        h_ini = f"{ini // 3600:02}:{(ini % 3600) // 60:02}"
+        h_fin = f"{fin // 3600:02}:{(fin % 3600) // 60:02}"
+        return f"{h_ini} - {h_fin} h"
+
+    df["ventana_con_margen"] = df.apply(expandir_fila, axis=1)
+    return df
+
+# ===================== FUNCIONES PARA CLUSTERING =====================
+def _haversine_meters(lat1, lon1, lat2, lon2):
+    """Retorna distancia en metros entre dos puntos (lat, lon) usando Haversine."""
+    R = 6371e3  # metros
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+def agrupar_puntos_aglomerativo(df, eps_metros=5):
+    """
+    Agrupa pedidos cercanos mediante AgglomerativeClustering. 
+    eps_metros: umbral de distancia máxima en metros para que queden en el mismo cluster.
+    Retorna (df_clusters, df_etiquetado), donde:
+      - df_etiquetado = df original con columna 'cluster' indicando etiqueta de cluster.
+      - df_clusters  = DataFrame de centroides con columnas ['id','operacion','nombre_cliente',
+                        'dirección','lat','lon','time_start','time_end','demand'].
+    """
+    # Si no hay pedidos, retorno vacíos
+    if df.empty:
+        return pd.DataFrame(), df.copy()
+
+    coords = df[["lat", "lon"]].to_numpy()
+    n = len(coords)
+    # 1) Construir matriz de distancias en metros
+    dist_m = np.zeros((n, n), dtype=float)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                dist_m[i, j] = 0.0
+            else:
+                dist_m[i, j] = _haversine_meters(
+                    coords[i, 0], coords[i, 1],
+                    coords[j, 0], coords[j, 1]
+                )
+
+    # 2) Aplicar AgglomerativeClustering con distancia precomputada
+    clustering = AgglomerativeClustering(
+        n_clusters=None,  # 1
+        metric="precomputed",
+        linkage="average",
+        distance_threshold=eps_metros
+    )
+    labels = clustering.fit_predict(dist_m)
+    df_labeled = df.copy()
+    df_labeled["cluster"] = labels
+
+    # 3) Construir DataFrame de centroides
+    agrupados = []
+    for clus in sorted(np.unique(labels)):
+        members = df_labeled[df_labeled["cluster"] == clus]
+        centro_lat = members["lat"].mean()
+        centro_lon = members["lon"].mean()
+        # Nombre descriptivo: primeros dos clientes del cluster
+        nombres = list(members["nombre_cliente"].unique())
+        nombre_desc = ", ".join(nombres[:2]) + ("..." if len(nombres) > 2 else "")
+        # Concatenar direcciones de los pedidos (hasta 2)
+        direcciones = list(members["direccion"].unique())
+        direccion_desc = ", ".join(direcciones[:2]) + ("..." if len(direcciones) > 2 else "")
+        # Ventana: tomo min y max de time_start/time_end
+        ts_vals = members["time_start"].tolist()
+        te_vals = members["time_end"].tolist()
+        ts_vals = [t for t in ts_vals if t]
+        te_vals = [t for t in te_vals if t]
+        inicio_cluster = min(ts_vals) if ts_vals else ""
+        fin_cluster = max(te_vals) if te_vals else ""
+        demanda_total = int(members["demand"].sum())
+        agrupados.append({
+            "id":             f"cluster_{clus}",
+            "operacion":      "Agrupado",
+            # "nombre_cliente": f"Grupo {clus}: {nombre_desc}",
+            "nombre_cliente": nombre_desc,
+            "direccion":      direccion_desc,
+            "lat":            centro_lat,
+            "lon":            centro_lon,
+            "time_start":     inicio_cluster,
+            "time_end":       fin_cluster,
+            "demand":         demanda_total
+        })
+
+    df_clusters = pd.DataFrame(agrupados)
+    return df_clusters, df_labeled
 
 # ===================== CARGAR PEDIDOS DESDE FIRESTORE =====================
 @st.cache_data(ttl=300)
@@ -524,7 +456,7 @@ def cargar_pedidos(fecha, tipo):
         Elige hora de servicio:
         1) hora_recojo / hora_entrega si existen
         2) 'hora' unificada si existe
-        3) default 08:30–17:00
+        3) default 09:00–16:00
         """
         lado = "recojo" if is_recojo else "entrega"
         h = data.get(f"hora_{lado}") or data.get("hora")
