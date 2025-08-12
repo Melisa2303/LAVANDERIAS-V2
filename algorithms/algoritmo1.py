@@ -168,8 +168,8 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
     )
     routing = pywrapcp.RoutingModel(manager)
 
-    depot_node   = data["depot"]
-    durations    = data["duration_matrix"]
+    depot_node    = data["depot"]
+    durations     = data["duration_matrix"]
     service_times = data.get("service_times", [0] * len(data["time_windows"]))
 
     # --- Callback: viaje + servicio del nodo 'from' (excepto depósito)
@@ -258,35 +258,62 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         st.error("😕 Sin solución factible incluso tras reintentar.")
         return None
 
-    # --- Extraer solución (ETA = inicio servicio). Omitimos depósito en la ruta
+    # --- Extraer solución (ETA = inicio servicio) ---
     rutas = []
     dist_total_m = 0
+
+    n_nodos = len(data["time_windows"])
+    todos_clientes = set(range(n_nodos)) - {depot_node}
+    visitados_global = set()
+
     for v in range(data["num_vehicles"]):
         idx = routing.Start(v)
-        route, arrival_sec, departure_sec = [], [], []
+
+        route_no_depot   = []             # SOLO clientes (compatibilidad con tu UI)
+        route_with_depot = [depot_node]   # incluye depósito al inicio
+        arrival_sec      = []
+        departure_sec    = []
+
         while not routing.IsEnd(idx):
             n   = manager.IndexToNode(idx)
             nxt = sol.Value(routing.NextVar(idx))
             dest = manager.IndexToNode(nxt)
 
+            # Acumular distancia n -> dest
             dist_total_m += data["distance_matrix"][n][dest]
 
-            eta = int(sol.Min(time_dim.CumulVar(idx)))
+            # ⚠️ Leer el cumul con Value (no Min)
+            eta = int(sol.Value(time_dim.CumulVar(idx)))
             srv = 0 if n == depot_node else int(service_times[n])
 
+            # Traza "con depósito"
+            if not route_with_depot or route_with_depot[-1] != n:
+                route_with_depot.append(n)
+
+            # Solo clientes en route_no_depot
             if n != depot_node:
-                route.append(n)
+                route_no_depot.append(n)
                 arrival_sec.append(eta)
                 departure_sec.append(eta + srv)
+                visitados_global.add(n)
 
             idx = nxt
 
+        # Cerrar con depósito
+        route_with_depot.append(depot_node)
+
         rutas.append({
             "vehicle": v,
-            "route": route,
+            "route": route_no_depot,               # SIN depósito (lo que espera tu app)
+            "route_with_depot": route_with_depot,  # CON depósito (por si tu UI lo necesita)
             "arrival_sec": arrival_sec,
             "departure_sec": departure_sec,
         })
+
+    # ---- Chequeo de cobertura (debug útil) ----
+    faltantes = sorted(list(todos_clientes - visitados_global))
+    if faltantes:
+        st.error(f"Clientes NO visitados por el solver (índices en data): {faltantes}")
 
     st.success("✅ Ruta encontrada con éxito.")
     return {"routes": rutas, "distance_total_m": dist_total_m}
