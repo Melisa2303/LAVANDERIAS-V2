@@ -138,7 +138,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         time_windows.append((ini, fin))
         demandas.append(row.get("demand", 1))
 
-        # ← NUEVO: tiempo de servicio personalizado
+        # tiempo de servicio personalizado
         tipo = row.get("tipo", "").strip()
         if tipo == "Sucursal":
             service_times.append(5 * 60)  # 5 minutos
@@ -155,7 +155,7 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         "num_vehicles": vehiculos,
         "vehicle_capacities": [capacidad_veh or 10**9] * vehiculos,
         "depot": 0,
-        "service_times": service_times  # ← nuevo
+        "service_times": service_times 
     }
 
 #
