@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 import pandas as pd
+import pytz
 
 # Cargar variables de entorno
 load_dotenv()
@@ -99,7 +100,9 @@ def guardar_resultado_corrida(
     con las 4 métricas correctas (NO las "driving"/Google, sino las del optimizador).
     """
     # Timestamp de la corrida (momento en que se guarda)
-    fecha_corrida = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Hora local de Lima/Perú
+    lima = pytz.timezone("America/Lima")
+    fecha_corrida = datetime.now(lima).strftime("%Y-%m-%d %H:%M:%S")
     doc = {
         "fecha_corrida": fecha_corrida,
         "fecha_ruta": fecha_ruta,
