@@ -15,20 +15,26 @@ def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bo
     T = data["duration_matrix"]
     windows = data["time_windows"]
     depot = data["depot"]
+
     t = SHIFT_START_SEC
-    arrivals = [t]
+    arrivals = [t]  # tiempo en depósito (salida)
 
     for u, v in zip(route, route[1:]):
-        t += T[u][v]
+        # 1) servicio en el nodo de origen u (si no es depósito)
         if u != depot:
             t += SERVICE_TIME
+        # 2) viaje hacia v
+        t += T[u][v]
+        # 3) chequear ventana de v
         w0, w1 = windows[v]
         if t > w1:
             return False, []
+        # 4) esperar si llegaste antes
         t = max(t, w0)
         arrivals.append(t)
 
     return True, arrivals
+
 
 def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
     visited = set()
