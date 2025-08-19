@@ -64,7 +64,7 @@ def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
             score = (
                 t_temp
                 + wait
-                + 20 * lateness         # penaliza fuertemente llegar tarde
+                + 5 * lateness         # penaliza llegar tarde
                 + 300 * urgencia        # prioriza ventanas que cierran pronto
             )
 
@@ -85,9 +85,6 @@ def build_route_greedy(data, nodes, depot, tolerancia_seg=600):
         t_now = t_arrival
 
     return route, arrival, visited
-
-
-
 
 
 def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Dict[str, Any]:
