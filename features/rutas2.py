@@ -22,16 +22,12 @@ from core.geo_utils import (
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-# -------------------------------------------------------------------
-# Estado para invalidar cachés SOLO cuando hay cambios
-# -------------------------------------------------------------------
+
 if "version_datos" not in st.session_state:
     st.session_state.version_datos = 0
 
 
-# -------------------------------------------------------------------
-# Helpers
-# -------------------------------------------------------------------
+#Asegurarse de escoger correctamente la columna  "hora" del .csv"
 def normalizar_hora(h):
     """
     Acepta: '10:00', '10:00:00', '' o None.
@@ -50,7 +46,7 @@ def normalizar_hora(h):
     elif len(partes) == 3:
         hh, mm, ss = partes
     else:
-        return None  # formato no reconocido
+        return None  # Caso de que el formato no puede ser reconocido
 
     try:
         hh = int(hh)
@@ -70,16 +66,11 @@ def normalizar_hora(h):
 # -------------------------------------------------------------------
 @st.cache_data(ttl=600)
 def cargar_ruta(fecha, version):
-    """
-    Lee SOLO los documentos cuya fecha_recojo o fecha_entrega == fecha.
-    Prioriza mostrar la ENTREGA cuando ambas coinciden el mismo día (por id).
-    'version' permite invalidar caché cuando hay escrituras.
-    """
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         col = db.collection("recogidas")
 
-        # Dos queries específicas (evita barrer toda la colección)
+        # Dos queries específicas 
         rec_q = col.where("fecha_recojo", "==", fecha_str).stream()
         ent_q = col.where("fecha_entrega", "==", fecha_str).stream()
 
@@ -101,17 +92,17 @@ def cargar_ruta(fecha, version):
                 "fecha": d.get("fecha_recojo"),
             }
 
-        # Entregas del día (si ya había el mismo id como recojo, SOBRESCRIBE con entrega)
+        # Entregas del día
         for doc in ent_q:
             d = doc.to_dict()
             por_id[doc.id] = {
                 "id": doc.id,
-                "operacion": "Entrega",  # prioridad
+                "operacion": "Entrega",  
                 "nombre_cliente": d.get("nombre_cliente"),
                 "sucursal": d.get("sucursal"),
                 "direccion": d.get("direccion_entrega", "N/A"),
                 "telefono": d.get("telefono", "N/A"),
-                "hora": d.get("hora_entrega", ""),  # aquí verás la hora del CSV
+                "hora": d.get("hora_entrega", ""), 
                 "tipo_solicitud": d.get("tipo_solicitud"),
                 "coordenadas": d.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
                 "fecha": d.get("fecha_entrega"),
@@ -140,7 +131,7 @@ def datos_ruta():
         )
     st.title("📋 Ruta del Día")
 
-    # Form para reducir reruns por cada widget
+    
     with st.form("form_filtro_fecha"):
         fecha_seleccionada = st.date_input(
             "Seleccionar Fecha", value=datetime.now().date()
@@ -236,7 +227,7 @@ def datos_ruta():
                             ).update({campo_hora: f"{hora_i:02d}:{minutos_i:02d}:00"})
                             st.success("Hora actualizada")
 
-                        # Invalida SOLO este caché
+                        #Evitar que relea innecesariamente
                         st.session_state.version_datos += 1
                         time.sleep(0.5)
                         st.rerun()
@@ -262,7 +253,7 @@ def datos_ruta():
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
 
     # -------------------------------------------------------------------
-    # 📤 CARGA DE CSV A FIRESTORE (solo ENTREGA; guarda hora_entrega)
+    # 📤 CARGA DE CSV A FIRESTORE  
     # -------------------------------------------------------------------
     st.markdown("---")
     st.subheader("📤 Cargar datos desde archivo CSV")
@@ -302,7 +293,7 @@ def datos_ruta():
                 # Validación básica de fecha (YYYY-MM-DD)
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d").strftime("%Y-%m-%d")
 
-                # ✅ SOLO ENTREGAS: recojo = None, entrega desde CSV
+                # SOLO ENTREGAS: recojo = None, entrega desde CSV
                 doc_data = {
                     "tipo_solicitud": tipo_solicitud,
                     "telefono": telefono,
@@ -310,7 +301,7 @@ def datos_ruta():
                     if tipo_solicitud == "Cliente Delivery"
                     else None,
                     "sucursal": sucursal if tipo_solicitud == "Sucursal" else None,
-                    # Recojo vacío (para que no compita ni se muestre)
+                     
                     "coordenadas_recojo": None,
                     "direccion_recojo": None,
                     "fecha_recojo": None,
@@ -331,7 +322,7 @@ def datos_ruta():
         st.success(
             f"✅ Se subieron {total - errores} registros correctamente. {errores} errores."
         )
-        # Invalida SOLO el caché de cargar_ruta
+        
         st.session_state.version_datos += 1
 
     # -------------------------------------------------------------------
