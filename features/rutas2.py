@@ -23,11 +23,9 @@ from core.geo_utils import (
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 
-if "version_datos" not in st.session_state:
-    st.session_state.version_datos = 0
-
-
-#Asegurarse de escoger correctamente la columna  "hora" del .csv"
+# -------------------------------------------------------------------
+# Helpers
+# -------------------------------------------------------------------
 def normalizar_hora(h):
     """
     Acepta: '10:00', '10:00:00', '' o None.
@@ -46,7 +44,7 @@ def normalizar_hora(h):
     elif len(partes) == 3:
         hh, mm, ss = partes
     else:
-        return None  # Caso de que el formato no puede ser reconocido
+        return None
 
     try:
         hh = int(hh)
@@ -65,18 +63,21 @@ def normalizar_hora(h):
 # Carga de ruta del día desde Firestore (CONSULTA FILTRADA)
 # -------------------------------------------------------------------
 @st.cache_data(ttl=600)
-def cargar_ruta(fecha, version):
+def cargar_ruta(fecha, version_cache):
+    """
+    Lee SOLO los documentos cuya fecha_recojo o fecha_entrega == fecha.
+    Prioriza mostrar la ENTREGA cuando ambas coinciden (por id).
+    'version_cache' permite invalidar caché cuando hay escrituras.
+    """
     try:
         fecha_str = fecha.strftime("%Y-%m-%d")
         col = db.collection("recogidas")
 
-        # Dos queries específicas 
         rec_q = col.where("fecha_recojo", "==", fecha_str).stream()
         ent_q = col.where("fecha_entrega", "==", fecha_str).stream()
 
         por_id = {}
 
-        # Recojos del día
         for doc in rec_q:
             d = doc.to_dict()
             por_id[doc.id] = {
@@ -92,17 +93,17 @@ def cargar_ruta(fecha, version):
                 "fecha": d.get("fecha_recojo"),
             }
 
-        # Entregas del día
+        # Si hay entrega para el mismo id, sobrescribe (prioridad entrega)
         for doc in ent_q:
             d = doc.to_dict()
             por_id[doc.id] = {
                 "id": doc.id,
-                "operacion": "Entrega",  
+                "operacion": "Entrega",
                 "nombre_cliente": d.get("nombre_cliente"),
                 "sucursal": d.get("sucursal"),
                 "direccion": d.get("direccion_entrega", "N/A"),
                 "telefono": d.get("telefono", "N/A"),
-                "hora": d.get("hora_entrega", ""), 
+                "hora": d.get("hora_entrega", ""),
                 "tipo_solicitud": d.get("tipo_solicitud"),
                 "coordenadas": d.get("coordenadas_entrega", {"lat": -16.409047, "lon": -71.537451}),
                 "fecha": d.get("fecha_entrega"),
@@ -118,6 +119,11 @@ def cargar_ruta(fecha, version):
 # UI principal
 # -------------------------------------------------------------------
 def datos_ruta():
+    # ✅ Inicialización robusta de session_state (evita AttributeError)
+    st.session_state.setdefault("version_datos", 0)
+    # Los siguientes se setean dinámicamente cuando se entra al expander,
+    # pero por seguridad definimos defaults "lazy" con setdefault al usarlos.
+
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image(
@@ -131,14 +137,14 @@ def datos_ruta():
         )
     st.title("📋 Ruta del Día")
 
-    
+    # Form para reducir reruns por cada widget
     with st.form("form_filtro_fecha"):
         fecha_seleccionada = st.date_input(
             "Seleccionar Fecha", value=datetime.now().date()
         )
         submitted = st.form_submit_button("Actualizar")
 
-    datos = cargar_ruta(fecha_seleccionada, st.session_state.version_datos)
+    datos = cargar_ruta(fecha_seleccionada, st.session_state["version_datos"])
 
     if datos:
         tabla_data = []
@@ -170,9 +176,10 @@ def datos_ruta():
             st.subheader("🔄 Gestión de Deliveries")
 
             opciones = {
-                f"{item['operacion']} - {item['nombre_cliente']}": item for item in deliveries
+                f"{item['operacion']} - {item['nombre_cliente'] or item.get('sucursal') or 'N/A'}": item
+                for item in deliveries
             }
-            selected = st.selectbox("Seleccionar operación:", options=opciones.keys())
+            selected = st.selectbox("Seleccionar operación:", options=list(opciones.keys()))
             delivery_data = opciones[selected]
 
             st.markdown(f"### Hora de {delivery_data['operacion']}")
@@ -181,17 +188,14 @@ def datos_ruta():
                 horas_sugeridas = [
                     f"{h:02d}:{m:02d}" for h in range(7, 19) for m in (0, 30)
                 ]
-                hora_actual = delivery_data.get("hora")
+                hora_actual = (delivery_data.get("hora") or "").strip()
 
                 if hora_actual and hora_actual[:5] not in horas_sugeridas:
                     horas_sugeridas.append(hora_actual[:5])
                     horas_sugeridas.sort()
 
                 opciones_hora = ["-- Sin asignar --"] + horas_sugeridas
-                if hora_actual and hora_actual[:5] in horas_sugeridas:
-                    index_hora = opciones_hora.index(hora_actual[:5])
-                else:
-                    index_hora = 0
+                index_hora = opciones_hora.index(hora_actual[:5]) if (hora_actual and hora_actual[:5] in opciones_hora) else 0
 
                 nueva_hora = st.selectbox(
                     "Seleccionar o escribir hora (HH:MM):",
@@ -227,15 +231,101 @@ def datos_ruta():
                             ).update({campo_hora: f"{hora_i:02d}:{minutos_i:02d}:00"})
                             st.success("Hora actualizada")
 
-                        #Evitar que relea innecesariamente
-                        st.session_state.version_datos += 1
-                        time.sleep(0.5)
+                        # Invalida SOLO este caché
+                        st.session_state["version_datos"] += 1
+                        time.sleep(0.3)
                         st.rerun()
 
                     except ValueError:
                         st.error("Formato inválido. Use HH:MM")
                     except Exception as e:
                         st.error(f"Error: {e}")
+
+            # ---------------- Reprogramación (dirección/fecha) ----------------
+            st.markdown(f"### 📅 Reprogramación de {delivery_data['operacion']}")
+            with st.expander("Cambiar fecha y ubicación", expanded=True):
+                # Defaults seguros (no leer claves inexistentes)
+                st.session_state.setdefault("reprogramar_lat", delivery_data["coordenadas"]["lat"])
+                st.session_state.setdefault("reprogramar_lon", delivery_data["coordenadas"]["lon"])
+                st.session_state.setdefault("reprogramar_direccion", delivery_data["direccion"])
+
+                # Genera mapa cada vez con los valores actuales
+                re_lat = st.session_state["reprogramar_lat"]
+                re_lon = st.session_state["reprogramar_lon"]
+                re_dir = st.session_state["reprogramar_direccion"]
+
+                mapa_base = folium.Map(location=[re_lat, re_lon], zoom_start=15)
+                folium.Marker(
+                    [re_lat, re_lon],
+                    tooltip="Punto seleccionado"
+                ).add_to(mapa_base)
+
+                direccion_input = st.text_input(
+                    "Dirección",
+                    value=re_dir,
+                    key=f"reprogramar_direccion_input_{delivery_data['id']}"
+                )
+
+                sugerencias = []
+                if direccion_input and direccion_input != re_dir:
+                    sugerencias = obtener_sugerencias_direccion(direccion_input)
+
+                direccion_seleccionada = st.selectbox(
+                    "Sugerencias de Direcciones:",
+                    ["Seleccione una dirección"] + [sug["display_name"] for sug in sugerencias] if sugerencias else ["No hay sugerencias"],
+                    key=f"reprogramar_sugerencias_{delivery_data['id']}"
+                )
+
+                if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
+                    for sug in sugerencias:
+                        if direccion_seleccionada == sug["display_name"]:
+                            st.session_state["reprogramar_lat"] = float(sug["lat"])
+                            st.session_state["reprogramar_lon"] = float(sug["lon"])
+                            st.session_state["reprogramar_direccion"] = direccion_seleccionada
+                            break
+
+                mapa = st_folium(
+                    mapa_base,
+                    width=700,
+                    height=500,
+                    key=f"reprogramar_mapa_{delivery_data['id']}"
+                )
+
+                if mapa.get("last_clicked"):
+                    st.session_state["reprogramar_lat"] = mapa["last_clicked"]["lat"]
+                    st.session_state["reprogramar_lon"] = mapa["last_clicked"]["lng"]
+                    st.session_state["reprogramar_direccion"] = obtener_direccion_desde_coordenadas(
+                        st.session_state["reprogramar_lat"], st.session_state["reprogramar_lon"]
+                    )
+                    st.rerun()
+
+                st.markdown(f"""
+                    <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
+                        <h4 style='color: #333; margin: 0;'>Dirección Final:</h4>
+                        <p style='color: #555; font-size: 16px;'>{st.session_state["reprogramar_direccion"]}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                min_date = datetime.now().date() if delivery_data["operacion"] == "Recojo" else datetime.strptime(delivery_data["fecha"], "%Y-%m-%d").date()
+                nueva_fecha = st.date_input("Nueva fecha:", value=min_date + timedelta(days=1), min_value=min_date)
+
+                if st.button(f"💾 Guardar Cambios de {delivery_data['operacion']}"):
+                    try:
+                        updates = {
+                            "fecha_recojo" if delivery_data["operacion"] == "Recojo" else "fecha_entrega": nueva_fecha.strftime("%Y-%m-%d"),
+                            "direccion_recojo" if delivery_data["operacion"] == "Recojo" else "direccion_entrega": st.session_state["reprogramar_direccion"],
+                            "coordenadas_recojo" if delivery_data["operacion"] == "Recojo" else "coordenadas_entrega": {
+                                "lat": st.session_state["reprogramar_lat"],
+                                "lon": st.session_state["reprogramar_lon"]
+                            }
+                        }
+                        db.collection('recogidas').document(delivery_data["id"]).update(updates)
+                        st.success("¡Reprogramación exitosa!")
+                        st.session_state["version_datos"] += 1
+                        time.sleep(0.3)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar: {e}")
 
         # ---------------- Exportar Excel ----------------
         excel_buffer = BytesIO()
@@ -253,7 +343,7 @@ def datos_ruta():
         st.info("No hay datos para la fecha seleccionada con los filtros actuales.")
 
     # -------------------------------------------------------------------
-    # 📤 CARGA DE CSV A FIRESTORE  
+    # 📤 CARGA DE CSV A FIRESTORE (solo ENTREGA; guarda hora_entrega)
     # -------------------------------------------------------------------
     st.markdown("---")
     st.subheader("📤 Cargar datos desde archivo CSV")
@@ -265,7 +355,6 @@ def datos_ruta():
         subir = st.form_submit_button("🚀 Subir a Firestore")
 
     if uploaded_file and subir:
-        # dtype=str para evitar NaN y respetar formatos (teléfonos, horas)
         df_csv = pd.read_csv(
             uploaded_file, dtype=str, encoding="utf-8-sig", keep_default_na=False
         )
@@ -283,30 +372,25 @@ def datos_ruta():
                 fecha_str = (row.get("fecha") or "").strip()
                 direccion = (row.get("direccion") or "").strip()
 
-                # Coordenadas (columnas: coordenadas.lat, coordenadas.lon)
                 lat = float(row.get("coordenadas.lat"))
                 lon = float(row.get("coordenadas.lon"))
 
-                # HORA CSV -> hora_entrega
                 hora_unificada = normalizar_hora(row.get("hora"))
 
-                # Validación básica de fecha (YYYY-MM-DD)
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d").strftime("%Y-%m-%d")
 
-                # SOLO ENTREGAS: recojo = None, entrega desde CSV
+                # ✅ SOLO ENTREGAS: recojo = None, entrega desde CSV
                 doc_data = {
                     "tipo_solicitud": tipo_solicitud,
                     "telefono": telefono,
-                    "nombre_cliente": nombre_cliente
-                    if tipo_solicitud == "Cliente Delivery"
-                    else None,
+                    "nombre_cliente": nombre_cliente if tipo_solicitud == "Cliente Delivery" else None,
                     "sucursal": sucursal if tipo_solicitud == "Sucursal" else None,
-                     
+
                     "coordenadas_recojo": None,
                     "direccion_recojo": None,
                     "fecha_recojo": None,
                     "hora_recojo": None,
-                    # Entrega completa
+
                     "coordenadas_entrega": {"lat": lat, "lon": lon},
                     "direccion_entrega": direccion,
                     "fecha_entrega": fecha,
@@ -322,8 +406,8 @@ def datos_ruta():
         st.success(
             f"✅ Se subieron {total - errores} registros correctamente. {errores} errores."
         )
-        
-        st.session_state.version_datos += 1
+        # Invalida SOLO el caché de cargar_ruta
+        st.session_state["version_datos"] += 1
 
     # -------------------------------------------------------------------
     # ❌ ELIMINAR RUTAS DE LA FECHA SELECCIONADA
@@ -359,9 +443,8 @@ def datos_ruta():
                     st.success(
                         f"✅ Se eliminaron {len(todos_ids)} documentos correspondientes a {fecha_str}."
                     )
-                    # Invalida SOLO el caché de cargar_ruta
-                    st.session_state.version_datos += 1
-                    time.sleep(0.5)
+                    st.session_state["version_datos"] += 1
+                    time.sleep(0.3)
                     st.rerun()
 
                 except Exception as e:
