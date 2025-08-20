@@ -10,7 +10,7 @@ from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC  # ambos en segu
 
 # ===================== Config servicio depósito / helper =====================
 
-# Si quieres un servicio distinto en la cochera, cambia este valor:
+#Service time primer nodo
 DEPOT_SERVICE_SEC = 10 * 60  # 10 minutos
 
 def _svc(data: Dict[str, Any], node: int) -> int:
@@ -34,7 +34,7 @@ def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bo
     Comprueba factibilidad con ventanas duras.
     Convención:
       - t inicia en SHIFT_START_SEC en el depósito.
-      - Antes de viajar de u->v se suma SIEMPRE el servicio del nodo u (incluye depósito).
+      - Antes de viajar de u->v se suma SIEMPRE el servicio del nodo u.
       - Luego se suma duración de viaje.
       - Si llegada > w1 => infactible.
       - Si llegada < w0 => espera hasta w0.
@@ -46,13 +46,13 @@ def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bo
     arrivals = [t]  # llegada al depósito (inicio)
 
     for u, v in zip(route, route[1:]):
-        t += _svc(data, u)       # servicio del nodo origen (incluye depósito)
+        t += _svc(data, u)       # servicio del nodo origen
         t += T[u][v]             # viaje u->v
 
         w0, w1 = windows[v]
         if t > w1:
             return False, []
-        t = max(t, w0)           # esperar si llegaste antes de la ventana
+        t = max(t, w0)           
         arrivals.append(t)
 
     return True, arrivals
@@ -71,7 +71,7 @@ def _greedy_step(current: int, t_now: int, candidates: List[int], data: Dict[str
     heap = []
 
     for nxt in candidates:
-        t_depart = t_now + _svc(data, current)       # servicio en current (incluye depósito)
+        t_depart = t_now + _svc(data, current)       # servicio en current
         t_arrive = t_depart + T[current][nxt]
         w0, w1 = W[nxt]
         if t_arrive > w1:  # ventana dura
@@ -170,7 +170,6 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
       3) Insertar flexibles entre citas sin romperlas.
 
     Resultado: no excluye clientes; si algo no cabe, reubica flexibles.
-    El DEPÓSITO también tiene tiempo de servicio (al salir de él).
     """
     depot = data["depot"]
     D = data["distance_matrix"]
@@ -294,7 +293,7 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
                 current = route[-1]
 
         # Viajar a la cita respetando su ventana: servicio en current + viaje
-        t_now += _svc(data, current)               # servicio del nodo origen (incluye depósito)
+        t_now += _svc(data, current)               # servicio del nodo origen  
         t_arr_appt = t_now + T[current][appt]
         w0, w1 = W[appt]
         if t_arr_appt > w1:
@@ -346,7 +345,7 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
     # t_now += _svc(data, current)
     # t_now += T[current][depot]
     # w0d, w1d = W[depot]
-    # t_now = max(t_now, w0d)  # sdwadwa
+    # t_now = max(t_now, w0d) 
     # route.append(depot)
     # arrivals.append(t_now)
 
