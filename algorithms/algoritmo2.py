@@ -1,11 +1,26 @@
 # algorithms/algoritmo2.py
 # CW + Tabu Search + "Appointments-first" (ventanas duras) + inserción de flexibles
+# Incluye servicio en el DEPÓSITO (suma servicio del nodo origen en cada arco)
 
 import time
 from typing import List, Dict, Any, Tuple
 from heapq import heappush, heappop
 import streamlit as st
 from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC  # ambos en segundos
+
+# ===================== Config servicio depósito / helper =====================
+
+# Si quieres un servicio distinto en la cochera, cambia este valor:
+DEPOT_SERVICE_SEC = 10 * 60  # 10 minutos
+
+def _svc(data: Dict[str, Any], node: int) -> int:
+    """
+    Devuelve el tiempo de servicio en segundos para 'node'.
+    Prioriza data["service_times"] si existe; si no, usa SERVICE_TIME y un valor especial para depósito.
+    """
+    if "service_times" in data and data["service_times"] is not None:
+        return int(data["service_times"][node])
+    return DEPOT_SERVICE_SEC if node == data["depot"] else SERVICE_TIME
 
 
 # ===================== Utilidades de tiempo/ruta =====================
@@ -14,33 +29,30 @@ def _route_distance(route: List[int], data: Dict[str, Any]) -> float:
     D = data["distance_matrix"]
     return sum(D[u][v] for u, v in zip(route, route[1:]))
 
-
 def _check_feasible_and_time(route: List[int], data: Dict[str, Any]) -> Tuple[bool, List[int]]:
     """
     Comprueba factibilidad con ventanas duras.
     Convención:
       - t inicia en SHIFT_START_SEC en el depósito.
-      - Antes de viajar de u->v se suma SERVICE_TIME si u != depot.
+      - Antes de viajar de u->v se suma SIEMPRE el servicio del nodo u (incluye depósito).
       - Luego se suma duración de viaje.
       - Si llegada > w1 => infactible.
       - Si llegada < w0 => espera hasta w0.
     """
     T = data["duration_matrix"]
     windows = data["time_windows"]
-    depot = data["depot"]
 
     t = SHIFT_START_SEC
-    arrivals = [t]  # en depósito
+    arrivals = [t]  # llegada al depósito (inicio)
 
     for u, v in zip(route, route[1:]):
-        if u != depot:
-            t += SERVICE_TIME
-        t += T[u][v]
+        t += _svc(data, u)       # servicio del nodo origen (incluye depósito)
+        t += T[u][v]             # viaje u->v
 
         w0, w1 = windows[v]
         if t > w1:
             return False, []
-        t = max(t, w0)
+        t = max(t, w0)           # esperar si llegaste antes de la ventana
         arrivals.append(t)
 
     return True, arrivals
@@ -59,7 +71,7 @@ def _greedy_step(current: int, t_now: int, candidates: List[int], data: Dict[str
     heap = []
 
     for nxt in candidates:
-        t_depart = t_now + (SERVICE_TIME if current != data["depot"] else 0)
+        t_depart = t_now + _svc(data, current)       # servicio en current (incluye depósito)
         t_arrive = t_depart + T[current][nxt]
         w0, w1 = W[nxt]
         if t_arrive > w1:  # ventana dura
@@ -93,18 +105,18 @@ def _insert_flexibles_between(anchor_a: int, t_at_a: int, anchor_b: int, data: D
     current = anchor_a
     t_now = t_at_a
 
-    # Si no hay siguiente ancla real, podemos insertar todo lo que quepa de forma factible
+    # Si hay siguiente ancla real (no depósito), respetar su ventana
     limit_to_b = (anchor_b is not None and anchor_b != depot)
 
-    # Intentamos greedy hasta que no quepa más
+    # Greedy local mientras haya flexibles factibles
     while True:
         if not flex_pool:
             break
 
-        # Filtra flexibles factibles desde 'current'
-        candidates = []
+        # Candidatos factibles desde 'current'
+        cand_heap = []
         for nxt in flex_pool:
-            t_depart = t_now + (SERVICE_TIME if current != depot else 0)
+            t_depart = t_now + _svc(data, current)    # servicio en current (incluye depósito)
             t_arrive = t_depart + T[current][nxt]
             w0, w1 = W[nxt]
             if t_arrive > w1:
@@ -114,20 +126,18 @@ def _insert_flexibles_between(anchor_a: int, t_at_a: int, anchor_b: int, data: D
             ventana = max(1, w1 - w0)
             urgencia = 1 / ventana
             score = t_eff + wait + 50 * urgencia  # menor peso que en anclas
-            heappush(candidates, (score, nxt, t_eff))
+            heappush(cand_heap, (score, nxt, t_eff))
 
-        if not candidates:
+        if not cand_heap:
             break
 
-        # Probar candidatos verificando que aún llegamos a anchor_b a tiempo
         assigned = False
-        while candidates:
-            _, chosen, t_eff = heappop(candidates)
+        while cand_heap:
+            _, chosen, t_eff = heappop(cand_heap)
 
             if limit_to_b:
-                # Chequear llegada a b si insertamos 'chosen'
-                # Llegada estimada a b: servir chosen y viajar chosen->b
-                t_after_chosen_depart = t_eff + (SERVICE_TIME if chosen != depot else 0)
+                # Llegada a anchor_b luego de chosen: servicio en chosen + viaje chosen->b
+                t_after_chosen_depart = t_eff + _svc(data, chosen)
                 t_arrive_b = t_after_chosen_depart + T[chosen][anchor_b]
                 w0b, w1b = W[anchor_b]
                 if t_arrive_b > w1b:
@@ -146,7 +156,7 @@ def _insert_flexibles_between(anchor_a: int, t_at_a: int, anchor_b: int, data: D
         if not assigned:
             break
 
-    # Finalmente, dejamos current y t_now listos para que el llamador conecte con anchor_b
+    # Devolvemos subruta (desde anchor_a) y el t_now alcanzado
     return sub_route, sub_arr, t_now
 
 
@@ -155,10 +165,12 @@ def _insert_flexibles_between(anchor_a: int, t_at_a: int, anchor_b: int, data: D
 def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Dict[str, Any]:
     """
     Pipeline:
-      1) Clark–Wright + Tabu para obtener subrutas (solo para tener un buen conjunto).
+      1) Clark–Wright + Tabu para obtener subrutas (solo como buen set inicial).
       2) Extraer todos los clientes y construir UNA ruta atendiendo primero 'citas' (ventanas estrechas).
       3) Insertar flexibles entre citas sin romperlas.
+
     Resultado: no excluye clientes; si algo no cabe, reubica flexibles.
+    El DEPÓSITO también tiene tiempo de servicio (al salir de él).
     """
     depot = data["depot"]
     D = data["distance_matrix"]
@@ -168,7 +180,7 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
     n = len(D)
     nodes = [i for i in range(n) if i != depot]
 
-    # ---------- 1) Savings + Tabu (igual que tenías, con chequeo de ventanas) ----------
+    # ---------- 1) Savings + Tabu (con chequeo de ventanas) ----------
     savings = []
     for i in nodes:
         for j in nodes:
@@ -246,7 +258,7 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
         final_routes.append((best_route, arrival, best_dist))
 
     # ---------- 2) Construcción "appointments-first" ----------
-    # Clasifica citas vs flexibles. Consideramos "cita" si la ventana es estrecha (< 60 min)
+    # Consideramos "cita" si la ventana es estrecha (< 60 min)
     APPOINTMENT_THRESHOLD = 60 * 60  # 60 minutos
     all_clients = [n for rt, _, _ in final_routes for n in rt if n != depot] or nodes
 
@@ -259,7 +271,7 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
         else:
             flexibles.append(n)
 
-    # Ordena citas por w1 (earliest due date)
+    # Ordena citas por cierre de ventana (EDD)
     appointments.sort(key=lambda u: W[u][1])
 
     # Empieza la ruta en el depósito
@@ -270,32 +282,24 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
 
     # Recorre citas en orden y va rellenando huecos con flexibles
     for idx, appt in enumerate(appointments):
-        # Inserta tantos flexibles como quepan antes de la siguiente cita (si existe)
         next_appt = appointments[idx + 1] if idx + 1 < len(appointments) else None
 
-        # Primero, intenta meter flexibles antes de esta cita actual (si estamos lejos en el tiempo)
+        # Inserta flexibles antes de esta cita (si cabe)
         if flexibles:
             sub_route, sub_arr, t_now = _insert_flexibles_between(current, t_now, appt, data, flexibles)
-            # concatena (ojo: sub_route arranca en 'current'; evita duplicar ese nodo)
+            # concatena (evitando duplicar el primer nodo)
             route += sub_route[1:]
             arrivals += sub_arr[1:]
             if route[-1] != current:
                 current = route[-1]
 
-        # Viajar a la cita respetando su ventana
-        # Servicio en current (si no es depósito) + viaje
-        if current != depot:
-            t_now += SERVICE_TIME
+        # Viajar a la cita respetando su ventana: servicio en current + viaje
+        t_now += _svc(data, current)               # servicio del nodo origen (incluye depósito)
         t_arr_appt = t_now + T[current][appt]
         w0, w1 = W[appt]
         if t_arr_appt > w1:
-            # Si esto ocurre, es porque algún flexible rompió la cita; retrocedemos: no insertes antes de esta cita.
-            st.warning(f"Reajuste: removiendo inserciones previas para cumplir cita {appt}.")
-            # Estrategia simple: desde el último anchor (route[-1] es current), saltar directo a la cita
-            # Recupera tiempo al no aceptar subinsertados (en casos extremos podrías implementar backtracking).
-            # Para mantenerlo simple: ignora lo insertado desde la última cita (no guardamos snapshot -> garantizado si la pool estaba vacía o controlada).
-            pass  # Mantenemos simple; normalmente no caemos aquí por el chequeo en _insert_flexibles_between
-
+            # En principio no debería pasar por el filtro previo, pero dejamos aviso
+            st.warning(f"Reajuste: cita {appt} quedaría fuera de ventana.")
         t_now = max(t_arr_appt, w0)
         route.append(appt)
         arrivals.append(t_now)
@@ -312,18 +316,15 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
     while flexibles:
         chosen, t_eff = _greedy_step(current, t_now, flexibles, data)
         if chosen == -1:
-            # No queda flexible factible desde aquí; intenta cerrar y reabrir hueco (salto directo al flexible más cercano por tiempo)
-            # Estrategia: reintento ingenuo probando cada flexible como siguiente único
+            # Reintento simple: probar cada flexible individualmente
             assigned = False
             for cand in list(flexibles):
-                # servicio en current, viaje, esperar si hace falta
-                t_depart = t_now + (SERVICE_TIME if current != depot else 0)
+                t_depart = t_now + _svc(data, current)
                 t_arr = t_depart + T[current][cand]
                 w0, w1 = W[cand]
                 if t_arr > w1:
                     continue
                 t_eff2 = max(t_arr, w0)
-                # aceptar
                 route.append(cand)
                 arrivals.append(t_eff2)
                 flexibles.remove(cand)
@@ -332,7 +333,6 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
                 assigned = True
                 break
             if not assigned:
-                # Si de verdad ninguno cabe, rompo (pero no excluyo; ya están todos en route si eran citas).
                 st.warning("No fue posible insertar algunos flexibles sin romper ventanas; considera ampliar sus ventanas.")
                 break
         else:
@@ -342,13 +342,20 @@ def optimizar_ruta_cw_tabu(data: Dict[str, Any], tiempo_max_seg: int = 60) -> Di
             current = chosen
             t_now = t_eff
 
-    # Cierra en depósito si lo deseas (opcional). Aquí lo dejamos abierto como en tu diseño.
-    # Validación final (debería ser factible)
+    # (Opcional) cerrar en depósito:
+    # t_now += _svc(data, current)
+    # t_now += T[current][depot]
+    # w0d, w1d = W[depot]
+    # t_now = max(t_now, w0d)  # sdwadwa
+    # route.append(depot)
+    # arrivals.append(t_now)
+
+    # Validación final
     feas, arrival_chk = _check_feasible_and_time(route, data)
     if not feas:
         st.warning("La ruta resultante violaría alguna ventana; revisa ventanas o SHIFT_START_SEC.")
-        # Último recurso: no reventamos, devolvemos lo mejor actual para visualizar el conflicto.
-        arrivals = arrival_chk if arrival_chk else arrivals
+        if arrival_chk:
+            arrivals = arrival_chk
 
     dist_final = _route_distance(route, data)
 
