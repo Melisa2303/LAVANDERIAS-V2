@@ -176,7 +176,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         i = manager.IndexToNode(from_index)
         j = manager.IndexToNode(to_index)
         travel = data["duration_matrix"][i][j]
-        service = 0 if i == data["depot"] else data["service_times"][i]
+        service = 10 if i == data["depot"] else data["service_times"][i]
         return travel + service
 
     transit_cb_idx = routing.RegisterTransitCallback(time_cb)
