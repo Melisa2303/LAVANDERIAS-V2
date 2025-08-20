@@ -141,9 +141,9 @@ def _crear_data_model(df, vehiculos=1, capacidad_veh=None):
         # tiempo de servicio personalizado
         tipo = row.get("tipo", "").strip()
         if tipo == "Sucursal":
-            service_times.append(5 * 60)  # 5 minutos
+            service_times.append(10 * 60)  # 5 minutos
         elif tipo == "Planta":
-            service_times.append(60 * 60)  # 30 minutos
+            service_times.append(10 * 60)  # 30 minutos
         else:
             service_times.append(10 * 60)  # Cliente Delivery o indefinido
 
@@ -176,7 +176,7 @@ def optimizar_ruta_algoritmo22(data, tiempo_max_seg=60, reintento=False):
         i = manager.IndexToNode(from_index)
         j = manager.IndexToNode(to_index)
         travel = data["duration_matrix"][i][j]
-        service = 10 if i == data["depot"] else data["service_times"][i]
+        service = 600 if i == data["depot"] else data["service_times"][i]
         return travel + service
 
     transit_cb_idx = routing.RegisterTransitCallback(time_cb)
