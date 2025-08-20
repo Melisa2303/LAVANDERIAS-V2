@@ -408,3 +408,79 @@ def agrupar_puntos_aglomerativo(df, eps_metros=5):
             "operacion":      "Agrupado",
             "nombre_cliente": nombre_desc,
             "direccion":      direccion_desc,
+            "lat":            centro_lat,
+            "lon":            centro_lon,
+            "time_start":     inicio_cluster,
+            "time_end":       fin_cluster,
+            "demand":         demanda_total
+        })
+
+    df_clusters = pd.DataFrame(agrupados)
+    return df_clusters, df_labeled
+
+# ===================== CARGAR PEDIDOS DESDE FIRESTORE =====================
+
+@st.cache_data(ttl=300)
+def cargar_pedidos(fecha, tipo):
+    """
+    Lee de Firestore 'recogidas' por fecha de recojo/entrega y tipo de servicio.
+    Retorna lista de dicts con: id, operacion, nombre_cliente, direccion, lat, lon,
+    time_start, time_end, demand, tipo
+    """
+    col = db.collection('recogidas')
+    docs = []
+    # Todas las recogidas cuya fecha_recojo coincida
+    docs += col.where("fecha_recojo", "==", fecha.strftime("%Y-%m-%d")).stream()
+    # Todas las recogidas cuya fecha_entrega coincida
+    docs += col.where("fecha_entrega", "==", fecha.strftime("%Y-%m-%d")).stream()
+
+    if tipo != "Todos":
+        tf = "Sucursal" if tipo == "Sucursal" else "Cliente Delivery"
+        docs = [d for d in docs if d.to_dict().get("tipo_solicitud") == tf]
+
+    out = []
+    for d in docs:
+        data = d.to_dict()
+        is_recojo = data.get("fecha_recojo") == fecha.strftime("%Y-%m-%d")
+        op = "Recojo" if is_recojo else "Entrega"
+
+        # Extraer coordenadas y dirección según tipo
+        key_coord = f"coordenadas_{'recojo' if is_recojo else 'entrega'}"
+        key_dir   = f"direccion_{'recojo' if is_recojo else 'entrega'}"
+        coords = data.get(key_coord, {})
+        lat, lon = coords.get("lat"), coords.get("lon")
+        direccion = data.get(key_dir, "") or ""
+
+        # Extraer nombre del cliente o sucursal
+        nombre = data.get("nombre_cliente")
+        if not nombre:
+            nombre = data.get("sucursal", "") or "Sin nombre"
+
+        # Hora de servicio
+        hs = data.get(f"hora_{'recojo' if is_recojo else 'entrega'}", "")
+        ts, te = (hs, hs) if hs else ("08:30", "17:00")
+
+        out.append({
+            "id":             d.id,
+            "operacion":      op,
+            "nombre_cliente": nombre,
+            "direccion":      direccion,
+            "lat":            lat,
+            "lon":            lon,
+            "time_start":     ts,
+            "time_end":       te,
+            "demand":         1,
+            "tipo":           (data.get("tipo_solicitud", "") or "").strip()
+        })
+
+    return out
+
+# ===================== NOTA DE USO =====================
+# Para construir el data model correctamente con depósito en 0:
+# data = _crear_data_model(df_pedidos, vehiculos=1, capacidad_veh=None, cochera=COCHERA)
+# resultado = optimizar_ruta_algoritmo22(data, tiempo_max_seg=60)
+#
+# resultado["routes"][0]["route"]        → indices de clientes (sin depósito)
+# resultado["routes"][0]["arrival_sec"]  → llegada a cada cliente
+#
+# La diferencia arrival[i+1] - arrival[i] incluye: service(i) + travel(i→i+1) + espera (si hubo).
