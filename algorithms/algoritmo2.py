@@ -11,7 +11,7 @@ from algorithms.algoritmo1 import SERVICE_TIME, SHIFT_START_SEC  # ambos en segu
 # ===================== Config servicio depósito / helper =====================
 
 #Service time primer nodo
-DEPOT_SERVICE_SEC = 10 * 60  # 10 minutos
+DEPOT_SERVICE_SEC = 8 * 60  # 10 minutos
 
 def _svc(data: Dict[str, Any], node: int) -> int:
     """
