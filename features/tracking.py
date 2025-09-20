@@ -8,8 +8,8 @@ import requests
 import pytz
 
 # Configuración del servidor Traccar
-TRACCAR_URL = "https://traccar-docker-production.up.railway.app"
-TRACCAR_USERNAME = "melisa.mezadelg@gmail.com"  # Cambia según tus credenciales
+TRACCAR_URL = "https://lavanderias-v2-production.up.railway.app"
+TRACCAR_USERNAME = "melisabrigitteg@gmail.com"  # Cambia según tus credenciales
 TRACCAR_PASSWORD = "lavanderias"  # Cambia según tus credenciales
 
 # Obtener posiciones desde la API de Traccar
