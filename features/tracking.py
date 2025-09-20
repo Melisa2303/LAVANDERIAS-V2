@@ -9,7 +9,7 @@ import pytz
 
 # Configuración del servidor Traccar
 TRACCAR_URL = "https://lavanderias-v2-production.up.railway.app"
-TRACCAR_USERNAME = "melisabrigitteg@gmail.com"  # Cambia según tus credenciales
+TRACCAR_USERNAME = "melisabrigitte@gmail.com"  # Cambia según tus credenciales
 TRACCAR_PASSWORD = "lavanderias"  # Cambia según tus credenciales
 
 # Obtener posiciones desde la API de Traccar
