@@ -8,7 +8,7 @@ import requests
 import pytz
 
 # Configuración del servidor Traccar
-TRACCAR_URL = "https://lavanderias-v2-production.up.railway.app"
+TRACCAR_URL = "https://traccar-docker-83zi.onrender.com"
 TRACCAR_USERNAME = "melisabrigitte@gmail.com"  # Cambia según tus credenciales
 TRACCAR_PASSWORD = "lavanderias"  # Cambia según tus credenciales
 
