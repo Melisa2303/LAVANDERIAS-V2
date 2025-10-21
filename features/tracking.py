@@ -24,50 +24,50 @@ def seguimiento_vehiculo():
         df = pd.read_csv(csv_url)
         df = df.rename(columns=lambda x: x.strip().lower())
 
-        # Verificar columnas
-        if not all(col in df.columns for col in ["FECHA", "LAT", "LON"]):
-            st.error("❌ El CSV debe tener las columnas: Fecha, Latitud, Longitud")
+        # Verificar columnas esperadas
+        if not all(col in df.columns for col in ["fecha", "lat", "lon"]):
+            st.error("❌ El CSV debe tener las columnas: FECHA, LAT, LON")
             st.write("Columnas detectadas:", list(df.columns))
             return
 
         # Intentar convertir coordenadas a número
-        df['latitud'] = pd.to_numeric(df['latitud'], errors='coerce')
-        df['longitud'] = pd.to_numeric(df['longitud'], errors='coerce')
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
 
-        # Si hay muchos NaN, intentar corregir (significa que venían con comas)
-        if df['latitud'].isna().mean() > 0.5:
-            df['latitud'] = df['latitud'].astype(str).str.replace(',', '.', regex=False)
-            df['longitud'] = df['longitud'].astype(str).str.replace(',', '.', regex=False)
-            df['latitud'] = pd.to_numeric(df['latitud'], errors='coerce')
-            df['longitud'] = pd.to_numeric(df['longitud'], errors='coerce')
+        # Si más de la mitad son NaN, probablemente tienen comas
+        if df['lat'].isna().mean() > 0.5:
+            df['lat'] = df['lat'].astype(str).str.replace(',', '.', regex=False)
+            df['lon'] = df['lon'].astype(str).str.replace(',', '.', regex=False)
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
 
-        # Limpiar filas vacías
-        df = df.dropna(subset=['latitud', 'longitud'])
+        # Eliminar filas sin coordenadas válidas
+        df = df.dropna(subset=['lat', 'lon'])
 
-        # Convertir fechas
+        # Convertir columna de fecha
         df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
         df = df.dropna(subset=['fecha'])
 
-        # Filtrar por día actual
+        # Filtrar solo los datos de hoy
         hoy = datetime.now().date()
-        df_dia = df[df['fecha'].dt.date == hoy]
+        df_hoy = df[df['fecha'].dt.date == hoy]
 
-        if df_dia.empty:
+        if df_hoy.empty:
             st.warning("📅 No hay ubicaciones registradas para hoy aún.")
             return
 
-        # Última ubicación
-        ultimo = df_dia.iloc[-1]
-        lat, lon = ultimo['latitud'], ultimo['longitud']
+        # Último punto
+        ultimo = df_hoy.iloc[-1]
+        lat, lon = ultimo['lat'], ultimo['lon']
 
-        # Crear mapa centrado en la última posición
+        # Crear mapa centrado en el último punto
         m = folium.Map(location=[lat, lon], zoom_start=15, control_scale=True)
 
-        # Dibujar ruta recorrida
-        ruta = list(zip(df_dia['latitud'], df_dia['longitud']))
+        # Dibujar la ruta (línea azul)
+        ruta = list(zip(df_hoy['lat'], df_hoy['lon']))
         PolyLine(ruta, color="blue", weight=4, opacity=0.7).add_to(m)
 
-        # Marcar última posición
+        # Agregar marcador en última ubicación
         Marker(
             [lat, lon],
             popup=f"Última ubicación ({ultimo['fecha'].strftime('%H:%M:%S')})",
@@ -77,9 +77,9 @@ def seguimiento_vehiculo():
         # Mostrar mapa
         st_folium(m, width=800, height=500)
 
-        # Mostrar últimas coordenadas
+        # Mostrar últimas posiciones
         st.subheader("📋 Últimas posiciones del día")
-        st.dataframe(df_dia.tail(10).sort_values(by="fecha", ascending=False))
+        st.dataframe(df_hoy.tail(10).sort_values(by="fecha", ascending=False))
 
     except Exception as e:
         st.error("⚠️ Error al procesar los datos.")
