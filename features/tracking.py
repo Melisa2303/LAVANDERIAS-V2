@@ -73,6 +73,12 @@ def seguimiento_vehiculo():
         # Mostrar mapa
         st_folium(m, width=800, height=500)
 
+        # 🔹 Nueva sección: información de actualización
+        st.markdown(
+            f"<p style='font-size:16px; color:gray;'>🕓 Última actualización: <b>{ultimo['fecha'].strftime('%d/%m/%Y %H:%M:%S')}</b> &nbsp;&nbsp;|&nbsp;&nbsp; 📍 Total posiciones del día: <b>{len(df_sel)}</b></p>",
+            unsafe_allow_html=True
+        )
+
         # Mostrar últimas posiciones
         st.subheader(f"📋 Posiciones registradas el {fecha_sel}")
         st.dataframe(df_sel.sort_values(by="fecha", ascending=False).tail(15))
