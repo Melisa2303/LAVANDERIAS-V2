@@ -4,6 +4,7 @@ import folium
 from folium import PolyLine, Marker
 from streamlit_folium import st_folium
 from datetime import datetime
+import pytz
 
 def seguimiento_vehiculo():
     # Encabezado
@@ -44,12 +45,21 @@ def seguimiento_vehiculo():
         # Eliminar filas sin coordenadas válidas
         df = df.dropna(subset=['lat', 'lon'])
 
-        # Convertir columna de fecha con formato correcto (día/mes/año)
-        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce', dayfirst=True)
+        # Convertir columna de fecha con formato exacto (dd/mm/yyyy HH:MM:SS)
+        df['fecha'] = pd.to_datetime(df['fecha'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+
+        # Eliminar filas con fechas no válidas
         df = df.dropna(subset=['fecha'])
 
-        # Filtrar solo los datos de hoy
-        hoy = datetime.now().date()
+        # Ajustar zona horaria a Lima (por si el servidor está en UTC)
+        lima_tz = pytz.timezone("America/Lima")
+        df['fecha'] = df['fecha'].dt.tz_localize(None)  # Asegurar sin tz antes
+        df['fecha'] = df['fecha'].dt.tz_localize("UTC").dt.tz_convert(lima_tz)
+
+        # Fecha actual en Lima
+        hoy = datetime.now(lima_tz).date()
+
+        # Filtrar registros del día actual
         df_hoy = df[df['fecha'].dt.date == hoy]
 
         if df_hoy.empty:
