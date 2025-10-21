@@ -14,55 +14,69 @@ def seguimiento_vehiculo():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📍 Seguimiento de Vehículo")
 
-    # 👉 Pega aquí el link de tu Google Sheet publicado como CSV
+    # URL del Google Sheet publicado como CSV
     csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOcPceVl3tWhsP4RPdDVhj-lsZH-giVpzRdqDBKq2LVlaUbZ2QZ7VOZ-Gc9Q-drcdU8Zuhet8eYRe2/pub?gid=0&single=true&output=csv"
 
     st.caption("Los datos se actualizan automáticamente desde Google Sheets.")
 
     try:
-        # Leer CSV directamente desde Google Sheets
         df = pd.read_csv(csv_url)
         df = df.rename(columns=lambda x: x.strip().lower())
 
-        # Verificar columnas esperadas
+        # Verificar columnas necesarias
         if not all(col in df.columns for col in ["fecha", "lat", "lon"]):
             st.error("❌ El CSV debe tener las columnas: FECHA, LAT, LON")
             st.write("Columnas detectadas:", list(df.columns))
             return
 
-        # Convertir coordenadas a número
-        df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-        df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+        # Asegurar formato correcto de coordenadas
+        df['lat'] = df['lat'].astype(str).str.replace(',', '.', regex=False)
+        df['lon'] = df['lon'].astype(str).str.replace(',', '.', regex=False)
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+        df = df.dropna(subset=['lat', 'lon'])
 
-        # Si hay demasiados NaN, probablemente hay comas en vez de puntos
-        if df["lat"].isna().mean() > 0.5:
-            df["lat"] = df["lat"].astype(str).str.replace(",", ".", regex=False)
-            df["lon"] = df["lon"].astype(str).str.replace(",", ".", regex=False)
-            df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
-            df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+        # Convertir fecha con reconocimiento flexible
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce', infer_datetime_format=True, dayfirst=True)
+        df = df.dropna(subset=['fecha'])
 
-        # Eliminar filas sin coordenadas válidas
-        df = df.dropna(subset=["lat", "lon"])
+        # Mostrar fechas detectadas
+        st.write("🕒 Fechas detectadas:", df['fecha'].dt.date.unique())
 
-        # Convertir columna de fecha (día/mes/año hh:mm:ss)
-        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce", dayfirst=True)
-        df = df.dropna(subset=["fecha"])
-
-        # Filtrar solo los datos del día actual
+        # Filtrar solo por fecha seleccionada (por defecto hoy)
         hoy = datetime.now().date()
-        df_hoy = df[df["fecha"].dt.date == hoy]
+        fecha_sel = st.date_input("Selecciona fecha a visualizar", hoy)
+        df_sel = df[df['fecha'].dt.date == fecha_sel]
 
-        if df_hoy.empty:
-            st.warning("📅 No hay ubicaciones registradas para hoy aún.")
+        if df_sel.empty:
+            st.warning(f"📅 No hay ubicaciones registradas para {fecha_sel}.")
             return
 
-        # Tomar el último punto registrado
-        ultimo = df_hoy.iloc[-1]
-        lat, lon = ultimo["lat"], ultimo["lon"]
+        # Último punto
+        ultimo = df_sel.iloc[-1]
+        lat, lon = ultimo['lat'], ultimo['lon']
 
-        # Mostrar hora de última actualización
-        ultima_hora = ultimo["fecha"].strftime("%d/%m/%Y %H:%M:%S")
-        st.markdown(f"🕒 **Última actualización:** {ultima_hora}")
+        # Crear mapa centrado en el último punto
+        m = folium.Map(location=[lat, lon], zoom_start=15, control_scale=True)
 
-        # Crear el mapa centrado en el último punto
-        m = folium.Map(location=[lat, lon], zoom_start_
+        # Dibujar ruta
+        ruta = list(zip(df_sel['lat'], df_sel['lon']))
+        PolyLine(ruta, color="blue", weight=4, opacity=0.7).add_to(m)
+
+        # Agregar marcador de última posición
+        Marker(
+            [lat, lon],
+            popup=f"Última ubicación ({ultimo['fecha'].strftime('%d/%m %H:%M:%S')})",
+            icon=folium.Icon(color="red", icon="truck", prefix="fa")
+        ).add_to(m)
+
+        # Mostrar mapa
+        st_folium(m, width=800, height=500)
+
+        # Mostrar últimas posiciones
+        st.subheader(f"📋 Posiciones registradas el {fecha_sel}")
+        st.dataframe(df_sel.sort_values(by="fecha", ascending=False).tail(15))
+
+    except Exception as e:
+        st.error("⚠️ Error al procesar los datos.")
+        st.write(str(e))
