@@ -25,7 +25,7 @@ def seguimiento_vehiculo():
         df = df.rename(columns=lambda x: x.strip().lower())
 
         # Verificar columnas
-        if not all(col in df.columns for col in ["Fecha", "Lat", "Lon"]):
+        if not all(col in df.columns for col in ["FECHA", "LAT", "LON"]):
             st.error("❌ El CSV debe tener las columnas: Fecha, Latitud, Longitud")
             st.write("Columnas detectadas:", list(df.columns))
             return
