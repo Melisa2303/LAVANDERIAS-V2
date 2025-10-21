@@ -4,7 +4,6 @@ import folium
 from folium import PolyLine, Marker
 from streamlit_folium import st_folium
 from datetime import datetime
-import pytz
 
 def seguimiento_vehiculo():
     # Encabezado
@@ -15,72 +14,59 @@ def seguimiento_vehiculo():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📍 Seguimiento de Vehículo")
 
-    # 👉 Pega aquí el link de tu Google Sheet publicado como CSV
-    csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOcPceVl3tWhsP4RPdDVhj-lsZH-giVpzRdqDBKq2LVlaUbZ2QZ7VOZ-Gc9Q-drcdU8Zuhet8eYRe2/pub?gid=0&single=true&output=csv"  # Ejemplo: "https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
+    # URL del Google Sheet publicado como CSV
+    csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOcPceVl3tWhsP4RPdDVhj-lsZH-giVpzRdqDBKq2LVlaUbZ2QZ7VOZ-Gc9Q-drcdU8Zuhet8eYRe2/pub?gid=0&single=true&output=csv"
 
     st.caption("Los datos se actualizan automáticamente desde Google Sheets.")
 
     try:
-        # Leer CSV directamente desde la web
         df = pd.read_csv(csv_url)
         df = df.rename(columns=lambda x: x.strip().lower())
 
-        # Verificar columnas esperadas
+        # Verificar columnas necesarias
         if not all(col in df.columns for col in ["fecha", "lat", "lon"]):
             st.error("❌ El CSV debe tener las columnas: FECHA, LAT, LON")
             st.write("Columnas detectadas:", list(df.columns))
             return
 
-        # Intentar convertir coordenadas a número
+        # Asegurar formato correcto de coordenadas
+        df['lat'] = df['lat'].astype(str).str.replace(',', '.', regex=False)
+        df['lon'] = df['lon'].astype(str).str.replace(',', '.', regex=False)
         df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
         df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-
-        # Si más de la mitad son NaN, probablemente tienen comas
-        if df['lat'].isna().mean() > 0.5:
-            df['lat'] = df['lat'].astype(str).str.replace(',', '.', regex=False)
-            df['lon'] = df['lon'].astype(str).str.replace(',', '.', regex=False)
-            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-
-        # Eliminar filas sin coordenadas válidas
         df = df.dropna(subset=['lat', 'lon'])
 
-        # Convertir columna de fecha con formato exacto (dd/mm/yyyy HH:MM:SS)
-        df['fecha'] = pd.to_datetime(df['fecha'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-
-        # Eliminar filas con fechas no válidas
+        # Convertir fecha con reconocimiento flexible
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce', infer_datetime_format=True, dayfirst=True)
         df = df.dropna(subset=['fecha'])
 
-        # Ajustar zona horaria a Lima (por si el servidor está en UTC)
-        lima_tz = pytz.timezone("America/Lima")
-        df['fecha'] = df['fecha'].dt.tz_localize(None)  # Asegurar sin tz antes
-        df['fecha'] = df['fecha'].dt.tz_localize("UTC").dt.tz_convert(lima_tz)
+        # Mostrar fechas detectadas
+        st.write("🕒 Fechas detectadas:", df['fecha'].dt.date.unique())
 
-        # Fecha actual en Lima
-        hoy = datetime.now(lima_tz).date()
+        # Filtrar solo por fecha seleccionada (por defecto hoy)
+        hoy = datetime.now().date()
+        fecha_sel = st.date_input("Selecciona fecha a visualizar", hoy)
+        df_sel = df[df['fecha'].dt.date == fecha_sel]
 
-        # Filtrar registros del día actual
-        df_hoy = df[df['fecha'].dt.date == hoy]
-
-        if df_hoy.empty:
-            st.warning("📅 No hay ubicaciones registradas para hoy aún.")
+        if df_sel.empty:
+            st.warning(f"📅 No hay ubicaciones registradas para {fecha_sel}.")
             return
 
         # Último punto
-        ultimo = df_hoy.iloc[-1]
+        ultimo = df_sel.iloc[-1]
         lat, lon = ultimo['lat'], ultimo['lon']
 
         # Crear mapa centrado en el último punto
         m = folium.Map(location=[lat, lon], zoom_start=15, control_scale=True)
 
-        # Dibujar la ruta (línea azul)
-        ruta = list(zip(df_hoy['lat'], df_hoy['lon']))
+        # Dibujar ruta
+        ruta = list(zip(df_sel['lat'], df_sel['lon']))
         PolyLine(ruta, color="blue", weight=4, opacity=0.7).add_to(m)
 
-        # Agregar marcador en última ubicación
+        # Agregar marcador de última posición
         Marker(
             [lat, lon],
-            popup=f"Última ubicación ({ultimo['fecha'].strftime('%H:%M:%S')})",
+            popup=f"Última ubicación ({ultimo['fecha'].strftime('%d/%m %H:%M:%S')})",
             icon=folium.Icon(color="red", icon="truck", prefix="fa")
         ).add_to(m)
 
@@ -88,8 +74,8 @@ def seguimiento_vehiculo():
         st_folium(m, width=800, height=500)
 
         # Mostrar últimas posiciones
-        st.subheader("📋 Últimas posiciones del día")
-        st.dataframe(df_hoy.tail(10).sort_values(by="fecha", ascending=False))
+        st.subheader(f"📋 Posiciones registradas el {fecha_sel}")
+        st.dataframe(df_sel.sort_values(by="fecha", ascending=False).tail(15))
 
     except Exception as e:
         st.error("⚠️ Error al procesar los datos.")
