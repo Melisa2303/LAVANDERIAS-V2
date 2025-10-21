@@ -44,8 +44,8 @@ def seguimiento_vehiculo():
         # Eliminar filas sin coordenadas válidas
         df = df.dropna(subset=['lat', 'lon'])
 
-        # Convertir columna de fecha
-        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+        # Convertir columna de fecha con formato correcto (día/mes/año)
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce', dayfirst=True)
         df = df.dropna(subset=['fecha'])
 
         # Filtrar solo los datos de hoy
