@@ -1,88 +1,114 @@
+# Lógica para el seguimiento del vehiculo
+
 import streamlit as st
-import pandas as pd
 import folium
-from folium import PolyLine, Marker
 from streamlit_folium import st_folium
-from datetime import datetime
+from datetime import datetime, time
+import requests
+import pytz
+
+# Configuración del servidor Traccar
+TRACCAR_URL = "http://traccar-production-8d92.up.railway.app"
+TRACCAR_USERNAME = "delgado.ariana18@gmail.com"  # Cambia según tus credenciales
+TRACCAR_PASSWORD = "lav123"  # Cambia según tus credenciales
+
+# Obtener posiciones desde la API de Traccar
+@st.cache_data(ttl=10)  # Actualiza cada 10 segundos
+def obtener_posiciones():
+    try:
+        response = requests.get(
+            f"{TRACCAR_URL}/api/positions",
+            auth=(TRACCAR_USERNAME, TRACCAR_PASSWORD)
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error al obtener posiciones: {e}")
+        return []
+
+def obtener_historial(device_id):
+    try:
+        ahora = datetime.utcnow()
+        inicio = ahora.replace(hour=7, minute=30, second=0, microsecond=0)
+        fin = ahora.replace(hour=19, minute=0, second=0, microsecond=0)
+
+        # Asegura que esté en formato ISO (UTC)
+        inicio_str = inicio.isoformat() + "Z"
+        fin_str = fin.isoformat() + "Z"
+
+        url = f"{TRACCAR_URL}/api/positions?deviceId={device_id}&from={inicio_str}&to={fin_str}"
+
+        response = requests.get(url, auth=(TRACCAR_USERNAME, TRACCAR_PASSWORD))
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error al obtener historial: {e}")
+        return []
 
 def seguimiento_vehiculo():
     # Encabezado
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📍 Seguimiento de Vehículo")
 
-    # URL del Google Sheet publicado como CSV
-    csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOcPceVl3tWhsP4RPdDVhj-lsZH-giVpzRdqDBKq2LVlaUbZ2QZ7VOZ-Gc9Q-drcdU8Zuhet8eYRe2/pub?gid=0&single=true&output=csv"
+    # Validación de horario permitido 
+    hora_actual = datetime.now().time()
+    hora_inicio = time(7, 30)
+    hora_fin = time(19, 0)
 
-    st.caption("Los datos se actualizan automáticamente desde Google Sheets.")
+    if not (hora_inicio <= hora_actual <= hora_fin):
+        st.warning("🚫 El seguimiento del vehículo solo está disponible de 7:30 a.m. a 7:00 p.m.")
+        return
+    
+    # Obtener posiciones actuales desde la API
+    posiciones = obtener_posiciones()
+    if posiciones:
+        # Suponiendo que obtenemos detalles del primer vehículo
+        posicion = posiciones[0]  # Consideramos un solo vehículo
+        lat, lon = posicion["latitude"], posicion["longitude"]
+        device_id = posicion["deviceId"]
+        velocidad = posicion.get("speed", 0)  # Velocidad en km/h
+        ultima_actualizacion = posicion.get("fixTime", "No disponible")  # Hora de última posición
+       
+        # Convertir a hora local
+        utc_dt = datetime.fromisoformat(ultima_actualizacion.replace("Z", "+00:00"))
+        local_tz = pytz.timezone("America/Lima")
+        local_dt = utc_dt.astimezone(local_tz)
+        ultima_actualizacion_local = local_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    try:
-        df = pd.read_csv(csv_url)
-        df = df.rename(columns=lambda x: x.strip().lower())
+        # Dividir en columnas para diseño
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            # Mapa interactivo
+            m = folium.Map(location=[lat, lon], zoom_start=13, control_scale=True)
+            folium.Marker(
+                location=[lat, lon],
+                popup=f"Vehículo ID: {device_id}\nVelocidad: {velocidad} km/h",
+                icon=folium.Icon(color="red", icon="car", prefix="fa")
+            ).add_to(m)
+            st_folium(m, width=700, height=500)
 
-        # Verificar columnas necesarias
-        if not all(col in df.columns for col in ["fecha", "lat", "lon"]):
-            st.error("❌ El CSV debe tener las columnas: FECHA, LAT, LON")
-            st.write("Columnas detectadas:", list(df.columns))
-            return
+        with col2:
+            # Panel de detalles
+            st.markdown(f"""
+                <div style='background-color: #f9f9f9; padding: 15px; border-radius: 5px;'>
+                    <h4>🚗 <b>Detalles del Vehículo</b></h4>
+                    <p><b>ID:</b> {device_id}</p>
+                    <p><b>Velocidad:</b> {velocidad} km/h</p>
+                    <p><b>Última Actualización:</b> {ultima_actualizacion_local}</p>
+                </div>
+            """, unsafe_allow_html=True)
 
-        # Asegurar formato correcto de coordenadas
-        df['lat'] = df['lat'].astype(str).str.replace(',', '.', regex=False)
-        df['lon'] = df['lon'].astype(str).str.replace(',', '.', regex=False)
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-        df = df.dropna(subset=['lat', 'lon'])
-
-        # Convertir fecha con reconocimiento flexible
-        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce', infer_datetime_format=True, dayfirst=True)
-        df = df.dropna(subset=['fecha'])
-
-        # Mostrar fechas detectadas
-        st.write("🕒 Fechas detectadas:", df['fecha'].dt.date.unique())
-
-        # Filtrar solo por fecha seleccionada (por defecto hoy)
-        hoy = datetime.now().date()
-        fecha_sel = st.date_input("Selecciona fecha a visualizar", hoy)
-        df_sel = df[df['fecha'].dt.date == fecha_sel]
-
-        if df_sel.empty:
-            st.warning(f"📅 No hay ubicaciones registradas para {fecha_sel}.")
-            return
-
-        # Último punto
-        ultimo = df_sel.iloc[-1]
-        lat, lon = ultimo['lat'], ultimo['lon']
-
-        # Crear mapa centrado en el último punto
-        m = folium.Map(location=[lat, lon], zoom_start=15, control_scale=True)
-
-        # Dibujar ruta
-        ruta = list(zip(df_sel['lat'], df_sel['lon']))
-        PolyLine(ruta, color="blue", weight=4, opacity=0.7).add_to(m)
-
-        # Agregar marcador de última posición
-        Marker(
-            [lat, lon],
-            popup=f"Última ubicación ({ultimo['fecha'].strftime('%d/%m %H:%M:%S')})",
-            icon=folium.Icon(color="red", icon="truck", prefix="fa")
-        ).add_to(m)
-
-        # Mostrar mapa
-        st_folium(m, width=800, height=500)
-
-        # 🔹 Nueva sección: información de actualización
-        st.markdown(
-            f"<p style='font-size:16px; color:gray;'>🕓 Última actualización: <b>{ultimo['fecha'].strftime('%d/%m/%Y %H:%M:%S')}</b> &nbsp;&nbsp;|&nbsp;&nbsp; 📍 Total posiciones del día: <b>{len(df_sel)}</b></p>",
-            unsafe_allow_html=True
-        )
-
-        # Mostrar últimas posiciones
-        st.subheader(f"📋 Posiciones registradas el {fecha_sel}")
-        st.dataframe(df_sel.sort_values(by="fecha", ascending=False).tail(15))
-
-    except Exception as e:
-        st.error("⚠️ Error al procesar los datos.")
-        st.write(str(e))
+        # Mostrar historial de ruta
+        historial = obtener_historial(device_id)
+        if historial and len(historial) > 1:
+            ruta = [(p["latitude"], p["longitude"]) for p in historial]
+            folium.PolyLine(ruta, color="blue", weight=2.5, opacity=0.8, tooltip="Ruta del Día").add_to(m)
+            
+        # Botón para actualizar manualmente (sin filtro dinámico)
+        st.button("🔄 Actualizar Datos")
+    else:
+        st.warning("No hay posiciones disponibles en este momento.")
