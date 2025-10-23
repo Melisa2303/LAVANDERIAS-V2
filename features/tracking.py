@@ -49,19 +49,19 @@ def seguimiento_vehiculo():
     # Encabezado
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/LOGO.PNG", width=100)
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
     with col2:
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("📍 Seguimiento de Vehículo")
 
-    # Validación de horario permitido 
-    hora_actual = datetime.now().time()
-    hora_inicio = time(7, 30)
-    hora_fin = time(19, 0)
+#    # Validación de horario permitido 
+#    hora_actual = datetime.now().time()
+#    hora_inicio = time(7, 30)
+#    hora_fin = time(19, 0)
 
-    if not (hora_inicio <= hora_actual <= hora_fin):
-        st.warning("🚫 El seguimiento del vehículo solo está disponible de 7:30 a.m. a 7:00 p.m.")
-        return
+#    if not (hora_inicio <= hora_actual <= hora_fin):
+#        st.warning("🚫 El seguimiento del vehículo solo está disponible de 7:30 a.m. a 7:00 p.m.")
+#        return
     
     # Obtener posiciones actuales desde la API
     posiciones = obtener_posiciones()
