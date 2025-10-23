@@ -8,7 +8,7 @@ import requests
 import pytz
 
 # Configuración del servidor Traccar
-TRACCAR_URL = "http://traccar-production-8d92.up.railway.app"
+TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"
 TRACCAR_USERNAME = "delgado.ariana18@gmail.com"  # Cambia según tus credenciales
 TRACCAR_PASSWORD = "lav123"  # Cambia según tus credenciales
 
