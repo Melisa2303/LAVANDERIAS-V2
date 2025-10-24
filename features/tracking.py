@@ -65,8 +65,8 @@ def seguimiento_vehiculo():
         if posicion:
             lat, lon = posicion["latitude"], posicion["longitude"]
 
-            # columnas más equilibradas
-            col_mapa, col_info = st.columns([2, 1.2])
+            # columnas ajustadas
+            col_mapa, col_info = st.columns([2.3, 0.9])
 
             # --- Mapa ---
             with col_mapa:
@@ -78,7 +78,7 @@ def seguimiento_vehiculo():
                 ).add_to(mapa)
                 st_folium(mapa, width=700, height=450)
 
-            # --- Detalles del vehículo (recuadro mejorado) ---
+            # --- Detalles del vehículo ---
             with col_info:
                 hora_local = datetime.datetime.fromisoformat(posicion["deviceTime"].replace('Z', '+00:00')).astimezone()
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
@@ -107,7 +107,7 @@ def seguimiento_vehiculo():
     # 🗺️ RUTA DEL DÍA
     # =====================
     elif vista == "🗺️ Ruta del día":
-        col_mapa, col_filtro = st.columns([2.6, 1.2])
+        col_mapa, col_filtro = st.columns([2.8, 0.9])
 
         with col_filtro:
             st.markdown("""
