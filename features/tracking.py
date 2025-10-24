@@ -65,7 +65,8 @@ def seguimiento_vehiculo():
         if posicion:
             lat, lon = posicion["latitude"], posicion["longitude"]
 
-            col_mapa, col_info = st.columns([2.3, 1])
+            # columnas más equilibradas
+            col_mapa, col_info = st.columns([2, 1.2])
 
             # --- Mapa ---
             with col_mapa:
@@ -106,7 +107,7 @@ def seguimiento_vehiculo():
     # 🗺️ RUTA DEL DÍA
     # =====================
     elif vista == "🗺️ Ruta del día":
-        col_mapa, col_filtro = st.columns([3, 1])
+        col_mapa, col_filtro = st.columns([2.6, 1.2])
 
         with col_filtro:
             st.markdown("""
