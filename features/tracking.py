@@ -26,13 +26,20 @@ def obtener_posicion_actual():
     return None
 
 def obtener_ruta_hoy():
-    hoy = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    mañana = hoy + datetime.timedelta(days=1)
+    # Ajustar a horario de Perú (UTC-5)
+    tz_peru = datetime.timezone(datetime.timedelta(hours=-5))
+    hoy_local = datetime.datetime.now(tz_peru).replace(hour=0, minute=0, second=0, microsecond=0)
+    mañana_local = hoy_local + datetime.timedelta(days=1)
+
+    # Convertir a UTC para Traccar
+    hoy_utc = hoy_local.astimezone(datetime.timezone.utc)
+    mañana_utc = mañana_local.astimezone(datetime.timezone.utc)
+
     url = f"{TRACCAR_URL}/api/positions"
     params = {
         "deviceId": DEVICE_ID,
-        "from": hoy.isoformat() + "Z",
-        "to": mañana.isoformat() + "Z"
+        "from": hoy_utc.isoformat().replace("+00:00", "Z"),
+        "to": mañana_utc.isoformat().replace("+00:00", "Z")
     }
     r = requests.get(url, params=params, auth=(USERNAME, PASSWORD))
     r.raise_for_status()
