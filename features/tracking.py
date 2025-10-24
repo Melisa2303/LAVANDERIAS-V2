@@ -65,6 +65,12 @@ def seguimiento_vehiculo():
         if posicion:
             lat, lon = posicion["latitude"], posicion["longitude"]
 
+            # --- Recuadro general (mapa + detalles) ---
+            st.markdown("""
+            <div style='background-color: #f8f9fa; padding: 25px; border-radius: 15px;
+                        box-shadow: 0 3px 8px rgba(0,0,0,0.1);'>
+            """, unsafe_allow_html=True)
+
             col_mapa, col_info = st.columns([2.3, 1])
 
             # --- Mapa ---
@@ -80,9 +86,8 @@ def seguimiento_vehiculo():
             # --- Detalles del vehículo ---
             with col_info:
                 st.markdown("""
-                <div style='background-color: #f8f9fa; padding: 20px; border-radius: 12px; 
-                            box-shadow: 0 2px 6px rgba(0,0,0,0.1);'>
-                    <h4 style='color:#2E86C1;'>Detalles del Vehículo</h4>
+                <h4 style='color:#2E86C1;'>Detalles del Vehículo</h4>
+                <hr style='margin-top:0;margin-bottom:10px;border:1px solid #ddd;'>
                 """, unsafe_allow_html=True)
                 st.markdown(f"**ID:** {posicion['deviceId']}")
                 st.markdown(f"**Latitud:** {lat}")
@@ -92,11 +97,13 @@ def seguimiento_vehiculo():
                 st.markdown(f"**Hora local:** {hora_local.strftime('%Y-%m-%d %H:%M:%S')}")
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
                 st.markdown(f"**Movimiento:** {'🟢 En marcha' if en_movimiento else '🔴 Detenido'}")
-                st.markdown("</div>", unsafe_allow_html=True)
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🔄 Actualizar ubicación"):
                     st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
         else:
             st.warning("No se encontró información del vehículo.")
 
