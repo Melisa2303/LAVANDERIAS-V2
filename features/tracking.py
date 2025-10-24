@@ -28,7 +28,7 @@ def obtener_posicion_actual():
 def obtener_ruta_hoy():
     hoy = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     mañana = hoy + datetime.timedelta(days=1)
-    url = f"{TRACCAR_URL}/api/positions"
+    url = f"{TRACCAR_URL}/api/reports/route"
     params = {
         "deviceId": DEVICE_ID,
         "from": hoy.isoformat() + "Z",
@@ -50,10 +50,8 @@ def seguimiento_vehiculo():
         st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
     st.title("🚗 Seguimiento del Vehículo")
 
-    # Botón para incluir puntos sin movimiento
     incluir_estaticos = st.checkbox("Mostrar puntos sin movimiento", value=False)
 
-    # Obtener datos
     posicion = obtener_posicion_actual()
     ruta = obtener_ruta_hoy()
 
@@ -64,23 +62,25 @@ def seguimiento_vehiculo():
     lat, lon = posicion["latitude"], posicion["longitude"]
     mapa = folium.Map(location=[lat, lon], zoom_start=15)
 
-    # Filtrar ruta (solo con movimiento si el checkbox está desactivado)
     if len(ruta) > 1:
         if not incluir_estaticos:
-            ruta = [p for p in ruta if p.get("speed", 0) > 0.5]  # evita puntos detenidos
+            ruta = [p for p in ruta if p.get("speed", 0) > 0.5]
 
         if len(ruta) > 1:
             coords = [(p["latitude"], p["longitude"]) for p in ruta]
             folium.PolyLine(coords, color="blue", weight=4, opacity=0.8).add_to(mapa)
+            # Añadimos punto de inicio y fin
+            folium.Marker(coords[0], icon=folium.Icon(color="green"), popup="Inicio").add_to(mapa)
+            folium.Marker(coords[-1], icon=folium.Icon(color="red"), popup="Fin").add_to(mapa)
 
-    # Marcar posición actual
+    # Posición actual
     folium.Marker(
         [lat, lon],
         popup="Ubicación actual",
-        icon=folium.Icon(color="red", icon="car", prefix="fa")
+        icon=folium.Icon(color="orange", icon="car", prefix="fa")
     ).add_to(mapa)
 
-    # Mostrar mapa y datos al costado
+    # Layout
     col_mapa, col_info = st.columns([2, 1])
     with col_mapa:
         st_folium(mapa, width=700, height=450)
@@ -90,10 +90,9 @@ def seguimiento_vehiculo():
         velocidad_kmh = round(posicion.get("speed", 0) * 1.852, 1)
         st.write(f"**Velocidad:** {velocidad_kmh} km/h")
 
-        # Hora local correcta (ajustada)
         hora_local = datetime.datetime.fromisoformat(
             posicion["deviceTime"].replace("Z", "+00:00")
-        ).astimezone(datetime.timezone(datetime.timedelta(hours=-5)))  # Perú UTC-5
+        ).astimezone(datetime.timezone(datetime.timedelta(hours=-5)))
         st.write(f"**Hora local:** {hora_local.strftime('%Y-%m-%d %H:%M:%S')}")
 
         movimiento = "🟢 En marcha" if velocidad_kmh > 1 else "🔴 Detenido"
