@@ -56,19 +56,32 @@ def seguimiento_vehiculo():
 
     vista = st.radio("Selecciona una vista:", ["📍 Ubicación en vivo", "🗺️ Ruta del día"])
 
+    # =====================
+    # 📍 UBICACIÓN EN VIVO
+    # =====================
     if vista == "📍 Ubicación en vivo":
         posicion = obtener_posicion_actual()
 
         if posicion:
             lat, lon = posicion["latitude"], posicion["longitude"]
-            mapa = folium.Map(location=[lat, lon], zoom_start=15)
-            folium.Marker([lat, lon], popup="Ubicación actual", icon=folium.Icon(color="red", icon="car", prefix="fa")).add_to(mapa)
-            st_folium(mapa, width=700, height=450)
 
-            col1, col2 = st.columns([1.2, 1])
-            with col1:
+            col_mapa, col_info = st.columns([2.3, 1])
+
+            # --- Mapa ---
+            with col_mapa:
+                mapa = folium.Map(location=[lat, lon], zoom_start=15)
+                folium.Marker(
+                    [lat, lon],
+                    popup="Ubicación actual",
+                    icon=folium.Icon(color="red", icon="car", prefix="fa")
+                ).add_to(mapa)
+                st_folium(mapa, width=700, height=450)
+
+            # --- Detalles del vehículo ---
+            with col_info:
                 st.markdown("""
-                <div style='background-color: #f8f9fa; padding: 20px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);'>
+                <div style='background-color: #f8f9fa; padding: 20px; border-radius: 12px; 
+                            box-shadow: 0 2px 6px rgba(0,0,0,0.1);'>
                     <h4 style='color:#2E86C1;'>Detalles del Vehículo</h4>
                 """, unsafe_allow_html=True)
                 st.markdown(f"**ID:** {posicion['deviceId']}")
@@ -81,12 +94,15 @@ def seguimiento_vehiculo():
                 st.markdown(f"**Movimiento:** {'🟢 En marcha' if en_movimiento else '🔴 Detenido'}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            with col2:
+                st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🔄 Actualizar ubicación"):
                     st.rerun()
         else:
             st.warning("No se encontró información del vehículo.")
 
+    # =====================
+    # 🗺️ RUTA DEL DÍA
+    # =====================
     elif vista == "🗺️ Ruta del día":
         col_mapa, col_filtro = st.columns([3, 1])
 
