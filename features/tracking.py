@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"  # Cambia por tu URL real
 USERNAME = "delgado.ariana18@gmail.com"     # Cambia si usas otro usuario
 PASSWORD = "lav123"     # Cambia por tu contraseña
-DEVICE_ID = "Arianne"          # Cambia por tu ID real
+DEVICE_ID = 6         # Cambia por tu ID real
 
 # ===========================
 # FUNCIONES
