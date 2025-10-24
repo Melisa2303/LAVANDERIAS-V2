@@ -84,10 +84,11 @@ def seguimiento_vehiculo():
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
 
                 st.markdown(f"""
-                <div style='background-color: #f9fafc; padding: 22px; border-radius: 12px;
-                            box-shadow: 0 3px 8px rgba(0,0,0,0.08); border: 1px solid #e0e0e0;'>
-                    <h4 style='color:#2E86C1; text-align:center;'>🚘 Detalles del Vehículo</h4>
-                    <hr style='border: none; border-top: 1px solid #d0d0d0;'>
+                <div style='background-color: #f9fafc; padding: 15px; border-radius: 10px;
+                            box-shadow: 0 2px 6px rgba(0,0,0,0.07); border: 1px solid #e0e0e0;
+                            font-size: 14px; line-height: 1.4;'>
+                    <h4 style='color:#2E86C1; text-align:center; margin-bottom:8px;'>🚘 Detalles</h4>
+                    <hr style='border: none; border-top: 1px solid #d0d0d0; margin: 6px 0;'>
                     <p><b>ID:</b> {posicion['deviceId']}</p>
                     <p><b>Latitud:</b> {lat}</p>
                     <p><b>Longitud:</b> {lon}</p>
