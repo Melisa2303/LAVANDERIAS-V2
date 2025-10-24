@@ -7,29 +7,30 @@ from streamlit_folium import st_folium
 # ===========================
 # CONFIGURACIÓN
 # ===========================
-TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"  # Cambia por tu URL real
-USERNAME = "delgado.ariana18@gmail.com"     # Cambia si usas otro usuario
-PASSWORD = "lav123"     # Cambia por tu contraseña
-DEVICE_ID = 6           # Cambia por tu ID real
+TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"
+USERNAME = "delgado.ariana18@gmail.com"
+PASSWORD = "lav123"
+DEVICE_ID = 6   # ID del dispositivo (ver en Traccar -> Dispositivos)
 
 # ===========================
 # FUNCIONES
 # ===========================
 def obtener_posicion_actual():
+    """Obtiene la última posición registrada del dispositivo."""
     url = f"{TRACCAR_URL}/api/positions"
     r = requests.get(url, auth=(USERNAME, PASSWORD))
     r.raise_for_status()
-    data = r.json()
-    for pos in data:
-        if pos["deviceId"] == DEVICE_ID:
+    posiciones = r.json()
+    for pos in posiciones:
+        if pos.get("deviceId") == DEVICE_ID:
             return pos
     return None
 
-
 def obtener_ruta_hoy():
+    """Obtiene todas las posiciones del día actual."""
     hoy = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     mañana = hoy + datetime.timedelta(days=1)
-    url = f"{TRACCAR_URL}/api/positions"
+    url = f"{TRACCAR_URL}/api/reports/route"
     params = {
         "deviceId": DEVICE_ID,
         "from": hoy.isoformat() + "Z",
@@ -55,34 +56,37 @@ def seguimiento_vehiculo():
     posicion = obtener_posicion_actual()
     ruta = obtener_ruta_hoy()
 
-    if posicion:
-        lat, lon = posicion["latitude"], posicion["longitude"]
-        mapa = folium.Map(location=[lat, lon], zoom_start=14)
+    if not posicion:
+        st.warning("No se encontró información del vehículo.")
+        return
 
-        # Dibujar la ruta del día
-        if len(ruta) > 1:
-            coords = [(p["latitude"], p["longitude"]) for p in ruta]
-            folium.PolyLine(coords, color="blue", weight=4, opacity=0.8).add_to(mapa)
+    lat, lon = posicion["latitude"], posicion["longitude"]
 
-        # Marcar posición actual
-        folium.Marker(
-            [lat, lon],
-            popup="Ubicación actual",
-            icon=folium.Icon(color="red", icon="car", prefix="fa")
-        ).add_to(mapa)
+    # Crear mapa
+    mapa = folium.Map(location=[lat, lon], zoom_start=14)
 
+    # Dibujar ruta del día
+    if isinstance(ruta, list) and len(ruta) > 1:
+        coords = [(p["latitude"], p["longitude"]) for p in ruta]
+        folium.PolyLine(coords, color="blue", weight=4, opacity=0.8).add_to(mapa)
+        folium.Marker(coords[0], popup="Inicio del día", icon=folium.Icon(color="green")).add_to(mapa)
+        folium.Marker(coords[-1], popup="Última posición", icon=folium.Icon(color="red", icon="car", prefix="fa")).add_to(mapa)
+    else:
+        folium.Marker([lat, lon], popup="Ubicación actual", icon=folium.Icon(color="red")).add_to(mapa)
+
+    # Mostrar mapa y datos
+    col_mapa, col_info = st.columns([3, 1])
+    with col_mapa:
         st_folium(mapa, width=700, height=450)
 
-        # Detalles
+    with col_info:
         st.markdown("### 🧾 Detalles del Vehículo")
         st.write(f"**ID:** {posicion['deviceId']}")
-        st.write(f"**Velocidad:** {round(posicion.get('speed', 0) * 1.852, 1)} km/h")  # Convertir nudos → km/h
+        st.write(f"**Velocidad:** {round(posicion.get('speed', 0) * 1.852, 1)} km/h")  # knots a km/h
         hora_local = datetime.datetime.fromisoformat(posicion["deviceTime"].replace("Z", "+00:00")).astimezone()
         st.write(f"**Última actualización:** {hora_local.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    else:
-        st.warning("No se encontró información del vehículo.")
-
-    # Botón para actualizar
+    # Botón actualizar
     if st.button("🔄 Actualizar Datos"):
         st.rerun()
+
