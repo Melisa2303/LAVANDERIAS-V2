@@ -85,27 +85,26 @@ def seguimiento_vehiculo():
                     padding: 15px;
                     box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
                 ">
-                    <h4 style="text-align:center; color:#2E86C1;">🧾 Detalles del Vehículo</h4>
+                    <h4 style="text-align:center; color:#2E86C1;">Detalles del Vehículo</h4>
                 """, unsafe_allow_html=True)
 
                 st.markdown(f"""
-                <p><b>🚘 ID:</b> {posicion['deviceId']}</p>
-                <p><b>📍 Latitud:</b> {posicion['latitude']}</p>
-                <p><b>📍 Longitud:</b> {posicion['longitude']}</p>
-                <p><b>💨 Velocidad:</b> {round(posicion.get('speed', 0) * 1.852, 2)} km/h</p>
+                <p><b>ID:</b> {posicion['deviceId']}</p>
+                <p><b>Latitud:</b> {posicion['latitude']}</p>
+                <p><b>Longitud:</b> {posicion['longitude']}</p>
+                <p><b>Velocidad:</b> {round(posicion.get('speed', 0) * 1.852, 2)} km/h</p>
                 """, unsafe_allow_html=True)
 
                 hora_local = datetime.datetime.fromisoformat(posicion["deviceTime"].replace("Z", "+00:00")).astimezone()
                 hora_str = hora_local.strftime('%Y-%m-%d %H:%M:%S')
-                st.markdown(f"<p><b>🕓 Hora local:</b> {hora_str}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p><b>Hora local:</b> {hora_str}</p>", unsafe_allow_html=True)
 
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
                 color_estado = "#28B463" if en_movimiento else "#CB4335"
-                texto_estado = "🟢 En marcha" if en_movimiento else "🔴 Detenido"
-                st.markdown(f"<p><b>⚙️ Movimiento:</b> <span style='color:{color_estado};'>{texto_estado}</span></p>", unsafe_allow_html=True)
+                texto_estado = "En marcha" if en_movimiento else "Detenido"
+                st.markdown(f"<p><b>Estado:</b> <span style='color:{color_estado}; font-weight:bold;'>{texto_estado}</span></p>", unsafe_allow_html=True)
 
                 st.markdown("</div>", unsafe_allow_html=True)
-
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.button("🔄 Actualizar ubicación")
 
@@ -129,5 +128,4 @@ def seguimiento_vehiculo():
             st_folium(mapa, width=700, height=450)
         else:
             st.info("ℹ️ No hay ruta registrada para hoy.")
-
 
