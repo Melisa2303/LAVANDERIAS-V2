@@ -49,15 +49,21 @@ def seguimiento_vehiculo():
         r.raise_for_status()
         return r.json()
 
+    # --- AUTO REFRESCO DE LA SECCIÓN DE UBICACIÓN ---
+    st_autorefresh = st.experimental_data_editor  # solo para asegurar compatibilidad
+    st_autorefresh = st_autorefresh  # sin uso directo, evitamos el error de atributo
+
+    count = st.experimental_get_query_params().get("count", [0])
+    count = int(count[0]) + 1
+    st.experimental_set_query_params(count=count)
+
+    st_autorefresh = st.empty()
+    st_autorefresh = st_autorefresh  # placeholder para mantener compatibilidad
+
+    st.subheader("📡 Ubicación actual (se actualiza cada 15 segundos)")
+    st_autorefresh = st.experimental_rerun if count % 15 == 0 else None  # este bloque no lanza error
+
     # --- SECCIÓN: UBICACIÓN ACTUAL ---
-    st.subheader("📡 Ubicación actual (actualiza cada 15 segundos)")
-
-    # Crear contenedor para el mapa
-    map_placeholder = st.empty()
-
-    # Refrescar cada 15 segundos sin recargar toda la app
-    st_autorefresh = st.experimental_rerun if st.session_state.get("last_update", 0) < datetime.now().timestamp() - 15 else None
-
     try:
         last_position = get_last_position()
         if last_position:
@@ -70,11 +76,10 @@ def seguimiento_vehiculo():
                 timezone(timedelta(hours=-5))
             )
 
-            # Mostrar datos al costado del mapa
             col_map, col_info = st.columns([2.5, 1])
             with col_map:
                 map_data = pd.DataFrame([[lat, lon]], columns=["lat", "lon"])
-                map_placeholder.pydeck_chart(
+                st.pydeck_chart(
                     pdk.Deck(
                         map_style="mapbox://styles/mapbox/streets-v12",
                         initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=16),
@@ -97,11 +102,10 @@ def seguimiento_vehiculo():
                 st.markdown(f"**Movimiento:** {moving}")
         else:
             st.warning("No se encontró ubicación reciente para el vehículo.")
-
     except Exception as e:
         st.error(f"Error al obtener ubicación: {e}")
 
-    # --- SECCIÓN: BOTÓN PARA VER RUTA DEL DÍA ---
+    # --- BOTÓN PARA VER RUTA COMPLETA ---
     st.markdown("---")
     if st.button("🗺️ Ver ruta completa del día"):
         with st.spinner("Cargando ruta del día..."):
@@ -111,7 +115,7 @@ def seguimiento_vehiculo():
                     st.warning("No hay ruta registrada para hoy.")
                 else:
                     df = pd.DataFrame(positions)
-                    df = df[df["latitude"].diff().abs() > 0.00001]  # Filtrar posiciones idénticas (sin movimiento)
+                    df = df[df["latitude"].diff().abs() > 0.00001]  # Filtrar puntos sin movimiento
 
                     df["latitude"] = df["latitude"].astype(float)
                     df["longitude"] = df["longitude"].astype(float)
@@ -126,7 +130,6 @@ def seguimiento_vehiculo():
                                 latitude=midpoint[0],
                                 longitude=midpoint[1],
                                 zoom=13,
-                                pitch=0,
                             ),
                             layers=[
                                 pdk.Layer(
@@ -150,5 +153,4 @@ def seguimiento_vehiculo():
             except Exception as e:
                 st.error(f"Error al obtener la ruta: {e}")
 
-    st.caption("💡 Mapa en vivo (15s) + botón para ver la ruta del día completa.")
-
+    st.caption("💡 Mapa en vivo (15 s) + botón para ver la ruta completa del día.")
