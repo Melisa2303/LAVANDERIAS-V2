@@ -65,12 +65,6 @@ def seguimiento_vehiculo():
         if posicion:
             lat, lon = posicion["latitude"], posicion["longitude"]
 
-            # --- Recuadro general (mapa + detalles) ---
-            st.markdown("""
-            <div style='background-color: #f8f9fa; padding: 25px; border-radius: 15px;
-                        box-shadow: 0 3px 8px rgba(0,0,0,0.1);'>
-            """, unsafe_allow_html=True)
-
             col_mapa, col_info = st.columns([2.3, 1])
 
             # --- Mapa ---
@@ -83,27 +77,28 @@ def seguimiento_vehiculo():
                 ).add_to(mapa)
                 st_folium(mapa, width=700, height=450)
 
-            # --- Detalles del vehículo ---
+            # --- Detalles del vehículo (recuadro mejorado) ---
             with col_info:
-                st.markdown("""
-                <h4 style='color:#2E86C1;'>Detalles del Vehículo</h4>
-                <hr style='margin-top:0;margin-bottom:10px;border:1px solid #ddd;'>
-                """, unsafe_allow_html=True)
-                st.markdown(f"**ID:** {posicion['deviceId']}")
-                st.markdown(f"**Latitud:** {lat}")
-                st.markdown(f"**Longitud:** {lon}")
-                st.markdown(f"**Velocidad:** {round(posicion.get('speed', 0) * 1.852, 2)} km/h")
                 hora_local = datetime.datetime.fromisoformat(posicion["deviceTime"].replace('Z', '+00:00')).astimezone()
-                st.markdown(f"**Hora local:** {hora_local.strftime('%Y-%m-%d %H:%M:%S')}")
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
-                st.markdown(f"**Movimiento:** {'🟢 En marcha' if en_movimiento else '🔴 Detenido'}")
+
+                st.markdown(f"""
+                <div style='background-color: #f9fafc; padding: 22px; border-radius: 12px;
+                            box-shadow: 0 3px 8px rgba(0,0,0,0.08); border: 1px solid #e0e0e0;'>
+                    <h4 style='color:#2E86C1; text-align:center;'>🚘 Detalles del Vehículo</h4>
+                    <hr style='border: none; border-top: 1px solid #d0d0d0;'>
+                    <p><b>ID:</b> {posicion['deviceId']}</p>
+                    <p><b>Latitud:</b> {lat}</p>
+                    <p><b>Longitud:</b> {lon}</p>
+                    <p><b>Velocidad:</b> {round(posicion.get('speed', 0) * 1.852, 2)} km/h</p>
+                    <p><b>Hora local:</b> {hora_local.strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    <p><b>Estado:</b> {'🟢 En marcha' if en_movimiento else '🔴 Detenido'}</p>
+                </div>
+                """, unsafe_allow_html=True)
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🔄 Actualizar ubicación"):
                     st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
         else:
             st.warning("No se encontró información del vehículo.")
 
