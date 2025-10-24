@@ -1,126 +1,114 @@
 import streamlit as st
 import requests
-import pandas as pd
-import pydeck as pdk
-from datetime import datetime, timedelta
-import pytz
+import datetime
+import folium
+from streamlit_folium import st_folium
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Seguimiento Vehicular", layout="wide")
+# ===========================
+# CONFIGURACIÓN
+# ===========================
+TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"  # Tu URL real
+USERNAME = "delgado.ariana18@gmail.com"     # Tu usuario
+PASSWORD = "lav123"                         # Tu contraseña
+DEVICE_ID = 6                               # Tu ID real
 
-TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"
-USERNAME = "delgado.ariana18@gmail.com"
-PASSWORD = "lav123"
-DEVICE_ID = 6
-
-# --- FUNCIONES ---
+# ===========================
+# FUNCIONES
+# ===========================
 def obtener_posicion_actual():
     url = f"{TRACCAR_URL}/api/positions"
     r = requests.get(url, auth=(USERNAME, PASSWORD))
-    if r.status_code == 200:
-        data = r.json()
-        for pos in data:
-            if pos.get("deviceId") == DEVICE_ID:
-                return pos
+    r.raise_for_status()
+    data = r.json()
+    for pos in data:
+        if pos["deviceId"] == DEVICE_ID:
+            return pos
     return None
 
-def obtener_ruta_dia():
-    hoy = datetime.utcnow().date()
-    inicio = datetime.combine(hoy, datetime.min.time())
-    fin = datetime.combine(hoy, datetime.max.time())
-    url = f"{TRACCAR_URL}/api/reports/route?deviceId={DEVICE_ID}&from={inicio.isoformat()}Z&to={fin.isoformat()}Z"
-    r = requests.get(url, auth=(USERNAME, PASSWORD))
-    if r.status_code == 200:
-        return r.json()
-    return []
+def obtener_ruta_hoy():
+    hoy = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    mañana = hoy + datetime.timedelta(days=1)
+    url = f"{TRACCAR_URL}/api/positions"
+    params = {
+        "deviceId": DEVICE_ID,
+        "from": hoy.isoformat() + "Z",
+        "to": mañana.isoformat() + "Z"
+    }
+    r = requests.get(url, params=params, auth=(USERNAME, PASSWORD))
+    r.raise_for_status()
+    return r.json()
 
-def convertir_hora_local(utc_str):
-    try:
-        utc_dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
-        lima_tz = pytz.timezone("America/Lima")
-        return utc_dt.astimezone(lima_tz).strftime("%Y-%m-%d %H:%M:%S")
-    except:
-        return utc_str
+# ===========================
+# INTERFAZ STREAMLIT
+# ===========================
+def seguimiento_vehiculo():
+    # ---- ENCABEZADO ORIGINAL ----
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
+    with col2:
+        st.markdown("<h1 style='text-align: left; color: black;'>Lavanderías Americanas</h1>", unsafe_allow_html=True)
 
-# --- ENCABEZADO ---
-st.title("🚛 Seguimiento Vehicular")
+    st.title("🚗 Seguimiento del Vehículo")
 
-# --- SELECCIÓN ---
-vista = st.radio("Selecciona vista:", ["📍 Ubicación en vivo", "🗺️ Ruta del día"])
+    # ---- SELECCIÓN DE VISTA ----
+    opcion = st.radio("Selecciona vista:", ["📍 Ubicación en vivo", "🗺️ Ruta del día"], horizontal=True)
 
-# --- UBICACIÓN EN VIVO ---
-if vista == "📍 Ubicación en vivo":
-    posicion = obtener_posicion_actual()
-    if posicion:
-        lat, lon = posicion["latitude"], posicion["longitude"]
-        velocidad = round(posicion["speed"] * 3.6, 2)
-        hora_local = convertir_hora_local(posicion["fixTime"])
-        movimiento = "🟢 En marcha" if posicion["attributes"].get("motion") else "🔴 Detenido"
+    # ==========================================================
+    # 📍 UBICACIÓN EN VIVO
+    # ==========================================================
+    if opcion == "📍 Ubicación en vivo":
+        posicion = obtener_posicion_actual()
 
-        col1, col2 = st.columns([2, 1])
+        if posicion:
+            lat, lon = posicion["latitude"], posicion["longitude"]
+            velocidad = round(posicion.get("speed", 0) * 1.852, 2)  # nudos a km/h
+            movimiento = "🟢 En marcha" if velocidad > 0.5 else "🔴 Detenido"
+            hora_local = datetime.datetime.fromisoformat(posicion["deviceTime"].replace("Z", "+00:00")).astimezone().strftime('%Y-%m-%d %H:%M:%S')
 
-        with col1:
-            st.pydeck_chart(pdk.Deck(
-                map_style="mapbox://styles/mapbox/streets-v12",
-                initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=16, pitch=45),
-                layers=[
-                    pdk.Layer(
-                        "ScatterplotLayer",
-                        data=pd.DataFrame([{"lat": lat, "lon": lon}]),
-                        get_position=["lon", "lat"],
-                        get_color=[0, 255, 0],
-                        get_radius=10,
-                    )
-                ],
-            ))
+            # Diseño en columnas
+            col_mapa, col_datos = st.columns([2, 1])
 
-        with col2:
-            st.markdown(
-                f"""
-                <div style="background-color:white; border-radius:15px; padding:20px; box-shadow:0px 2px 10px rgba(0,0,0,0.1); font-size:16px;">
-                    <h4 style="color:#1f77b4;">📡 Datos de la ubicación</h4>
-                    <b>Latitud:</b> {lat:.6f}<br>
-                    <b>Longitud:</b> {lon:.6f}<br>
-                    <b>Velocidad:</b> {velocidad} km/h<br>
-                    <b>Hora local:</b> {hora_local}<br>
-                    <b>Movimiento:</b> {movimiento}
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            with col_mapa:
+                mapa = folium.Map(location=[lat, lon], zoom_start=16)
+                folium.Marker([lat, lon],
+                              popup="Ubicación actual",
+                              icon=folium.Icon(color="red", icon="car", prefix="fa")).add_to(mapa)
+                st_folium(mapa, width=700, height=500)
 
-        st.button("🔄 Actualizar ubicación")
-
-    else:
-        st.warning("No se pudo obtener la ubicación actual del dispositivo.")
-
-# --- RUTA DEL DÍA ---
-elif vista == "🗺️ Ruta del día":
-    ruta = obtener_ruta_dia()
-    if ruta:
-        df = pd.DataFrame(ruta)
-        df["lat"] = df["latitude"]
-        df["lon"] = df["longitude"]
-
-        st.pydeck_chart(pdk.Deck(
-            map_style="mapbox://styles/mapbox/streets-v12",
-            initial_view_state=pdk.ViewState(latitude=df["lat"].mean(), longitude=df["lon"].mean(), zoom=14),
-            layers=[
-                pdk.Layer(
-                    "PathLayer",
-                    data=[{"path": df[["lon", "lat"]].values.tolist(), "color": [255, 0, 0]}],
-                    get_color="color",
-                    width_scale=2,
-                    width_min_pixels=3,
-                ),
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=pd.DataFrame([{"lat": df["lat"].iloc[-1], "lon": df["lon"].iloc[-1]}]),
-                    get_position=["lon", "lat"],
-                    get_color=[0, 255, 0],
-                    get_radius=10,
+            with col_datos:
+                st.markdown(
+                    f"""
+                    <div style='background-color:#f0f2f6; padding:15px; border-radius:10px;'>
+                        <h4 style='color:#2E86C1;'>📊 Datos del Vehículo</h4>
+                        <p><b>Latitud:</b> {lat:.6f}</p>
+                        <p><b>Longitud:</b> {lon:.6f}</p>
+                        <p><b>Velocidad:</b> {velocidad} km/h</p>
+                        <p><b>Hora local:</b> {hora_local}</p>
+                        <p><b>Movimiento:</b> {movimiento}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
-            ],
-        ))
-    else:
-        st.info("ℹ️ No hay ruta registrada para hoy.")
+
+        else:
+            st.warning("No se encontró información del vehículo.")
+
+        if st.button("🔄 Actualizar ubicación"):
+            st.rerun()
+
+    # ==========================================================
+    # 🗺️ RUTA DEL DÍA
+    # ==========================================================
+    elif opcion == "🗺️ Ruta del día":
+        ruta = obtener_ruta_hoy()
+
+        if ruta:
+            coords = [(p["latitude"], p["longitude"]) for p in ruta]
+            mapa = folium.Map(location=coords[-1], zoom_start=14)
+            folium.PolyLine(coords, color="blue", weight=4, opacity=0.8).add_to(mapa)
+            folium.Marker(coords[0], popup="Inicio", icon=folium.Icon(color="green")).add_to(mapa)
+            folium.Marker(coords[-1], popup="Fin", icon=folium.Icon(color="red")).add_to(mapa)
+            st_folium(mapa, width=900, height=550)
+        else:
+            st.warning("ℹ️ No hay ruta registrada para hoy.")
