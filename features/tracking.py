@@ -42,6 +42,48 @@ def obtener_ruta_por_fecha(fecha):
     r.raise_for_status()
     return r.json()
 
+# ---------------------------
+# Helper: parsear tiempo y devolver hora local (Perú)
+# ---------------------------
+def obtener_hora_local_desde_posicion(pos):
+    """
+    Usa el primer campo disponible entre 'fixTime', 'deviceTime', 'serverTime',
+    lo parsea como UTC y lo convierte a hora local de Perú (UTC-5).
+    """
+    tz_peru = datetime.timezone(datetime.timedelta(hours=-5))
+    # elegir campo preferido
+    ts = None
+    for key in ("fixTime", "deviceTime", "serverTime", "time"):
+        if pos.get(key):
+            ts = pos.get(key)
+            break
+    if not ts:
+        # fallback: ahora en UTC
+        return datetime.datetime.now(tz_peru)
+
+    # Normalizar 'Z' a +00:00 para fromisoformat
+    try:
+        ts_norm = ts.replace("Z", "+00:00") if isinstance(ts, str) else ts
+        dt_utc = datetime.datetime.fromisoformat(ts_norm)
+        # si el timestamp no tiene info de zona, tratarlo como UTC
+        if dt_utc.tzinfo is None:
+            dt_utc = dt_utc.replace(tzinfo=datetime.timezone.utc)
+    except Exception:
+        # fallback robusto
+        try:
+            # intentar parsear truncando milisegundos erráticos
+            if isinstance(ts, str) and "." in ts:
+                base = ts.split(".")[0] + "+00:00"
+                dt_utc = datetime.datetime.fromisoformat(base)
+                dt_utc = dt_utc.replace(tzinfo=datetime.timezone.utc)
+            else:
+                dt_utc = datetime.datetime.now(datetime.timezone.utc)
+        except Exception:
+            dt_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    # convertir a hora de Perú
+    return dt_utc.astimezone(tz_peru)
+
 # ===========================
 # INTERFAZ STREAMLIT
 # ===========================
@@ -80,9 +122,8 @@ def seguimiento_vehiculo():
 
             # --- Detalles del vehículo ---
             with col_info:
-                # ✅ CORREGIDO: conversión correcta a hora local de Perú (UTC-5)
-                hora_utc = datetime.datetime.fromisoformat(posicion["deviceTime"].replace('Z', '+00:00'))
-                hora_local = hora_utc.astimezone(datetime.timezone(datetime.timedelta(hours=-5)))
+                # -> Aquí usamos la función segura que selecciona fixTime/deviceTime/serverTime
+                hora_local = obtener_hora_local_desde_posicion(posicion)
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
 
                 st.markdown(f"""
@@ -110,6 +151,10 @@ def seguimiento_vehiculo():
     # 🗺️ RUTA DEL DÍA
     # =====================
     elif vista == "🗺️ Ruta del día":
+        # -> obtener la fecha por defecto en hora local (Perú) para evitar salto de día
+        tz_peru = datetime.timezone(datetime.timedelta(hours=-5))
+        fecha_default = datetime.datetime.now(tz_peru).date()
+
         col_mapa, col_filtro = st.columns([2.8, 0.9])
 
         with col_filtro:
@@ -119,7 +164,8 @@ def seguimiento_vehiculo():
                 <h4 style='color:#2E86C1;'>📅 Seleccionar fecha</h4>
             </div>
             """, unsafe_allow_html=True)
-            fecha = st.date_input("Fecha de ruta", datetime.date.today())
+            # usamos la fecha por defecto en hora local
+            fecha = st.date_input("Fecha de ruta", fecha_default)
 
         with col_mapa:
             ruta = obtener_ruta_por_fecha(fecha)
@@ -135,5 +181,4 @@ def seguimiento_vehiculo():
                 st_folium(mapa, width=700, height=450)
             else:
                 st.info("ℹ️ No hay ruta registrada para la fecha seleccionada.")
-
 
