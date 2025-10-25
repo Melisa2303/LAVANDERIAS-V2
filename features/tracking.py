@@ -80,7 +80,9 @@ def seguimiento_vehiculo():
 
             # --- Detalles del vehículo ---
             with col_info:
-                hora_local = datetime.datetime.fromisoformat(posicion["deviceTime"].replace('Z', '+00:00')).astimezone()
+                # ✅ CORREGIDO: conversión correcta a hora local de Perú (UTC-5)
+                hora_utc = datetime.datetime.fromisoformat(posicion["deviceTime"].replace('Z', '+00:00'))
+                hora_local = hora_utc.astimezone(datetime.timezone(datetime.timedelta(hours=-5)))
                 en_movimiento = posicion.get("attributes", {}).get("motion", False)
 
                 st.markdown(f"""
@@ -93,7 +95,7 @@ def seguimiento_vehiculo():
                     <p><b>Latitud:</b> {lat}</p>
                     <p><b>Longitud:</b> {lon}</p>
                     <p><b>Velocidad:</b> {round(posicion.get('speed', 0) * 1.852, 2)} km/h</p>
-                    <p><b>Hora local:</b> {hora_local.strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    <p><b>Hora local (Perú):</b> {hora_local.strftime('%Y-%m-%d %H:%M:%S')}</p>
                     <p><b>Estado:</b> {'🟢 En marcha' if en_movimiento else '🔴 Detenido'}</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -133,4 +135,5 @@ def seguimiento_vehiculo():
                 st_folium(mapa, width=700, height=450)
             else:
                 st.info("ℹ️ No hay ruta registrada para la fecha seleccionada.")
+
 
