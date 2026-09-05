@@ -80,32 +80,24 @@ def obtener_coordenadas(direccion):
 @st.cache_data(ttl=3600, show_spinner=False)
 def obtener_direccion_desde_coordenadas(lat, lon):
     """
-    Resolver dirección desde coordenadas con:
-    - timeout aumentado (10s)
-    - hasta 3 reintentos con backoff
-    - cache por 1 hora para evitar llamadas repetidas
-    - devuelve una cadena (no lanza excepción)
+    Versión rápida y cacheada: timeout corto y 1 reintento máximo.
+    Devuelve rápidamente 'Dirección no encontrada' si la consulta tarda o falla.
     """
     if lat is None or lon is None:
         return "Dirección no encontrada"
 
-    max_retries = 3
-    for intento in range(max_retries):
+    max_retries = 1           # retry mínimo
+    timeout_s = 2             # timeout corto para no bloquear la UI
+    for intento in range(max_retries + 1):
         try:
-            # aumentamos timeout a 10s
-            location = geolocator.reverse((lat, lon), language="es", timeout=10)
+            location = geolocator.reverse((lat, lon), language="es", timeout=timeout_s)
             if location and getattr(location, "address", None):
                 return location.address
-            # si no hay resultado válido, no reintentamos demasiado
             return "Dirección no encontrada"
-        except Exception as e:
-            # Si es el último intento, mostramos advertencia y devolvemos fallback
-            wait = 0.8 * (intento + 1)
-            time.sleep(wait)
-            if intento == max_retries - 1:
-                # No usamos st.error para evitar bloquear la UI; usamos warning y fallback
-                st.warning("No se pudo obtener la dirección (timeout o límite). Se usará 'Dirección no encontrada'.")
+        except Exception:
+            # espera breve solo entre reintentos
+            if intento < max_retries:
+                time.sleep(0.5)
+            else:
+                # devolver rápido un fallback (no usar st.error para no interrumpir UI)
                 return "Dirección no encontrada"
-            # en intentos intermedios seguimos reintentando
-    # Fallback final
-    return "Dirección no encontrada"
