@@ -80,8 +80,8 @@ def ingresar_sucursal():
             st.session_state["ingresar_sucursal_lat"],
             st.session_state["ingresar_sucursal_lon"]
         )
-        st.rerun()
-    
+        # ⚠️ Ya no usamos st.rerun aquí
+
     # Mostrar dirección final elegida
     st.markdown(f"""
         <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
@@ -138,4 +138,3 @@ def ingresar_sucursal():
 
         except Exception as e:
             st.error(f"Error al guardar: {e}") 
-
