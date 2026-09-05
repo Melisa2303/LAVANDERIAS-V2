@@ -9,13 +9,9 @@ from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desd
 def solicitar_recogida():
     # Reinicio seguro de campos si se activó la bandera
     if st.session_state.get("reset_solicitud", False):
-        for key in [
-            "delivery_lat", "delivery_lon", "delivery_direccion",
-            "nombre_cliente", "telefono"
-        ]:
+        for key in ["delivery_lat", "delivery_lon", "delivery_direccion", "nombre_cliente", "telefono"]:
             st.session_state.pop(key, None)
         st.session_state["reset_solicitud"] = False
-        st.rerun()
 
     # Inicialización segura
     st.session_state.setdefault("delivery_lat", -16.409047)
@@ -37,6 +33,7 @@ def solicitar_recogida():
 
     tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
 
+    # --- BLOQUE SUCURSAL ---
     if tipo_solicitud == "Sucursal":
         sucursales = obtener_sucursales()
         nombres_sucursales = [s["nombre"] for s in sucursales]
@@ -66,13 +63,12 @@ def solicitar_recogida():
             }
             try:
                 db.collection('recogidas').add(solicitud)
-                # ✅ Mensaje uniforme
                 st.success(f"✅ Solicitud registrada correctamente. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
                 st.session_state["reset_solicitud"] = True
-                st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
+    # --- BLOQUE CLIENTE DELIVERY ---
     elif tipo_solicitud == "Cliente Delivery":
         col1, col2 = st.columns(2)
         with col1:
@@ -80,11 +76,7 @@ def solicitar_recogida():
         with col2:
             telefono = st.text_input("Teléfono", max_chars=9, value=st.session_state.get("telefono", ""), key="telefono")
 
-        direccion_input = st.text_input(
-            "Dirección",
-            value=st.session_state.get("delivery_direccion", ""),
-            key="delivery_direccion_input"
-        )
+        direccion_input = st.text_input("Dirección", value=st.session_state.get("delivery_direccion", ""), key="delivery_direccion_input")
 
         sugerencias = []
         if direccion_input and direccion_input != st.session_state["delivery_direccion"]:
@@ -104,7 +96,7 @@ def solicitar_recogida():
                     st.session_state["delivery_direccion"] = direccion_seleccionada
                     break
 
-        # Crear mapa con coordenadas actuales
+        # Crear mapa SIEMPRE con coordenadas actuales
         mapa = folium.Map(
             location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
             zoom_start=15
@@ -114,12 +106,7 @@ def solicitar_recogida():
             tooltip="Punto seleccionado"
         ).add_to(mapa)
 
-        mapa_result = st_folium(
-            mapa,
-            width=700,
-            height=500,
-            key="delivery_mapa_folium"
-        )
+        mapa_result = st_folium(mapa, width=700, height=500, key="delivery_mapa_folium")
 
         if mapa_result and mapa_result.get("last_clicked"):
             last_click = mapa_result["last_clicked"]
@@ -154,24 +141,15 @@ def solicitar_recogida():
                 "nombre_cliente": nombre_cliente,
                 "telefono": telefono,
                 "direccion_recojo": st.session_state["delivery_direccion"],
-                "coordenadas_recojo": {
-                    "lat": st.session_state["delivery_lat"],
-                    "lon": st.session_state["delivery_lon"]
-                },
+                "coordenadas_recojo": {"lat": st.session_state["delivery_lat"], "lon": st.session_state["delivery_lon"]},
                 "direccion_entrega": st.session_state["delivery_direccion"],
-                "coordenadas_entrega": {
-                    "lat": st.session_state["delivery_lat"],
-                    "lon": st.session_state["delivery_lon"]
-                },
+                "coordenadas_entrega": {"lat": st.session_state["delivery_lat"], "lon": st.session_state["delivery_lon"]},
                 "fecha_recojo": fecha_recojo.strftime("%Y-%m-%d"),
                 "fecha_entrega": fecha_entrega.strftime("%Y-%m-%d")
             }
-
             try:
                 db.collection('recogidas').add(solicitud)
-                # ✅ Mensaje uniforme
                 st.success(f"✅ Solicitud registrada correctamente. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
                 st.session_state["reset_solicitud"] = True
-                st.rerun()
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
