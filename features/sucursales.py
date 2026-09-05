@@ -23,16 +23,8 @@ def ingresar_sucursal():
     st.title("📝 Ingresar Sucursal")
 
     # Campos del formulario
-    nombre_sucursal = st.text_input(
-        "Nombre de la Sucursal",
-        value=st.session_state.get("nombre_sucursal", "")
-    )
-    
-    direccion_input = st.text_input(
-        "Dirección",
-        value=st.session_state.get("ingresar_sucursal_direccion", "Arequipa, Perú"),
-        key="ingresar_sucursal_direccion_input"
-    )
+    nombre_sucursal = st.text_input("Nombre de la Sucursal", value=st.session_state.get("nombre_sucursal", ""))
+    direccion_input = st.text_input("Dirección", value=st.session_state.get("ingresar_sucursal_direccion", "Arequipa, Perú"), key="ingresar_sucursal_direccion_input")
 
     # Buscar sugerencias si la dirección cambió
     sugerencias = []
@@ -54,7 +46,7 @@ def ingresar_sucursal():
                 st.session_state["ingresar_sucursal_direccion"] = direccion_seleccionada
                 break
 
-    # Crear SIEMPRE el mapa con las coordenadas actuales
+    # Mostrar mapa y capturar clic
     mapa = folium.Map(
         location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
         zoom_start=15
@@ -64,15 +56,14 @@ def ingresar_sucursal():
         tooltip="Punto seleccionado"
     ).add_to(mapa)
 
-    # 🔑 La key depende de las coordenadas para forzar redibujo
     mapa_result = st_folium(
         mapa,
         width=700,
         height=500,
         key=f"mapa_{st.session_state['ingresar_sucursal_lat']}_{st.session_state['ingresar_sucursal_lon']}"
     )
-    
-    # Si se hace clic en el mapa, actualizar coordenadas y dirección
+
+    # Si se hace clic en el mapa, actualizar coordenadas y redibujar inmediatamente
     if mapa_result.get("last_clicked"):
         st.session_state["ingresar_sucursal_lat"] = mapa_result["last_clicked"]["lat"]
         st.session_state["ingresar_sucursal_lon"] = mapa_result["last_clicked"]["lng"]
@@ -80,7 +71,17 @@ def ingresar_sucursal():
             st.session_state["ingresar_sucursal_lat"],
             st.session_state["ingresar_sucursal_lon"]
         )
-        # ⚠️ Ya no usamos st.rerun aquí
+
+        # 🔑 Redibujar el mapa con el nuevo pin en el mismo render
+        mapa = folium.Map(
+            location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
+            zoom_start=15
+        )
+        folium.Marker(
+            [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
+            tooltip="Punto seleccionado"
+        ).add_to(mapa)
+        st_folium(mapa, width=700, height=500, key=f"mapa_click_{st.session_state['ingresar_sucursal_lat']}_{st.session_state['ingresar_sucursal_lon']}")
 
     # Mostrar dirección final elegida
     st.markdown(f"""
