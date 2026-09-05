@@ -46,7 +46,7 @@ def ingresar_sucursal():
                 st.session_state["ingresar_sucursal_direccion"] = direccion_seleccionada
                 break
 
-    # Crear el mapa con coordenadas actuales
+    # Crear mapa con coordenadas actuales
     mapa = folium.Map(
         location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
         zoom_start=15
@@ -64,7 +64,7 @@ def ingresar_sucursal():
     )
 
     # Si se hace clic en el mapa, actualizar coordenadas y dirección
-    if mapa_result and mapa_result.get("last_clicked") is not None:
+    if mapa_result and mapa_result.get("last_clicked"):
         last_click = mapa_result["last_clicked"]
         if last_click and "lat" in last_click and "lng" in last_click:
             st.session_state["ingresar_sucursal_lat"] = last_click["lat"]
