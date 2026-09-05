@@ -45,63 +45,40 @@ def ingresar_sucursal():
         key="ingresar_sucursal_sugerencias"
     )
 
-    # Actualizar mapa y dirección al elegir sugerencia
+    # Actualizar coordenadas si se elige sugerencia
     if direccion_seleccionada and direccion_seleccionada != "Seleccione una dirección":
         for sug in sugerencias:
             if direccion_seleccionada == sug["display_name"]:
                 st.session_state["ingresar_sucursal_lat"] = float(sug["lat"])
                 st.session_state["ingresar_sucursal_lon"] = float(sug["lon"])
                 st.session_state["ingresar_sucursal_direccion"] = direccion_seleccionada
-
-                # Actualizar mapa
-                st.session_state["ingresar_sucursal_mapa"] = folium.Map(
-                    location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-                    zoom_start=15
-                )
-                folium.Marker(
-                    [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-                    tooltip="Punto seleccionado"
-                ).add_to(st.session_state["ingresar_sucursal_mapa"])
                 break
 
-    # Inicializar el mapa si no está
-    if "ingresar_sucursal_mapa" not in st.session_state:
-        st.session_state["ingresar_sucursal_mapa"] = folium.Map(
-            location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-            zoom_start=15
-        )
-        folium.Marker(
-            [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-            tooltip="Punto seleccionado"
-        ).add_to(st.session_state["ingresar_sucursal_mapa"])
+    # Crear SIEMPRE el mapa con las coordenadas actuales
+    mapa = folium.Map(
+        location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
+        zoom_start=15
+    )
+    folium.Marker(
+        [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
+        tooltip="Punto seleccionado"
+    ).add_to(mapa)
 
-    # Mostrar mapa
-    mapa = st_folium(
-        st.session_state["ingresar_sucursal_mapa"],
+    mapa_result = st_folium(
+        mapa,
         width=700,
         height=500,
         key="ingresar_sucursal_mapa_folium"
     )
     
- # Si se hace clic en el mapa, actualizar dirección
-    if mapa.get("last_clicked"):
-        st.session_state["ingresar_sucursal_lat"] = mapa["last_clicked"]["lat"]
-        st.session_state["ingresar_sucursal_lon"] = mapa["last_clicked"]["lng"]
+    # Si se hace clic en el mapa, actualizar coordenadas y dirección
+    if mapa_result.get("last_clicked"):
+        st.session_state["ingresar_sucursal_lat"] = mapa_result["last_clicked"]["lat"]
+        st.session_state["ingresar_sucursal_lon"] = mapa_result["last_clicked"]["lng"]
         st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
             st.session_state["ingresar_sucursal_lat"],
             st.session_state["ingresar_sucursal_lon"]
         )
-        
-        nuevo_mapa = folium.Map(
-            location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-            zoom_start=15
-        )
-        folium.Marker(
-            [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-            tooltip="Punto seleccionado"
-        ).add_to(nuevo_mapa)
-    
-        st.session_state["ingresar_sucursal_mapa"] = nuevo_mapa
         st.rerun()
     
     # Mostrar dirección final elegida
@@ -159,4 +136,4 @@ def ingresar_sucursal():
             st.rerun()
 
         except Exception as e:
-            st.error(f"Error al guardar: {e}")
+            st.error(f"Error al guardar: {e}") 
