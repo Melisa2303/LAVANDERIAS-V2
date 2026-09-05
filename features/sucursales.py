@@ -47,6 +47,15 @@ def ingresar_sucursal():
                 break
 
     # Capturar clic en el mapa y actualizar coordenadas
+    if "mapa_click" in st.session_state:
+        last_click = st.session_state["mapa_click"]
+        st.session_state["ingresar_sucursal_lat"] = last_click["lat"]
+        st.session_state["ingresar_sucursal_lon"] = last_click["lng"]
+        st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
+            st.session_state["ingresar_sucursal_lat"],
+            st.session_state["ingresar_sucursal_lon"]
+        )
+
     mapa = folium.Map(
         location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
         zoom_start=15
@@ -64,23 +73,7 @@ def ingresar_sucursal():
     )
 
     if mapa_result.get("last_clicked"):
-        st.session_state["ingresar_sucursal_lat"] = mapa_result["last_clicked"]["lat"]
-        st.session_state["ingresar_sucursal_lon"] = mapa_result["last_clicked"]["lng"]
-        st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
-            st.session_state["ingresar_sucursal_lat"],
-            st.session_state["ingresar_sucursal_lon"]
-        )
-
-        # 🔑 Redibujar el mismo mapa con el nuevo pin
-        mapa = folium.Map(
-            location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-            zoom_start=15
-        )
-        folium.Marker(
-            [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
-            tooltip="Punto seleccionado"
-        ).add_to(mapa)
-        st_folium(mapa, width=700, height=500, key="mapa_principal_actualizado")
+        st.session_state["mapa_click"] = mapa_result["last_clicked"]
 
     # Mostrar dirección final elegida
     st.markdown(f"""
@@ -117,12 +110,8 @@ def ingresar_sucursal():
                 "telefono": telefono if telefono else None,
             })
 
+            # ✅ Mostrar mensaje de éxito ANTES del rerun
             st.success("✅ Sucursal registrada correctamente")
-
-            # Limpiar posibles cachés relacionadas
-            for key in ["sucursales", "sucursales_mapa"]:
-                if key in st.session_state:
-                    del st.session_state[key]
 
             # Resetear campos visibles
             st.session_state.update({
@@ -131,10 +120,10 @@ def ingresar_sucursal():
                 "telefono": "",
                 "ingresar_sucursal_direccion": "Arequipa, Perú",
                 "ingresar_sucursal_lat": -16.409047,
-                "ingresar_sucursal_lon": -71.537451
+                "ingresar_sucursal_lon": -71.537451,
+                "mapa_click": None
             })
-
-            st.rerun()
 
         except Exception as e:
             st.error(f"Error al guardar: {e}") 
+
