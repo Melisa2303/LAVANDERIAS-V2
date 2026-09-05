@@ -6,11 +6,6 @@ from core.firebase import db
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 
 def ingresar_sucursal():
-    # 🔑 Forzar inicialización limpia al entrar directo
-    if "mapa_inicializado" not in st.session_state:
-        st.session_state["mapa_inicializado"] = True
-        st.rerun()   # ✅ usar st.rerun en lugar de experimental_rerun
-
     # Inicializar claves del session_state si no existen
     st.session_state.setdefault("ingresar_sucursal_lat", -16.409047)
     st.session_state.setdefault("ingresar_sucursal_lon", -71.537451)
@@ -128,3 +123,4 @@ def ingresar_sucursal():
 
         except Exception as e:
             st.error(f"Error al guardar: {e}") 
+
