@@ -87,6 +87,14 @@ def ingresar_sucursal():
     if mapa.get("last_clicked"):
         st.session_state["ingresar_sucursal_lat"] = mapa["last_clicked"]["lat"]
         st.session_state["ingresar_sucursal_lon"] = mapa["last_clicked"]["lng"]
+
+        # Líneas de debug (temporales)
+        st.write("DEBUG click -> lat,lon:", lat, lon)
+        st.write("DEBUG antes de obtener direccion, session_state lat,lon:",
+            st.session_state.get("ingresar_sucursal_lat"),
+            st.session_state.get("ingresar_sucursal_lon"))
+
+        
         st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
             st.session_state["ingresar_sucursal_lat"],
             st.session_state["ingresar_sucursal_lon"]
