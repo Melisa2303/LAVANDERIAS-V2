@@ -6,7 +6,7 @@ streamlit-folium
 geopy
 folium
 requests
-ortools==9.12.4544
+ortools==9.15.6755
 openpyxl
 scikit-learn 
 pytz
