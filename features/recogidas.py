@@ -7,20 +7,17 @@ from core.firebase import db, obtener_sucursales
 from core.geo_utils import obtener_sugerencias_direccion, obtener_direccion_desde_coordenadas
 
 def solicitar_recogida():
-    # Reinicio seguro de campos si se activó la bandera
     if st.session_state.get("reset_solicitud", False):
         for key in ["delivery_lat", "delivery_lon", "delivery_direccion", "nombre_cliente", "telefono"]:
             st.session_state.pop(key, None)
         st.session_state["reset_solicitud"] = False
 
-    # Inicialización segura
     st.session_state.setdefault("delivery_lat", -16.409047)
     st.session_state.setdefault("delivery_lon", -71.537451)
     st.session_state.setdefault("delivery_direccion", "Arequipa, Perú")
     st.session_state.setdefault("nombre_cliente", "")
     st.session_state.setdefault("telefono", "")
 
-    # Encabezado
     col1, col2 = st.columns([1, 3])
     with col1:
         st.image("https://github.com/Melisa2303/LAVANDERIAS-V2/raw/main/data/LOGO.PNG", width=100)
@@ -33,7 +30,6 @@ def solicitar_recogida():
 
     tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
 
-    # --- BLOQUE SUCURSAL ---
     if tipo_solicitud == "Sucursal":
         sucursales = obtener_sucursales()
         nombres_sucursales = [s["nombre"] for s in sucursales]
@@ -68,7 +64,6 @@ def solicitar_recogida():
             except Exception as e:
                 st.error(f"Error al guardar: {e}")
 
-    # --- BLOQUE CLIENTE DELIVERY ---
     elif tipo_solicitud == "Cliente Delivery":
         col1, col2 = st.columns(2)
         with col1:
@@ -94,20 +89,10 @@ def solicitar_recogida():
                     st.session_state["delivery_lat"] = float(sug["lat"])
                     st.session_state["delivery_lon"] = float(sug["lon"])
                     st.session_state["delivery_direccion"] = direccion_seleccionada
-                    # reconstruir mapa inmediatamente
-                    mapa = folium.Map(
-                        location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                        zoom_start=15
-                    )
-                    folium.Marker(
-                        [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                        tooltip="Punto seleccionado"
-                    ).add_to(mapa)
-                    st.session_state["delivery_mapa"] = mapa
-                    st.rerun()
+                    # 🔑 aquí NO usamos st.rerun, dejamos que el mapa se reconstruya abajo
                     break
 
-        # Crear mapa SIEMPRE con coordenadas actuales
+        # Crear mapa siempre con coordenadas actuales
         mapa = folium.Map(
             location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
             zoom_start=15
@@ -127,17 +112,7 @@ def solicitar_recogida():
                 st.session_state["delivery_direccion"] = obtener_direccion_desde_coordenadas(
                     st.session_state["delivery_lat"], st.session_state["delivery_lon"]
                 )
-                # reconstruir mapa inmediatamente
-                mapa = folium.Map(
-                    location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                    zoom_start=15
-                )
-                folium.Marker(
-                    [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                    tooltip="Punto seleccionado"
-                ).add_to(mapa)
-                st.session_state["delivery_mapa"] = mapa
-                st.rerun()
+                st.rerun()  # 🔑 aquí sí, para mover el pin inmediatamente
 
         st.markdown(f"""
             <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
