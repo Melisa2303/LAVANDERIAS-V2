@@ -46,7 +46,7 @@ def ingresar_sucursal():
                 st.session_state["ingresar_sucursal_direccion"] = direccion_seleccionada
                 break
 
-    # Mostrar mapa y capturar clic
+    # Capturar clic en el mapa y actualizar coordenadas
     mapa = folium.Map(
         location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
         zoom_start=15
@@ -60,10 +60,9 @@ def ingresar_sucursal():
         mapa,
         width=700,
         height=500,
-        key=f"mapa_{st.session_state['ingresar_sucursal_lat']}_{st.session_state['ingresar_sucursal_lon']}"
+        key="mapa_principal"
     )
 
-    # Si se hace clic en el mapa, actualizar coordenadas y redibujar inmediatamente
     if mapa_result.get("last_clicked"):
         st.session_state["ingresar_sucursal_lat"] = mapa_result["last_clicked"]["lat"]
         st.session_state["ingresar_sucursal_lon"] = mapa_result["last_clicked"]["lng"]
@@ -72,7 +71,7 @@ def ingresar_sucursal():
             st.session_state["ingresar_sucursal_lon"]
         )
 
-        # 🔑 Redibujar el mapa con el nuevo pin en el mismo render
+        # 🔑 Redibujar el mismo mapa con el nuevo pin
         mapa = folium.Map(
             location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
             zoom_start=15
@@ -81,7 +80,7 @@ def ingresar_sucursal():
             [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
             tooltip="Punto seleccionado"
         ).add_to(mapa)
-        st_folium(mapa, width=700, height=500, key=f"mapa_click_{st.session_state['ingresar_sucursal_lat']}_{st.session_state['ingresar_sucursal_lon']}")
+        st_folium(mapa, width=700, height=500, key="mapa_principal_actualizado")
 
     # Mostrar dirección final elegida
     st.markdown(f"""
