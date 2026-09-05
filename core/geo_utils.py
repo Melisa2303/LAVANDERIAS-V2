@@ -80,24 +80,15 @@ def obtener_coordenadas(direccion):
 @st.cache_data(ttl=3600, show_spinner=False)
 def obtener_direccion_desde_coordenadas(lat, lon):
     """
-    Versión rápida y cacheada: timeout corto y 1 reintento máximo.
-    Devuelve rápidamente 'Dirección no encontrada' si la consulta tarda o falla.
+    Versión rápida y silenciosa — timeout corto y sin mensajes de error que afecten la UI.
+    Devuelve 'Dirección no encontrada' si falla para no interrumpir la experiencia.
     """
     if lat is None or lon is None:
         return "Dirección no encontrada"
-
-    max_retries = 1           # retry mínimo
-    timeout_s = 2             # timeout corto para no bloquear la UI
-    for intento in range(max_retries + 1):
-        try:
-            location = geolocator.reverse((lat, lon), language="es", timeout=timeout_s)
-            if location and getattr(location, "address", None):
-                return location.address
-            return "Dirección no encontrada"
-        except Exception:
-            # espera breve solo entre reintentos
-            if intento < max_retries:
-                time.sleep(0.5)
-            else:
-                # devolver rápido un fallback (no usar st.error para no interrumpir UI)
-                return "Dirección no encontrada"
+    try:
+        # timeout corto (1s) para evitar bloquear la UI
+        location = geolocator.reverse((lat, lon), language="es", timeout=1)
+        return location.address if location else "Dirección no encontrada"
+    except Exception:
+        # No llamamos a st.error ni st.warning aquí para evitar recargas o modales.
+        return "Dirección no encontrada"
