@@ -10,22 +10,17 @@ def solicitar_recogida():
     # Reinicio seguro de campos si se activó la bandera
     if st.session_state.get("reset_solicitud", False):
         for key in [
-            "delivery_lat", "delivery_lon", "delivery_direccion", "delivery_data",
-            "delivery_mapa", "delivery_marker", "nombre_cliente", "telefono"
+            "delivery_lat", "delivery_lon", "delivery_direccion",
+            "nombre_cliente", "telefono"
         ]:
             st.session_state.pop(key, None)
         st.session_state["reset_solicitud"] = False
         st.rerun()
 
     # Inicialización segura
-    st.session_state.setdefault("delivery_data", {"direccion": "", "lat": None, "lon": None})
     st.session_state.setdefault("delivery_lat", -16.409047)
     st.session_state.setdefault("delivery_lon", -71.537451)
     st.session_state.setdefault("delivery_direccion", "Arequipa, Perú")
-    st.session_state.setdefault("delivery_mapa", folium.Map(
-        location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-        zoom_start=15
-    ))
     st.session_state.setdefault("nombre_cliente", "")
     st.session_state.setdefault("telefono", "")
 
@@ -38,8 +33,6 @@ def solicitar_recogida():
     st.title("🛒 Solicitar Recogida")
 
     def calcular_fecha_entrega(fecha_recojo):
-        dia_semana = fecha_recojo.weekday()
-        if dia_semana == 5: return fecha_recojo + timedelta(days=0)
         return fecha_recojo + timedelta(days=0)
 
     tipo_solicitud = st.radio("Tipo de Solicitud", ["Sucursal", "Cliente Delivery"], horizontal=True)
@@ -60,7 +53,6 @@ def solicitar_recogida():
         fecha_recojo = st.date_input("Fecha de Recojo", min_value=datetime.now().date())
 
         if st.button("💾 Solicitar Recogida"):
-            #fecha_entrega = calcular_fecha_entrega(fecha_recojo)
             fecha_entrega = calcular_fecha_entrega(fecha_recojo)
             solicitud = {
                 "tipo_solicitud": tipo_solicitud,
@@ -109,38 +101,35 @@ def solicitar_recogida():
                     st.session_state["delivery_lat"] = float(sug["lat"])
                     st.session_state["delivery_lon"] = float(sug["lon"])
                     st.session_state["delivery_direccion"] = direccion_seleccionada
-                    st.session_state["delivery_mapa"] = folium.Map(
-                        location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                        zoom_start=15
-                    )
-                    folium.Marker(
-                        [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                        tooltip="Punto seleccionado"
-                    ).add_to(st.session_state["delivery_mapa"])
                     break
 
-        mapa = st_folium(
-            st.session_state["delivery_mapa"],
+        # Crear mapa SIEMPRE con coordenadas actuales
+        mapa = folium.Map(
+            location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+            zoom_start=15
+        )
+        folium.Marker(
+            [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+            tooltip="Punto seleccionado"
+        ).add_to(mapa)
+
+        mapa_result = st_folium(
+            mapa,
             width=700,
             height=500,
             key="delivery_mapa_folium"
         )
 
-        if mapa.get("last_clicked"):
-            st.session_state["delivery_lat"] = mapa["last_clicked"]["lat"]
-            st.session_state["delivery_lon"] = mapa["last_clicked"]["lng"]
-            st.session_state["delivery_direccion"] = obtener_direccion_desde_coordenadas(
-                st.session_state["delivery_lat"], st.session_state["delivery_lon"]
-            )
-            st.session_state["delivery_mapa"] = folium.Map(
-                location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                zoom_start=15
-            )
-            folium.Marker(
-                [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
-                tooltip="Punto seleccionado"
-            ).add_to(st.session_state["delivery_mapa"])
-            st.rerun()
+        # Si se hace clic en el mapa, actualizar coordenadas y dirección
+        if mapa_result and mapa_result.get("last_clicked"):
+            last_click = mapa_result["last_clicked"]
+            if last_click:
+                st.session_state["delivery_lat"] = last_click["lat"]
+                st.session_state["delivery_lon"] = last_click["lng"]
+                st.session_state["delivery_direccion"] = obtener_direccion_desde_coordenadas(
+                    st.session_state["delivery_lat"], st.session_state["delivery_lon"]
+                )
+                st.rerun()
 
         st.markdown(f"""
             <div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; margin-top: 10px;'>
