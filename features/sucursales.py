@@ -85,8 +85,12 @@ def ingresar_sucursal():
 
     # Si se hace clic en el mapa, actualizar dirección
     if mapa.get("last_clicked"):
-        st.session_state["ingresar_sucursal_lat"] = mapa["last_clicked"]["lat"]
-        st.session_state["ingresar_sucursal_lon"] = mapa["last_clicked"]["lng"]
+        lat = mapa["last_clicked"]["lat"]
+        lon = mapa["last_clicked"]["lng"]
+
+        # Actualizamos session_state con las coordenadas del click
+        st.session_state["ingresar_sucursal_lat"] = lat
+        st.session_state["ingresar_sucursal_lon"] = lon
 
         # Líneas de debug (temporales)
         st.write("DEBUG click -> lat,lon:", lat, lon)
