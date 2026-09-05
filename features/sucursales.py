@@ -64,11 +64,12 @@ def ingresar_sucursal():
         tooltip="Punto seleccionado"
     ).add_to(mapa)
 
+    # 🔑 La key depende de las coordenadas para forzar redibujo
     mapa_result = st_folium(
         mapa,
         width=700,
         height=500,
-        key="ingresar_sucursal_mapa_folium"
+        key=f"mapa_{st.session_state['ingresar_sucursal_lat']}_{st.session_state['ingresar_sucursal_lon']}"
     )
     
     # Si se hace clic en el mapa, actualizar coordenadas y dirección
