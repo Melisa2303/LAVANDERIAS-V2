@@ -94,6 +94,17 @@ def solicitar_recogida():
                     st.session_state["delivery_lat"] = float(sug["lat"])
                     st.session_state["delivery_lon"] = float(sug["lon"])
                     st.session_state["delivery_direccion"] = direccion_seleccionada
+                    # reconstruir mapa inmediatamente
+                    mapa = folium.Map(
+                        location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+                        zoom_start=15
+                    )
+                    folium.Marker(
+                        [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+                        tooltip="Punto seleccionado"
+                    ).add_to(mapa)
+                    st.session_state["delivery_mapa"] = mapa
+                    st.rerun()
                     break
 
         # Crear mapa SIEMPRE con coordenadas actuales
@@ -116,6 +127,16 @@ def solicitar_recogida():
                 st.session_state["delivery_direccion"] = obtener_direccion_desde_coordenadas(
                     st.session_state["delivery_lat"], st.session_state["delivery_lon"]
                 )
+                # reconstruir mapa inmediatamente
+                mapa = folium.Map(
+                    location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+                    zoom_start=15
+                )
+                folium.Marker(
+                    [st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
+                    tooltip="Punto seleccionado"
+                ).add_to(mapa)
+                st.session_state["delivery_mapa"] = mapa
                 st.rerun()
 
         st.markdown(f"""
