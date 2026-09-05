@@ -91,6 +91,17 @@ def ingresar_sucursal():
             st.session_state["ingresar_sucursal_lat"],
             st.session_state["ingresar_sucursal_lon"]
         )
+        
+        # Recrear el mapa con el nuevo punto
+        st.session_state["ingresar_sucursal_mapa"] = folium.Map(
+            location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
+            zoom_start=15
+        )
+        folium.Marker(
+            [st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
+            tooltip="Punto seleccionado"
+        ).add_to(st.session_state["ingresar_sucursal_mapa"])
+
         st.rerun()
     
     # Mostrar dirección final elegida
