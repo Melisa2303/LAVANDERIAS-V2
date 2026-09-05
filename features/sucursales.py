@@ -46,16 +46,7 @@ def ingresar_sucursal():
                 st.session_state["ingresar_sucursal_direccion"] = direccion_seleccionada
                 break
 
-    # Capturar clic en el mapa y actualizar coordenadas
-    if "mapa_click" in st.session_state:
-        last_click = st.session_state["mapa_click"]
-        st.session_state["ingresar_sucursal_lat"] = last_click["lat"]
-        st.session_state["ingresar_sucursal_lon"] = last_click["lng"]
-        st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
-            st.session_state["ingresar_sucursal_lat"],
-            st.session_state["ingresar_sucursal_lon"]
-        )
-
+    # Crear el mapa con coordenadas actuales
     mapa = folium.Map(
         location=[st.session_state["ingresar_sucursal_lat"], st.session_state["ingresar_sucursal_lon"]],
         zoom_start=15
@@ -72,8 +63,16 @@ def ingresar_sucursal():
         key="mapa_principal"
     )
 
-    if mapa_result.get("last_clicked"):
-        st.session_state["mapa_click"] = mapa_result["last_clicked"]
+    # Si se hace clic en el mapa, actualizar coordenadas y dirección
+    if mapa_result and mapa_result.get("last_clicked") is not None:
+        last_click = mapa_result["last_clicked"]
+        if last_click and "lat" in last_click and "lng" in last_click:
+            st.session_state["ingresar_sucursal_lat"] = last_click["lat"]
+            st.session_state["ingresar_sucursal_lon"] = last_click["lng"]
+            st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
+                st.session_state["ingresar_sucursal_lat"],
+                st.session_state["ingresar_sucursal_lon"]
+            )
 
     # Mostrar dirección final elegida
     st.markdown(f"""
@@ -110,7 +109,6 @@ def ingresar_sucursal():
                 "telefono": telefono if telefono else None,
             })
 
-            # ✅ Mostrar mensaje de éxito ANTES del rerun
             st.success("✅ Sucursal registrada correctamente")
 
             # Resetear campos visibles
@@ -120,10 +118,8 @@ def ingresar_sucursal():
                 "telefono": "",
                 "ingresar_sucursal_direccion": "Arequipa, Perú",
                 "ingresar_sucursal_lat": -16.409047,
-                "ingresar_sucursal_lon": -71.537451,
-                "mapa_click": None
+                "ingresar_sucursal_lon": -71.537451
             })
 
         except Exception as e:
             st.error(f"Error al guardar: {e}") 
-
