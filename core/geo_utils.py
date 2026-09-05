@@ -77,11 +77,35 @@ def obtener_coordenadas(direccion):
         st.error(f"Error al conectarse a la API: {e}")
     return None, None
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def obtener_direccion_desde_coordenadas(lat, lon):
-    # Usa Geopy para obtener una dirección a partir de coordenadas (latitud y longitud).
-    try:
-        location = geolocator.reverse((lat, lon), language="es")
-        return location.address if location else "Dirección no encontrada"
-    except Exception as e:
-        st.error(f"Error al obtener dirección desde coordenadas: {e}")
+    """
+    Resolver dirección desde coordenadas con:
+    - timeout aumentado (10s)
+    - hasta 3 reintentos con backoff
+    - cache por 1 hora para evitar llamadas repetidas
+    - devuelve una cadena (no lanza excepción)
+    """
+    if lat is None or lon is None:
         return "Dirección no encontrada"
+
+    max_retries = 3
+    for intento in range(max_retries):
+        try:
+            # aumentamos timeout a 10s
+            location = geolocator.reverse((lat, lon), language="es", timeout=10)
+            if location and getattr(location, "address", None):
+                return location.address
+            # si no hay resultado válido, no reintentamos demasiado
+            return "Dirección no encontrada"
+        except Exception as e:
+            # Si es el último intento, mostramos advertencia y devolvemos fallback
+            wait = 0.8 * (intento + 1)
+            time.sleep(wait)
+            if intento == max_retries - 1:
+                # No usamos st.error para evitar bloquear la UI; usamos warning y fallback
+                st.warning("No se pudo obtener la dirección (timeout o límite). Se usará 'Dirección no encontrada'.")
+                return "Dirección no encontrada"
+            # en intentos intermedios seguimos reintentando
+    # Fallback final
+    return "Dirección no encontrada"
