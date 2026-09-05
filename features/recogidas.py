@@ -66,7 +66,8 @@ def solicitar_recogida():
             }
             try:
                 db.collection('recogidas').add(solicitud)
-                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
+                # ✅ Mensaje uniforme
+                st.success(f"✅ Solicitud registrada correctamente. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
                 st.session_state["reset_solicitud"] = True
                 st.rerun()
             except Exception as e:
@@ -103,7 +104,7 @@ def solicitar_recogida():
                     st.session_state["delivery_direccion"] = direccion_seleccionada
                     break
 
-        # Crear mapa SIEMPRE con coordenadas actuales
+        # Crear mapa con coordenadas actuales
         mapa = folium.Map(
             location=[st.session_state["delivery_lat"], st.session_state["delivery_lon"]],
             zoom_start=15
@@ -120,7 +121,6 @@ def solicitar_recogida():
             key="delivery_mapa_folium"
         )
 
-        # Si se hace clic en el mapa, actualizar coordenadas y dirección
         if mapa_result and mapa_result.get("last_clicked"):
             last_click = mapa_result["last_clicked"]
             if last_click:
@@ -169,7 +169,8 @@ def solicitar_recogida():
 
             try:
                 db.collection('recogidas').add(solicitud)
-                st.success(f"Recogida agendada. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
+                # ✅ Mensaje uniforme
+                st.success(f"✅ Solicitud registrada correctamente. Entrega el {fecha_entrega.strftime('%d/%m/%Y')}")
                 st.session_state["reset_solicitud"] = True
                 st.rerun()
             except Exception as e:
