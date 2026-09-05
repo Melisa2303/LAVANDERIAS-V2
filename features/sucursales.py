@@ -82,6 +82,13 @@ def ingresar_sucursal():
         height=500,
         key="ingresar_sucursal_mapa_folium"
     )
+    
+    st.write("DEBUG session_state lat,lon,direccion:",
+         st.session_state.get("ingresar_sucursal_lat"),
+         st.session_state.get("ingresar_sucursal_lon"),
+         st.session_state.get("ingresar_sucursal_direccion"))
+    st.write("DEBUG existe mapa en session_state?", "ingresar_sucursal_mapa" in st.session_state)
+    st.write("DEBUG last_marker:", st.session_state.get("ingresar_sucursal_last_marker"))
 
     if mapa.get("last_clicked"):
         # coger coords del click
@@ -97,6 +104,9 @@ def ingresar_sucursal():
         folium.Marker([lat, lon], tooltip="Punto seleccionado").add_to(nuevo_mapa)
         st.session_state["ingresar_sucursal_mapa"] = nuevo_mapa
 
+        # Guardar el último marcador para validar que el mapa se actualizó
+        st.session_state["ingresar_sucursal_last_marker"] = (lat, lon)
+        
         # forzar rerun para que st_folium muestre el mapa actualizado
         st.rerun()
 
