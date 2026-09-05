@@ -83,15 +83,23 @@ def ingresar_sucursal():
         key="ingresar_sucursal_mapa_folium"
     )
 
-    # Si se hace clic en el mapa, actualizar dirección
     if mapa.get("last_clicked"):
-        st.session_state["ingresar_sucursal_lat"] = mapa["last_clicked"]["lat"]
-        st.session_state["ingresar_sucursal_lon"] = mapa["last_clicked"]["lng"]
-        st.session_state["ingresar_sucursal_direccion"] = obtener_direccion_desde_coordenadas(
-            st.session_state["ingresar_sucursal_lat"],
-            st.session_state["ingresar_sucursal_lon"]
-        )
+        # coger coords del click
+        lat = mapa["last_clicked"]["lat"]
+        lon = mapa["last_clicked"]["lng"]
+
+        # guardar coords en session_state
+        st.session_state["ingresar_sucursal_lat"] = lat
+        st.session_state["ingresar_sucursal_lon"] = lon
+
+        # recrear el mapa con el marcador nuevo y guardarlo en session_state
+        nuevo_mapa = folium.Map(location=[lat, lon], zoom_start=15)
+        folium.Marker([lat, lon], tooltip="Punto seleccionado").add_to(nuevo_mapa)
+        st.session_state["ingresar_sucursal_mapa"] = nuevo_mapa
+
+        # forzar rerun para que st_folium muestre el mapa actualizado
         st.rerun()
+
     
     # Mostrar dirección final elegida
     st.markdown(f"""
