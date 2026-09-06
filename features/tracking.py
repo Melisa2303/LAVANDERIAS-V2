@@ -7,10 +7,10 @@ from streamlit_folium import st_folium
 # ===========================
 # CONFIGURACIÓN
 # ===========================
-TRACCAR_URL = "https://traccar-production-8d92.up.railway.app"
+TRACCAR_URL = "https://traccar-production-ccd9.up.railway.app/"
 USERNAME = "delgado.ariana18@gmail.com"
-PASSWORD = "lav123"
-DEVICE_ID = 6
+PASSWORD = "TRACCAR"
+DEVICE_ID = 0509
 
 # ===========================
 # FUNCIONES
